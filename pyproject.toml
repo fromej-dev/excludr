@@ -1,0 +1,37 @@
+[project]
+name = "excludr"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.16.4",
+    "faker>=37.5.3",
+    "fastapi>=0.116.1",
+    "fastapi-fsp>=0.1.1",
+    "httpx>=0.28.1",
+    "passlib[bcrypt]>=1.7.4",
+    "pydantic-settings>=2.10.1",
+    "pyjwt>=2.10.1",
+    "python-multipart>=0.0.20",
+    "sqlmodel>=0.0.24",
+    "uvicorn>=0.35.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "--cov=app --cov-report=term-missing"
+pythonpath = ["."]
+testspath = "tests"
+
+[tool.coverage.run]
+omit = ["*/tests/*", "*/venv/*"]
+
+[tool.ruff.lint]
+extend-select = ["B"]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.3.0",
+    "pytest-cov>=6.2.1",
+    "pytest-dotenv>=0.5.2",
+    "ruff>=0.12.9",
+]
