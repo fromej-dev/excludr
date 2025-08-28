@@ -20,7 +20,9 @@ dependencies = [
 [tool.pytest.ini_options]
 addopts = "--cov=app --cov-report=term-missing"
 pythonpath = ["."]
-testspath = "tests"
+testpaths = [
+    "tests",
+]
 
 [tool.coverage.run]
 omit = ["*/tests/*", "*/venv/*"]

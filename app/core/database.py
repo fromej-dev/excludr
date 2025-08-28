@@ -22,3 +22,4 @@ def get_session():
 SessionDep = Annotated[Session, Depends(get_session)]
 
 from app.features.users.models import *  # noqa: F403, E402
+from app.features.projects.models import *  # noqa: F403, E402

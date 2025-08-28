@@ -45,3 +45,15 @@ def test_user_by_id(admin_client, a_user):
     assert res.status_code == 200
     assert res.json()
     assert res.json()["id"] == user.id
+
+
+def test_get_user_me(auth_client):
+    res = auth_client.get("api/v1/users/me")
+    assert res.status_code == 200
+    assert res.json()["email"]
+
+
+def test_get_user_me_not_authenticated(client):
+    res = client.get("api/v1/users/me")
+    assert res.status_code == 401
+    assert res.json()["detail"] == "Not authenticated"
