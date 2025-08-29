@@ -64,3 +64,20 @@ def update_project(
             status_code=403, detail="You are not the owner of the project"
         )
     return ps.update_project(project, data)
+
+
+@router.delete("/{project_id}", status_code=204)
+def delete_project(
+    project_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    ps: ProjectServiceDep,
+):
+    project = ps.get_project_by_id(project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=403, detail="You are not the owner of the project"
+        )
+    ps.delete_project(project)
+    return

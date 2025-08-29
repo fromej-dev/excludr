@@ -90,8 +90,20 @@ class ProjectService:
         self.session.refresh(project)
         return project
 
+    def delete_project(self, project: Project):
+        """Delete an existing project.
 
-def get_project_service(session: SessionDep):
+        Args:
+            project (Project): Project to delete
+
+        Returns:
+        """
+        self.session.delete(project)
+        self.session.commit()
+        return
+
+
+def get_project_service(session: SessionDep) -> ProjectService:
     """Dependency injection function to get ProjectService instance.
 
     Args:

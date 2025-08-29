@@ -1,3 +1,5 @@
+from app.features.projects.services import ProjectService
+
 BASE_API = "api/v1/projects"
 
 
@@ -118,5 +120,31 @@ def test_update_project_not_owner(auth_as, a_project, faker):
 
 def test_update_project_not_existing(auth_client):
     res = auth_client.patch(f"{BASE_API}/1", json={"name": "test"})
+    assert res.status_code == 404
+    assert res.json()["detail"] == "Project not found"
+
+
+# Tests for deleting a project
+def test_delete_project(auth_as, a_project, session):
+    client, user = auth_as()
+    project = a_project(user)
+    project_id = project.id
+    res = client.delete(f"{BASE_API}/{project_id}")
+    assert res.status_code == 204
+
+    project = ProjectService(session).get_project_by_id(project_id)
+    assert project is None
+
+
+def test_delete_project_not_owner(auth_as, a_project):
+    client, user = auth_as()
+    project = a_project()
+    res = client.delete(f"{BASE_API}/{project.id}")
+    assert res.status_code == 403
+    assert res.json()["detail"] == "You are not the owner of the project"
+
+
+def test_delete_project_not_existing(auth_client):
+    res = auth_client.delete(f"{BASE_API}/1")
     assert res.status_code == 404
     assert res.json()["detail"] == "Project not found"
