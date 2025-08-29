@@ -6,12 +6,19 @@ from sqlmodel import SQLModel, Field, Relationship
 
 
 class ProjectBase(SQLModel):
-    name: str = Field(index=True)
+    name: str = Field(index=True, min_length=3, max_length=50)
     description: Optional[str] = Field(default=None)
 
 
 class ProjectCreate(ProjectBase):
     pass
+
+
+class ProjectUpdate(ProjectBase):
+    name: Optional[str] = Field(
+        min_length=3, max_length=50, default=None, nullable=True
+    )
+    description: Optional[str] = Field(default=None, nullable=True)
 
 
 class Project(ProjectBase, table=True):

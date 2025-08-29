@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlmodel import Session, select
 
-from .models import Project, ProjectCreate
+from .models import Project, ProjectCreate, ProjectUpdate
 from ..users.models import User
 from ...core.database import SessionDep
 
@@ -65,6 +65,26 @@ class ProjectService:
         """
         project = Project(**data.model_dump())
         project.owner_id = user.id
+        self.session.add(project)
+        self.session.commit()
+        self.session.refresh(project)
+        return project
+
+    def update_project(self, project: Project, data: ProjectUpdate):
+        """Update an existing project.
+
+        Args:
+            project (Project): Project to update
+            data (ProjectUpdate): Project update data
+
+        Returns:
+            Project: Updated project object
+        """
+        project.sqlmodel_update(
+            data.model_dump(
+                exclude_unset=True, exclude_defaults=True, exclude_none=True
+            )
+        )
         self.session.add(project)
         self.session.commit()
         self.session.refresh(project)
