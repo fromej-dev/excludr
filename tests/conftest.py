@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
 
+from app.core.celery import celery
 from app.core.database import get_session
 from app.features.auth.services import create_access_token
 from app.features.projects.models import Project
@@ -30,6 +31,15 @@ def db_connection_fixture(engine):
     finally:
         connection.close()
         SQLModel.metadata.drop_all(engine)
+
+
+@pytest.fixture(scope="session")
+def celery_eager_config():
+    """
+    Fixture to configure Celery to run tasks eagerly (synchronously)
+    for the entire test session.
+    """
+    celery.conf.update(task_always_eager=True)
 
 
 @pytest.fixture(name="session")

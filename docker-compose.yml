@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database Service
+  postgres:
+    image: postgres:17-alpine
+    container_name: excludr-postgres
+    environment:
+      POSTGRES_USER: excludr-test
+      POSTGRES_PASSWORD: excludr-test
+      POSTGRES_DB: excludr_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  # Redis In-Memory Data Store
+  redis:
+    image: redis:alpine
+    container_name: redis
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  # Flower - Celery Monitoring Tool
+  flower:
+    image: mher/flower
+    container_name: flower
+    environment:
+      # This URL tells Flower to connect to our 'redis' service
+      CELERY_BROKER_URL: redis://redis:6379/0
+      # Optional: Uncomment to protect the dashboard with a password
+      # FLOWER_BASIC_AUTH: flower_user:flower_password
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+# Named volumes for data persistence
+volumes:
+  postgres_data:
+  redis_data:

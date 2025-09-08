@@ -1,6 +1,7 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
+from pydantic import computed_field
 from sqlalchemy import func
 from sqlmodel import SQLModel, Field, Relationship
 
@@ -32,3 +33,10 @@ class Project(ProjectBase, table=True):
     owner_id: int = Field(foreign_key="user.id")
 
     owner: "User" = Relationship(back_populates="projects")  # noqa: F821
+    articles: List["Article"] = Relationship(back_populates="project")  # noqa: F821
+
+    @computed_field
+    @property
+    def number_of_articles(self) -> int:
+        """Calculates the number of articles in the project."""
+        return len(self.articles)
