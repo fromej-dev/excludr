@@ -1,8 +1,34 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime
+from enum import Enum
 from sqlmodel import Field, SQLModel, Column, JSON, Text, Relationship
 
 from app.features.projects.models import Project
+
+if TYPE_CHECKING:
+    from app.features.screening.models import ScreeningDecision
+
+# Import ScreeningStage from screening to avoid duplication
+from app.features.screening.models import ScreeningStage
+
+
+class ArticleStatus(str, Enum):
+    """Status of an article in the screening pipeline."""
+
+    imported = "imported"
+    screening = "screening"
+    awaiting_full_text = "awaiting_full_text"
+    full_text_retrieved = "full_text_retrieved"
+    included = "included"
+    excluded = "excluded"
+
+
+class FinalDecision(str, Enum):
+    """Final decision for an article."""
+
+    pending = "pending"
+    included = "included"
+    excluded = "excluded"
 
 
 class Article(SQLModel, table=True):
@@ -98,6 +124,28 @@ class Article(SQLModel, table=True):
     )
     last_ai_check: Optional[datetime] = Field(
         default=None, description="Timestamp of the last completed AI check"
+    )
+
+    # --- Screening Status & Stage ---
+    status: ArticleStatus = Field(
+        default=ArticleStatus.imported,
+        index=True,
+        description="Current status in the screening pipeline",
+    )
+    current_stage: ScreeningStage = Field(
+        default=ScreeningStage.title_abstract,
+        index=True,
+        description="Current screening stage",
+    )
+    final_decision: FinalDecision = Field(
+        default=FinalDecision.pending,
+        index=True,
+        description="Final screening decision",
+    )
+
+    # --- Screening Decisions Relationship ---
+    screening_decisions: List["ScreeningDecision"] = Relationship(
+        back_populates="article"
     )
 
     # --- Provenance & Timestamps ---

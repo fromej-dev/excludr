@@ -1,0 +1,3 @@
+PMID,Title,Authors,Citation,First Author,Journal/Book,Publication Year,Create Date,PMCID,NIHMS ID,DOI
+"11111111","Test CSV Article One","Smith J, Doe J.","Test J. 2023;10:1-10.","Smith J","Test Journal","2023","2023/01/01","PMC1111111","","10.1111/test.one"
+"22222222","Test CSV Article Two","Johnson R, Wilson M.","Another J. 2022;5:50-60.","Johnson R","Another Journal","2022","2022/06/15","","","10.2222/test.two"

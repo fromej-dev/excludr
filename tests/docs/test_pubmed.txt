@@ -1,0 +1,41 @@
+PMID- 12345678
+OWN - NLM
+STAT- MEDLINE
+VI  - 10
+IP  - 5
+DP  - 2023 May
+TI  - A test article for unit testing PubMed MEDLINE format parsing.
+PG  - 100-110
+AB  - This is a test abstract that spans multiple lines and contains
+      information about the study. It demonstrates how MEDLINE format
+      handles multi-line fields.
+FAU - Smith, John
+AU  - Smith J
+FAU - Doe, Jane
+AU  - Doe J
+LA  - eng
+PT  - Journal Article
+JT  - Test Journal of Medicine
+AID - 10.1234/test.2023.001 [doi]
+IS  - 1234-5678 (Print)
+IS  - 8765-4321 (Electronic)
+MH  - Humans
+MH  - Testing
+OT  - unit test
+OT  - parsing
+PMC - PMC9999999
+
+PMID- 87654321
+OWN - NLM
+STAT- MEDLINE
+VI  - 5
+DP  - 2022 Dec
+TI  - Another test article without some optional fields.
+AB  - A shorter abstract for the second test article.
+FAU - Johnson, Robert
+AU  - Johnson R
+LA  - eng
+PT  - Review
+JT  - Another Test Journal
+AID - 10.5678/another.test [doi]
+

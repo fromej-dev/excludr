@@ -24,3 +24,5 @@ SessionDep = Annotated[Session, Depends(get_session)]
 from app.features.users.models import *  # noqa: F403, E402
 from app.features.projects.models import *  # noqa: F403, E402
 from app.features.research.models import *  # noqa: F403, E402
+from app.features.criteria.models import *  # noqa: F403, E402
+from app.features.screening.models import *  # noqa: F403, E402

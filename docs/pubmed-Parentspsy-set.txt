@@ -1,0 +1,1070 @@
+PMID- 30658339
+OWN - NLM
+STAT- MEDLINE
+DCOM- 20200330
+LR  - 20200330
+IS  - 1532-8384 (Electronic)
+IS  - 0010-440X (Linking)
+VI  - 90
+DP  - 2019 Apr
+TI  - Parenting behavior and the development of children with autism spectrum disorder.
+PG  - 21-29
+LID - S0010-440X(18)30192-5 [pii]
+LID - 10.1016/j.comppsych.2018.11.007 [doi]
+AB  - Autism spectrum disorders (ASD) are neurodevelopmental disorders in which 
+      multiple genetic and environmental factors play roles. Symptoms of deficits in 
+      social communication and restrictive, repetitive behavioral patterns emerge early 
+      in a child's development. While parents do not cause these difficulties, 
+      impairments in social relatedness can strain parent child interactions and 
+      parental stress can have negative transactional effects that impede children 
+      development. Conversely, as with typically developing children, parental behavior 
+      can also enhance development in ASD and parents play a role in many 
+      interventions. In this review we examine parental contributions to the 
+      development of children with ASD, focusing on social communication and emotion 
+      regulation. We address parent and family characteristics that may impede 
+      development so they can be identified in families and interventions developed to 
+      target them.
+CI  - Copyright © 2018. Published by Elsevier Inc.
+FAU - Crowell, Judith A
+AU  - Crowell JA
+AD  - Stony Brook University, United States of America. Electronic address: 
+      Judith.crowell@stonybrookmedicine.edu.
+FAU - Keluskar, Jennifer
+AU  - Keluskar J
+AD  - Stony Brook University, United States of America.
+FAU - Gorecki, Amanda
+AU  - Gorecki A
+AD  - Stony Brook University, United States of America.
+LA  - eng
+PT  - Journal Article
+PT  - Review
+DEP - 20181120
+PL  - United States
+TA  - Compr Psychiatry
+JT  - Comprehensive psychiatry
+JID - 0372612
+SB  - IM
+MH  - Autism Spectrum Disorder/*diagnosis/*psychology
+MH  - Child
+MH  - Child Development/*physiology
+MH  - Child, Preschool
+MH  - Emotions/physiology
+MH  - Female
+MH  - Humans
+MH  - Male
+MH  - *Parent-Child Relations
+MH  - Parenting/*psychology
+MH  - Parents/*psychology
+EDAT- 2019/01/19 06:00
+MHDA- 2020/03/31 06:00
+CRDT- 2019/01/19 06:00
+PHST- 2018/11/13 00:00 [received]
+PHST- 2018/11/14 00:00 [accepted]
+PHST- 2019/01/19 06:00 [pubmed]
+PHST- 2020/03/31 06:00 [medline]
+PHST- 2019/01/19 06:00 [entrez]
+AID - S0010-440X(18)30192-5 [pii]
+AID - 10.1016/j.comppsych.2018.11.007 [doi]
+PST - ppublish
+SO  - Compr Psychiatry. 2019 Apr;90:21-29. doi: 10.1016/j.comppsych.2018.11.007. Epub 
+      2018 Nov 20.
+
+PMID- 33970913
+OWN - NLM
+STAT- MEDLINE
+DCOM- 20210825
+LR  - 20240402
+IS  - 1549-1676 (Electronic)
+IS  - 1549-1277 (Print)
+IS  - 1549-1277 (Linking)
+VI  - 18
+IP  - 5
+DP  - 2021 May
+TI  - Parenting interventions to promote early child development in the first three 
+      years of life: A global systematic review and meta-analysis.
+PG  - e1003602
+LID - 10.1371/journal.pmed.1003602 [doi]
+LID - e1003602
+AB  - BACKGROUND: Parents are the primary caregivers of young children. Responsive 
+      parent-child relationships and parental support for learning during the earliest 
+      years of life are crucial for promoting early child development (ECD). We 
+      conducted a global systematic review and meta-analysis to evaluate the 
+      effectiveness of parenting interventions on ECD and parenting outcomes. METHODS 
+      AND FINDINGS: We searched MEDLINE, Embase, PsycINFO, CINAHL, Web of Science, and 
+      Global Health Library for peer-reviewed, published articles from database 
+      inception until November 15, 2020. We included randomized controlled trials 
+      (RCTs) of parenting interventions delivered during the first 3 years of life that 
+      evaluated at least 1 ECD outcome. At least 2 reviewers independently screened, 
+      extracted data, and assessed study quality from eligible studies. ECD outcomes 
+      included cognitive, language, motor, and socioemotional development, behavior 
+      problems, and attachment. Parenting outcomes included parenting knowledge, 
+      parenting practices, parent-child interactions, and parental depressive symptoms. 
+      We calculated intervention effect sizes as the standardized mean difference (SMD) 
+      and estimated pooled effect sizes for each outcome separately using robust 
+      variance estimation meta-analytic approaches. We used random-effects 
+      meta-regression models to assess potential effect modification by country-income 
+      level, child age, intervention content, duration, delivery, setting, and study 
+      quality. This review was registered with PROSPERO (CRD42018092458 and 
+      CRD42018092461). Of the 11,920 articles identified, we included 111 articles 
+      representing 102 unique RCTs. Pooled effect sizes indicated positive benefits of 
+      parenting interventions on child cognitive development (SMD = 0.32, 95% CI 
+      [confidence interval]: 0.23, 0.40, P < 0.001), language development (SMD = 0.28, 
+      95% CI: 0.18 to 0.37, P < 0.001), motor development (SMD = 0.24, 95% CI: 0.15 to 
+      0.32, P < 0.001), socioemotional development (SMD = 0.19, 95% CI: 0.10 to 0.28, P 
+      < 0.001), and attachment (SMD = 0.29, 95% CI: 0.18 to 0.40, P < 0.001) and 
+      reductions in behavior problems (SMD = -0.13, 95% CI: -0.18 to -0.08, P < 0.001). 
+      Positive benefits were also found on parenting knowledge (SMD = 0.56, 95% CI: 
+      0.33 to 0.79, P < 0.001), parenting practices (SMD = 0.33, 95% CI: 0.22 to 0.44, 
+      P < 0.001), and parent-child interactions (SMD = 0.39, 95% CI: 0.24 to 0.53, P < 
+      0.001). However, there was no significant reduction in parental depressive 
+      symptoms (SMD = -0.07, 95% CI: -0.16 to 0.02, P = 0.08). Subgroup analyses 
+      revealed significantly greater effects on child cognitive, language, and motor 
+      development, and parenting practices in low- and middle-income countries compared 
+      to high-income countries; and significantly greater effects on child cognitive 
+      development, parenting knowledge, parenting practices, and parent-child 
+      interactions for programs that focused on responsive caregiving compared to those 
+      that did not. On the other hand, there was no clear evidence of effect 
+      modification by child age, intervention duration, delivery, setting, or study 
+      risk of bias. Study limitations include considerable unexplained heterogeneity, 
+      inadequate reporting of intervention content and implementation, and varying 
+      quality of evidence in terms of the conduct of trials and robustness of outcome 
+      measures used across studies. CONCLUSIONS: Parenting interventions for children 
+      during the first 3 years of life are effective for improving ECD outcomes and 
+      enhancing parenting outcomes across low-, middle-, and high-income countries. 
+      Increasing implementation of effective and high-quality parenting interventions 
+      is needed globally and at scale in order to support parents and enable young 
+      children to achieve their full developmental potential.
+FAU - Jeong, Joshua
+AU  - Jeong J
+AUID- ORCID: 0000-0002-4130-468X
+AD  - Department of Global Health and Population, Harvard T.H. Chan School of Public 
+      Health, Boston, Massachusetts, United States of America.
+FAU - Franchett, Emily E
+AU  - Franchett EE
+AUID- ORCID: 0000-0001-9265-9168
+AD  - Department of Global Health and Population, Harvard T.H. Chan School of Public 
+      Health, Boston, Massachusetts, United States of America.
+FAU - Ramos de Oliveira, Clariana V
+AU  - Ramos de Oliveira CV
+AUID- ORCID: 0000-0001-9987-9948
+AD  - Department of Global Health and Population, Harvard T.H. Chan School of Public 
+      Health, Boston, Massachusetts, United States of America.
+FAU - Rehmani, Karima
+AU  - Rehmani K
+AUID- ORCID: 0000-0001-7245-9898
+AD  - Department of Global Health and Population, Harvard T.H. Chan School of Public 
+      Health, Boston, Massachusetts, United States of America.
+FAU - Yousafzai, Aisha K
+AU  - Yousafzai AK
+AUID- ORCID: 0000-0002-1592-8923
+AD  - Department of Global Health and Population, Harvard T.H. Chan School of Public 
+      Health, Boston, Massachusetts, United States of America.
+LA  - eng
+PT  - Journal Article
+PT  - Meta-Analysis
+PT  - Research Support, Non-U.S. Gov't
+PT  - Systematic Review
+DEP - 20210510
+PL  - United States
+TA  - PLoS Med
+JT  - PLoS medicine
+JID - 101231360
+SB  - IM
+MH  - *Child Development
+MH  - Child, Preschool
+MH  - Humans
+MH  - Infant
+MH  - Infant, Newborn
+MH  - Mental Health/*statistics & numerical data
+MH  - *Parenting
+MH  - Parents/*psychology
+MH  - Psychosocial Intervention/*standards
+PMC - PMC8109838
+COIS- The authors have declared that no competing interests exist.
+EDAT- 2021/05/11 06:00
+MHDA- 2021/08/26 06:00
+PMCR- 2021/05/10
+CRDT- 2021/05/10 18:01
+PHST- 2020/09/23 00:00 [received]
+PHST- 2021/04/01 00:00 [accepted]
+PHST- 2021/05/10 18:01 [entrez]
+PHST- 2021/05/11 06:00 [pubmed]
+PHST- 2021/08/26 06:00 [medline]
+PHST- 2021/05/10 00:00 [pmc-release]
+AID - PMEDICINE-D-20-04650 [pii]
+AID - 10.1371/journal.pmed.1003602 [doi]
+PST - epublish
+SO  - PLoS Med. 2021 May 10;18(5):e1003602. doi: 10.1371/journal.pmed.1003602. 
+      eCollection 2021 May.
+
+PMID- 37571280
+OWN - NLM
+STAT- MEDLINE
+DCOM- 20230814
+LR  - 20250626
+IS  - 2072-6643 (Electronic)
+IS  - 2072-6643 (Linking)
+VI  - 15
+IP  - 15
+DP  - 2023 Jul 27
+TI  - Affect, Body, and Eating Habits in Children: A Systematic Review.
+LID - 10.3390/nu15153343 [doi]
+LID - 3343
+AB  - The present review investigates the complex associations between children's 
+      affective states, body perceptions, and eating habits, thus providing crucial 
+      insights for potential health interventions. Following PRISMA guidelines, three 
+      databases were searched for peer-reviewed studies exploring the relationship 
+      between eating habits, emotional states, and body image perceptions in a 
+      population of children (5 to 11 years old). A total of seven articles were 
+      included. Our findings revealed a pattern of associations between negative 
+      emotional states, like anxiety and depressive feelings, and maladaptive eating 
+      behaviors. Additionally, explicit influences from parental feeding practices, 
+      peer pressure, socioeconomic factors, and children's body perceptions were 
+      observed to shape eating habits, with a pronounced tendency among older girls 
+      towards dieting and food preoccupation. Our results underline the intertwining 
+      nature of age, gender, and emotional states. Furthermore, our findings accentuate 
+      the urgency for comprehensive interventions that acknowledge and address the 
+      complex interplay of emotional, familial, and socioeconomic factors alongside 
+      children's body image perceptions. The criticality of continued research, 
+      particularly ones employing longitudinal designs and diverse demographic samples, 
+      is highlighted as we strive to understand and navigate such multifaceted 
+      relationships to enhance children's health and well-being.
+FAU - Abdoli, Marzieh
+AU  - Abdoli M
+AUID- ORCID: 0000-0002-2851-1633
+AD  - Observatory on Eating Disorders, Department of Psychology, University of Campania 
+      "Luigi Vanvitelli", Viale Ellittico, 31, 81100 Caserta, Italy.
+FAU - Scotto Rosato, Marco
+AU  - Scotto Rosato M
+AUID- ORCID: 0000-0001-7017-0935
+AD  - Observatory on Eating Disorders, Department of Psychology, University of Campania 
+      "Luigi Vanvitelli", Viale Ellittico, 31, 81100 Caserta, Italy.
+FAU - Cipriano, Annarosa
+AU  - Cipriano A
+AUID- ORCID: 0000-0001-5845-6260
+AD  - Observatory on Eating Disorders, Department of Psychology, University of Campania 
+      "Luigi Vanvitelli", Viale Ellittico, 31, 81100 Caserta, Italy.
+FAU - Napolano, Rosanna
+AU  - Napolano R
+AD  - Observatory on Eating Disorders, Department of Psychology, University of Campania 
+      "Luigi Vanvitelli", Viale Ellittico, 31, 81100 Caserta, Italy.
+FAU - Cotrufo, Paolo
+AU  - Cotrufo P
+AUID- ORCID: 0000-0002-2397-8867
+AD  - Observatory on Eating Disorders, Department of Psychology, University of Campania 
+      "Luigi Vanvitelli", Viale Ellittico, 31, 81100 Caserta, Italy.
+FAU - Barberis, Nadia
+AU  - Barberis N
+AUID- ORCID: 0000-0002-6489-2779
+AD  - Department of Medical and Surgical Sciences, University "Magna Graecia" of 
+      Catanzaro, 88100 Catanzaro, Italy.
+FAU - Cella, Stefania
+AU  - Cella S
+AD  - Observatory on Eating Disorders, Department of Psychology, University of Campania 
+      "Luigi Vanvitelli", Viale Ellittico, 31, 81100 Caserta, Italy.
+LA  - eng
+PT  - Journal Article
+PT  - Systematic Review
+DEP - 20230727
+PL  - Switzerland
+TA  - Nutrients
+JT  - Nutrients
+JID - 101521595
+SB  - IM
+MH  - Female
+MH  - Humans
+MH  - Child
+MH  - Child, Preschool
+MH  - Surveys and Questionnaires
+MH  - *Feeding Behavior/psychology
+MH  - *Parents/psychology
+MH  - Emotions
+MH  - Food
+MH  - Child Behavior/psychology
+MH  - Parenting/psychology
+MH  - Eating/psychology
+PMC - PMC10420931
+OTO - NOTNLM
+OT  - affect
+OT  - body
+OT  - children
+OT  - eating habits
+OT  - emotions
+COIS- The authors declare no conflict of interest.
+EDAT- 2023/08/12 10:48
+MHDA- 2023/08/14 06:41
+PMCR- 2023/07/27
+CRDT- 2023/08/12 01:21
+PHST- 2023/07/01 00:00 [received]
+PHST- 2023/07/22 00:00 [revised]
+PHST- 2023/07/25 00:00 [accepted]
+PHST- 2023/08/14 06:41 [medline]
+PHST- 2023/08/12 10:48 [pubmed]
+PHST- 2023/08/12 01:21 [entrez]
+PHST- 2023/07/27 00:00 [pmc-release]
+AID - nu15153343 [pii]
+AID - nutrients-15-03343 [pii]
+AID - 10.3390/nu15153343 [doi]
+PST - epublish
+SO  - Nutrients. 2023 Jul 27;15(15):3343. doi: 10.3390/nu15153343.
+
+PMID- 32776296
+OWN - NLM
+STAT- MEDLINE
+DCOM- 20210217
+LR  - 20210217
+IS  - 1432-0711 (Electronic)
+IS  - 0932-0067 (Print)
+IS  - 0932-0067 (Linking)
+VI  - 303
+IP  - 1
+DP  - 2021 Jan
+TI  - The effects of a music and singing intervention during pregnancy on maternal 
+      well-being and mother-infant bonding: a randomised, controlled study.
+PG  - 69-83
+LID - 10.1007/s00404-020-05727-8 [doi]
+AB  - PURPOSE: Stress and impaired mother-infant bonding during pregnancy can lead to 
+      adverse effects for the expectant mother and the unborn child. The present study 
+      investigates whether a prenatal music and singing intervention can improve 
+      maternal well-being as well as mother-infant bonding. METHODS: A total of 172 
+      pregnant women took part in this prospective, randomised, three-armed (music, 
+      singing or control group) study. Depressive symptoms, self-efficacy, maternal 
+      well-being and mother-infant bonding were assessed with visual analogue scales 
+      and questionnaires before the intervention phase (30th week of gestation) and 
+      afterwards (36th week of gestation). Additionally, immediate changes regarding 
+      experienced stress and mood from before until after the music and singing 
+      interventions were explored with questionnaires as well as saliva samples (for 
+      cortisol, alpha-amylase and oxytocin determination). RESULTS: Regarding immediate 
+      effects, both interventions showed positive effects on the emotional state, 
+      stress (cortisol) and bonding (oxytocin). Additionally, the singing group showed 
+      a larger reduction in cortisol and a larger improvement in valence than the music 
+      group. Looking at more prolonged effects, significant effects on general 
+      self-efficacy and perceived closeness to the unborn child (measured with a visual 
+      analogue scale) were found. No significant effects were revealed for the 
+      mother-infant bonding questionnaire and for depressive symptoms. CONCLUSION: In 
+      the present study, promising effects of music and in particular singing on 
+      maternal well-being and perceived closeness during pregnancy appeared. Prenatal 
+      music and singing interventions could be an easy to implement and effective 
+      addition to improve mood and well-being of the expectant mother and support 
+      mother-infant bonding. TRIAL REGISTRATION NUMBER: DRKS00012822, date of 
+      registration: 17.10.2017.
+FAU - Wulff, Verena
+AU  - Wulff V
+AUID- ORCID: 0000-0001-9108-1771
+AD  - Department of Experimental Psychology, Heinrich-Heine-University Düsseldorf, 
+      Universitätsstraße 1, 40225, Düsseldorf, Germany. verena.wulff@hhu.de.
+FAU - Hepp, Philip
+AU  - Hepp P
+AD  - Clinic for Gynecology and Obstetrics, University Clinic, Augsburg, Germany.
+AD  - Clinic for Gynecology and Obstetrics, HELIOS University Clinic, University 
+      Witten/Herdecke, Wuppertal, Germany.
+FAU - Wolf, Oliver T
+AU  - Wolf OT
+AD  - Department of Cognitive Psychology, Institute of Cognitive Neuroscience, Faculty 
+      of Psychology, Ruhr-University, Bochum, Germany.
+FAU - Balan, Percy
+AU  - Balan P
+AD  - Clinic for Gynecology and Obstetrics, Heinrich-Heine-University Düsseldorf, 
+      Düsseldorf, Germany.
+FAU - Hagenbeck, Carsten
+AU  - Hagenbeck C
+AD  - Clinic for Gynecology and Obstetrics, Heinrich-Heine-University Düsseldorf, 
+      Düsseldorf, Germany.
+FAU - Fehm, Tanja
+AU  - Fehm T
+AD  - Clinic for Gynecology and Obstetrics, Heinrich-Heine-University Düsseldorf, 
+      Düsseldorf, Germany.
+FAU - Schaal, Nora K
+AU  - Schaal NK
+AD  - Department of Experimental Psychology, Heinrich-Heine-University Düsseldorf, 
+      Universitätsstraße 1, 40225, Düsseldorf, Germany.
+LA  - eng
+PT  - Journal Article
+PT  - Randomized Controlled Trial
+PT  - Research Support, Non-U.S. Gov't
+DEP - 20200810
+PL  - Germany
+TA  - Arch Gynecol Obstet
+JT  - Archives of gynecology and obstetrics
+JID - 8710213
+SB  - IM
+MH  - Adult
+MH  - Female
+MH  - Germany
+MH  - Humans
+MH  - Infant
+MH  - Mental Health
+MH  - *Mother-Child Relations
+MH  - Mothers/*psychology
+MH  - Music/*psychology
+MH  - Music Therapy
+MH  - *Object Attachment
+MH  - Pregnancy
+MH  - Prospective Studies
+MH  - *Singing
+MH  - Surveys and Questionnaires
+MH  - Young Adult
+PMC - PMC7854426
+OTO - NOTNLM
+OT  - Maternal well-being
+OT  - Mother–infant bonding
+OT  - Music
+OT  - Pregnancy
+OT  - Singing
+COIS- The authors declare that they have no conflicts of interest.
+EDAT- 2020/08/11 06:00
+MHDA- 2021/02/18 06:00
+PMCR- 2020/08/10
+CRDT- 2020/08/11 06:00
+PHST- 2020/03/24 00:00 [received]
+PHST- 2020/07/28 00:00 [accepted]
+PHST- 2020/08/11 06:00 [pubmed]
+PHST- 2021/02/18 06:00 [medline]
+PHST- 2020/08/11 06:00 [entrez]
+PHST- 2020/08/10 00:00 [pmc-release]
+AID - 10.1007/s00404-020-05727-8 [pii]
+AID - 5727 [pii]
+AID - 10.1007/s00404-020-05727-8 [doi]
+PST - ppublish
+SO  - Arch Gynecol Obstet. 2021 Jan;303(1):69-83. doi: 10.1007/s00404-020-05727-8. Epub 
+      2020 Aug 10.
+
+PMID- 40057656
+OWN - NLM
+STAT- MEDLINE
+DCOM- 20250612
+LR  - 20250617
+IS  - 1573-2827 (Electronic)
+IS  - 1096-4037 (Print)
+IS  - 1096-4037 (Linking)
+VI  - 28
+IP  - 2
+DP  - 2025 Jun
+TI  - Parental Stress and Well-Being: A Meta-analysis.
+PG  - 255-274
+LID - 10.1007/s10567-025-00515-9 [doi]
+AB  - The current meta-analysis aims to investigate the relationship between parental 
+      stress and well-being, by focusing on the positive dimensions of parental 
+      well-being, such as happiness and life satisfaction, which are often overlooked 
+      in favor of negative outcomes like depression. It also extends the scope beyond 
+      specific populations, such as parents of children with special needs, to include 
+      parents of typically developing children. This meta-analysis included evidence 
+      from cross-sectional, longitudinal, daily diary, and intervention studies. By 
+      examining various moderators related to parent and child variables (such as 
+      gender, age, job status) and study characteristics, this analysis aims to inform 
+      more effective, targeted interventions to enhance parental well-being. Systematic 
+      searches of the Web of Science, PubMed, APA PsychNet, Scopus, ProQuest, and 
+      Google Scholar databases yielded 86 studies, involving 22,108 parents of children 
+      aged 0 to 18 years. The PROSPERO registration number for this study is 
+      CRD42023428750. Elected outcomes were continuous self-report measures to assess 
+      stress and well-being of parents. Our findings indicated a significant negative 
+      medium-sized association between parental stress and well-being (r = - .40), 
+      i.e., greater parental stress was robustly linked to reduced well-being. 
+      Higher-quality studies reported stronger stress-well-being associations, 
+      underscoring the role of methodological rigor in producing reliable estimates. 
+      Additionally, studies utilizing the Parental Stress Index (PSI) demonstrated 
+      stronger associations, highlighting its utility as a validated measure for 
+      capturing parental stress. Overall, these findings emphasize the need for 
+      evidence-based prevention and intervention programs to address parental stress 
+      and improve well-being.
+CI  - © 2025. The Author(s).
+FAU - Rusu, Petruța P
+AU  - Rusu PP
+AUID- ORCID: 0000-0003-0868-6054
+AD  - Department of Educational Sciences, University Ștefan cel Mare of Suceava, 
+      Suceava, Romania.
+FAU - Candel, Octav-Sorin
+AU  - Candel OS
+AUID- ORCID: 0000-0002-4472-5754
+AD  - Department of Educational Sciences, University Ștefan cel Mare of Suceava, 
+      Suceava, Romania. octav.candel@uaic.ro.
+AD  - Departement of Psychology, Faculty of Psychology and Educational Sciences, 
+      Alexandru Ioan Cuza University of Iași, Iași, Romania. octav.candel@uaic.ro.
+FAU - Bogdan, Ionela
+AU  - Bogdan I
+AUID- ORCID: 0000-0002-3427-6748
+AD  - Department of Educational Sciences, University Ștefan cel Mare of Suceava, 
+      Suceava, Romania.
+FAU - Ilciuc, Cornelia
+AU  - Ilciuc C
+AUID- ORCID: 0009-0003-0777-5554
+AD  - Department of Educational Sciences, University Ștefan cel Mare of Suceava, 
+      Suceava, Romania.
+FAU - Ursu, Andreea
+AU  - Ursu A
+AUID- ORCID: 0000-0002-6164-8914
+AD  - Department of Educational Sciences, University Ștefan cel Mare of Suceava, 
+      Suceava, Romania.
+FAU - Podina, Ioana R
+AU  - Podina IR
+AUID- ORCID: 0000-0002-0075-4908
+AD  - Laboratory of Cognitive Clinical Sciences, University of Bucharest, Bucharest, 
+      Romania.
+LA  - eng
+PT  - Journal Article
+PT  - Meta-Analysis
+PT  - Review
+DEP - 20250308
+PL  - United States
+TA  - Clin Child Fam Psychol Rev
+JT  - Clinical child and family psychology review
+JID - 9807947
+SB  - IM
+MH  - Humans
+MH  - *Stress, Psychological/psychology
+MH  - *Parents/psychology
+MH  - *Personal Satisfaction
+MH  - Child
+MH  - Adolescent
+MH  - Infant
+MH  - Child, Preschool
+MH  - Adult
+PMC - PMC12162691
+OTO - NOTNLM
+OT  - Children
+OT  - Parental Stress Index
+OT  - Parental stress
+OT  - Quality analysis
+OT  - Well-being
+COIS- Declarations. Conflict of interest: The authors declare that they have no 
+      conflict of interests. Ethical Approval: Not applicable.
+EDAT- 2025/03/09 15:11
+MHDA- 2025/06/12 12:32
+PMCR- 2025/03/08
+CRDT- 2025/03/08 23:21
+PHST- 2025/02/09 00:00 [accepted]
+PHST- 2025/06/12 12:32 [medline]
+PHST- 2025/03/09 15:11 [pubmed]
+PHST- 2025/03/08 23:21 [entrez]
+PHST- 2025/03/08 00:00 [pmc-release]
+AID - 10.1007/s10567-025-00515-9 [pii]
+AID - 515 [pii]
+AID - 10.1007/s10567-025-00515-9 [doi]
+PST - ppublish
+SO  - Clin Child Fam Psychol Rev. 2025 Jun;28(2):255-274. doi: 
+      10.1007/s10567-025-00515-9. Epub 2025 Mar 8.
+
+PMID- 32764151
+OWN - NLM
+STAT- MEDLINE
+DCOM- 20201013
+LR  - 20240329
+IS  - 1098-4275 (Electronic)
+IS  - 0031-4005 (Print)
+IS  - 0031-4005 (Linking)
+VI  - 146
+IP  - 4
+DP  - 2020 Oct
+TI  - COVID-19 and Parent-Child Psychological Well-being.
+LID - 10.1542/peds.2020-007294 [doi]
+LID - e2020007294
+AB  - BACKGROUND AND OBJECTIVES: The outbreak of coronavirus disease 2019 has changed 
+      American society in ways that are difficult to capture in a timely manner. With 
+      this study, we take advantage of daily survey data collected before and after the 
+      crisis started to investigate the hypothesis that the crisis has worsened 
+      parents' and children's psychological well-being. We also examine the extent of 
+      crisis-related hardships and evaluate the hypothesis that the accumulation of 
+      hardships will be associated with parent and child psychological well-being. 
+      METHODS: Daily survey data were collected between February 20 and April 27, 2020, 
+      from hourly service workers with a young child (aged 2-7) in a large US city (N = 
+      8222 person-days from 645 individuals). A subsample completed a one-time survey 
+      about the effects of the crisis fielded between March 23 and April 26 (subsample 
+      n = 561). RESULTS: Ordered probit models revealed that the frequency of 
+      parent-reported daily negative mood increased significantly since the start of 
+      the crisis. Many families have experienced hardships during the crisis, including 
+      job loss, income loss, caregiving burden, and illness. Both parents' and 
+      children's well-being in the postcrisis period was strongly associated with the 
+      number of crisis-related hardships that the family experienced. CONCLUSIONS: 
+      Consistent with our hypotheses, in families that have experienced multiple 
+      hardships related to the coronavirus disease 2019 crisis, both parents' and 
+      children's mental health is worse. As the crisis continues to unfold, 
+      pediatricians should screen for mental health, with particular attention to 
+      children whose families are especially vulnerable to economic and disease aspects 
+      of the crisis.
+CI  - Copyright © 2020 by the American Academy of Pediatrics.
+FAU - Gassman-Pines, Anna
+AU  - Gassman-Pines A
+AD  - Sanford School of Public Policy, Duke University, Durham, North Carolina; and 
+      agassman.pines@duke.edu.
+FAU - Ananat, Elizabeth Oltmans
+AU  - Ananat EO
+AD  - Department of Economics, Barnard College, Columbia University, New York, New 
+      York.
+FAU - Fitz-Henley, John 2nd
+AU  - Fitz-Henley J 2nd
+AD  - Sanford School of Public Policy, Duke University, Durham, North Carolina; and.
+LA  - eng
+GR  - P2C HD058486/HD/NICHD NIH HHS/United States
+GR  - P2C HD065563/HD/NICHD NIH HHS/United States
+GR  - R21 HD100893/HD/NICHD NIH HHS/United States
+GR  - 1R21HD100893-01/NH/NIH HHS/United States
+PT  - Journal Article
+PT  - Research Support, N.I.H., Extramural
+PT  - Research Support, U.S. Gov't, Non-P.H.S.
+DEP - 20200806
+PL  - United States
+TA  - Pediatrics
+JT  - Pediatrics
+JID - 0376422
+SB  - IM
+MH  - Affect
+MH  - Betacoronavirus
+MH  - COVID-19
+MH  - Child
+MH  - Child Care/psychology
+MH  - *Child Health
+MH  - Child, Preschool
+MH  - Coronavirus Infections/*epidemiology/*psychology
+MH  - Cost of Illness
+MH  - Health Surveys
+MH  - Humans
+MH  - Income
+MH  - *Mental Health
+MH  - *Pandemics
+MH  - *Parent-Child Relations
+MH  - Parents/*psychology
+MH  - Pneumonia, Viral/*epidemiology/*psychology
+MH  - SARS-CoV-2
+MH  - Unemployment/psychology
+MH  - Vulnerable Populations/psychology
+PMC - PMC7546085
+COIS- POTENTIAL CONFLICT OF INTEREST: The authors have indicated they have no potential 
+      conflicts of interest to disclose.
+EDAT- 2020/08/09 06:00
+MHDA- 2020/10/21 06:00
+PMCR- 2021/10/01
+CRDT- 2020/08/09 06:00
+PHST- 2020/07/30 00:00 [accepted]
+PHST- 2020/08/09 06:00 [pubmed]
+PHST- 2020/10/21 06:00 [medline]
+PHST- 2020/08/09 06:00 [entrez]
+PHST- 2021/10/01 00:00 [pmc-release]
+AID - peds.2020-007294 [pii]
+AID - 10.1542/peds.2020-007294 [doi]
+PST - ppublish
+SO  - Pediatrics. 2020 Oct;146(4):e2020007294. doi: 10.1542/peds.2020-007294. Epub 2020 
+      Aug 6.
+
+PMID- 27848890
+OWN - NLM
+STAT- MEDLINE
+DCOM- 20171229
+LR  - 20190610
+IS  - 1875-6336 (Electronic)
+IS  - 1573-3963 (Print)
+IS  - 1573-3963 (Linking)
+VI  - 13
+IP  - 1
+DP  - 2017
+TI  - The Impact of Cancer and its Treatment on the Growth and Development of the 
+      Pediatric Patient.
+PG  - 24-33
+LID - 10.2174/1573396313666161116094916 [doi]
+AB  - BACKGROUND: Cancer treatment can have profound effects on the growth and 
+      development of pediatric patients. Different models of psychosocial development 
+      and behavioral treatment approaches aid children receiving medical treatment. 
+      Providing education, anticipatory guidance, and individualized support to child 
+      and their families is a psychosocial standard. OBJECTIVE: Clarify the different 
+      models of psychosocial development and applicable psychosocial interventions to 
+      better prepare and tailor cancer treatment to pediatric patients. METHODS: 
+      Authors reviewed existing evidenced-based literature in oncology, psychology, 
+      developmental, and psychiatric while drawing on case examples and expert 
+      knowledge to illustrate the impact of cancer treatment on pediatric patients, 
+      analyze developmentally individualized needs, and describe facilitative 
+      interventions. RESULT: Pediatric patients of all ages cope and adjust better to 
+      all phases of treatment when their care is delivered in a 
+      developmentally-informed and psychosocially thoughtful way. CONCLUSION: Providers 
+      can comprehensively prepare their patients and families for treatment better by 
+      utilizing a psychosocially- and developmentally-informed framework while meeting 
+      individualized unique needs of patients. An integrated multidisciplinary 
+      psychosocial support team is facilitative in anticipating and meeting the needs 
+      of pediatric cancer patients and has recently become a psychosocial standard of 
+      care.
+CI  - Copyright© Bentham Science Publishers; For any queries, please email at 
+      epub@benthamscience.org.
+FAU - Brand, Sarah
+AU  - Brand S
+AD  - Dana-Farber Cancer Institute, 450 Brookline Avenue, SW360E, Boston, MA 02115. 
+      United States.
+FAU - Wolfe, Joanne
+AU  - Wolfe J
+AD  - Department of Medicine, Boston Children`s Hospital, MA. United States.
+FAU - Samsel, Chase
+AU  - Samsel C
+AD  - Harvard Medical School, Boston, MA. United States.
+LA  - eng
+GR  - T32 HS000063/HS/AHRQ HHS/United States
+PT  - Journal Article
+PT  - Review
+PL  - United Arab Emirates
+TA  - Curr Pediatr Rev
+JT  - Current pediatric reviews
+JID - 101240290
+SB  - IM
+MH  - Adolescent
+MH  - Child
+MH  - *Child Development
+MH  - Child, Preschool
+MH  - Humans
+MH  - Infant
+MH  - *Mental Health
+MH  - Neoplasms/psychology/*therapy
+MH  - Parents/*psychology
+MH  - *Psychosocial Support Systems
+PMC - PMC5503788
+MID - NIHMS873776
+OTO - NOTNLM
+OT  - Adjustment
+OT  - cancer
+OT  - cognitive
+OT  - coping
+OT  - development
+OT  - growth
+OT  - pediatric
+OT  - psychosocial
+EDAT- 2016/11/17 06:00
+MHDA- 2017/12/30 06:00
+PMCR- 2018/01/01
+CRDT- 2016/11/17 06:00
+PHST- 2016/10/21 00:00 [received]
+PHST- 2016/11/08 00:00 [revised]
+PHST- 2016/12/12 00:00 [accepted]
+PHST- 2016/11/17 06:00 [pubmed]
+PHST- 2017/12/30 06:00 [medline]
+PHST- 2016/11/17 06:00 [entrez]
+PHST- 2018/01/01 00:00 [pmc-release]
+AID - CPR-EPUB-79726 [pii]
+AID - 10.2174/1573396313666161116094916 [doi]
+PST - ppublish
+SO  - Curr Pediatr Rev. 2017;13(1):24-33. doi: 10.2174/1573396313666161116094916.
+
+PMID- 30977828
+OWN - NLM
+STAT- MEDLINE
+DCOM- 20200622
+LR  - 20210323
+IS  - 1465-735X (Electronic)
+IS  - 0146-8693 (Print)
+IS  - 0146-8693 (Linking)
+VI  - 44
+IP  - 6
+DP  - 2019 Jul 1
+TI  - Preterm Birth and Maternal Mental Health: Longitudinal Trajectories and 
+      Predictors.
+PG  - 736-747
+LID - 10.1093/jpepsy/jsz019 [doi]
+AB  - OBJECTIVE: To examine trajectories of psychological distress in mothers of 
+      children born very preterm (VPT, <30 weeks gestation) and full term from 2 to 
+      13 years after the birth, and examine predictors of maternal psychological 
+      distress over time within the VPT group. METHODS: Mothers of children born VPT 
+      (n = 159) and full term (n = 71) completed questionnaires assessing their 
+      psychological distress when their child was 2, 7, and 13 years of age. Mixed 
+      models were used to examine differences between groups in maternal psychological 
+      distress over time. Family social risk, child neonatal medial risk, child sex, 
+      multiple pregnancy, and child's neurodevelopmental impairment in early childhood 
+      were examined as potential predictors of maternal psychological distress within 
+      the VPT group. RESULTS: Mothers of children born VPT displayed elevated 
+      psychological distress compared with mothers of full-term children, and this 
+      difference was consistent over time. Higher family social risk was associated 
+      with elevated maternal psychological distress throughout childhood across all 
+      time-points. There was evidence that mothers of children at higher neonatal 
+      medical risk displayed increasing psychological distress over time. CONCLUSIONS: 
+      Mothers of children born VPT show prolonged psychological distress. Mothers from 
+      socially disadvantaged background and those whose child has neonatal medical 
+      complications may require extensive support to prevent prolonged psychological 
+      distress and promote optimal outcomes for children and families.
+CI  - © The Author(s) 2019. Published by Oxford University Press on behalf of the 
+      Society of Pediatric Psychology. All rights reserved. For permissions, please 
+      e-mail: journals.permissions@oup.com.
+FAU - Yaari, Maya
+AU  - Yaari M
+AD  - Murdoch Children's Research Institute.
+FAU - Treyvaud, Karli
+AU  - Treyvaud K
+AD  - Murdoch Children's Research Institute.
+AD  - Newborn Research, Royal Women's Hospital.
+AD  - Department of Psychology and Counselling, La Trobe University.
+AD  - Department of Paediatrics, University of Melbourne.
+FAU - Lee, Katherine J
+AU  - Lee KJ
+AD  - Murdoch Children's Research Institute.
+AD  - Department of Paediatrics, University of Melbourne.
+FAU - Doyle, Lex W
+AU  - Doyle LW
+AD  - Murdoch Children's Research Institute.
+AD  - Newborn Research, Royal Women's Hospital.
+AD  - Department of Paediatrics, University of Melbourne.
+AD  - Departmentof Obstetrics and Gynaecology, University of Melbourne.
+FAU - Anderson, Peter J
+AU  - Anderson PJ
+AD  - Murdoch Children's Research Institute.
+AD  - Monash Institute of Cognitive and Clinical Neurosciences, School of Psychological 
+      Sciences, Monash University.
+LA  - eng
+PT  - Journal Article
+PT  - Research Support, N.I.H., Extramural
+PT  - Research Support, Non-U.S. Gov't
+PL  - United States
+TA  - J Pediatr Psychol
+JT  - Journal of pediatric psychology
+JID - 7801773
+SB  - IM
+MH  - Adolescent
+MH  - Adult
+MH  - Child
+MH  - Child, Preschool
+MH  - Female
+MH  - Humans
+MH  - Infant, Newborn
+MH  - Longitudinal Studies
+MH  - Male
+MH  - *Mental Health
+MH  - Mothers/*psychology
+MH  - Pregnancy
+MH  - Premature Birth/*psychology
+MH  - *Psychological Distress
+MH  - Social Determinants of Health
+MH  - Surveys and Questionnaires
+PMC - PMC7967874
+OTO - NOTNLM
+OT  - anxiety
+OT  - depression
+OT  - prematurity
+OT  - psychological distress
+OT  - social risk
+EDAT- 2019/04/13 06:00
+MHDA- 2020/06/23 06:00
+PMCR- 2020/04/12
+CRDT- 2019/04/13 06:00
+PHST- 2018/09/14 00:00 [received]
+PHST- 2019/02/23 00:00 [revised]
+PHST- 2019/03/04 00:00 [accepted]
+PHST- 2019/04/13 06:00 [pubmed]
+PHST- 2020/06/23 06:00 [medline]
+PHST- 2019/04/13 06:00 [entrez]
+PHST- 2020/04/12 00:00 [pmc-release]
+AID - 5450060 [pii]
+AID - jsz019 [pii]
+AID - 10.1093/jpepsy/jsz019 [doi]
+PST - ppublish
+SO  - J Pediatr Psychol. 2019 Jul 1;44(6):736-747. doi: 10.1093/jpepsy/jsz019.
+
+PMID- 39103177
+OWN - NLM
+STAT- MEDLINE
+DCOM- 20240805
+LR  - 20250924
+IS  - 2755-9734 (Electronic)
+IS  - 2755-9734 (Linking)
+VI  - 27
+IP  - 1
+DP  - 2024 Aug 4
+TI  - Psychological well-being and needs of parents and carers of children and young 
+      people with mental health difficulties: a quantitative systematic review with 
+      meta-analyses.
+LID - 10.1136/bmjment-2023-300971 [doi]
+LID - e300971
+AB  - QUESTION: For parents of children and young people (CYP) with diagnosed mental 
+      health difficulties, what are the levels of parents' well-being and psychological 
+      need? STUDY SELECTION AND ANALYSIS: Medline, PsycINFO, EMBASE, AMED, CINAHL, Web 
+      of Science and Cochrane Library of Registered Trials were searched from inception 
+      to June 2023. INCLUSION CRITERIA: parents of CYP aged 5-18 years with formal 
+      mental health diagnosis. Data were extracted from validated measures of 
+      well-being or psychological needs with established cut-off points or from a 
+      controlled study. FINDINGS: 32 of the 73 310 records screened were included. 
+      Pooled means showed clinical range scores for one measure of depression, and all 
+      included measures of anxiety, parenting stress and general stress. Meta-analyses 
+      showed greater depression (g=0.24, 95% CI 0.11 to 0.38) and parenting stress 
+      (g=0.34, 95% CI 0.20 to 0.49) in parents of CYP with mental health difficulties 
+      versus those without. Mothers reported greater depression (g=0.42, 95% CI 0.18 to 
+      0.66) and anxiety (g=0.73, 95% CI 0.27 to 1.18) than fathers. Narrative synthesis 
+      found no clear patterns in relation to CYP condition. Rates of parents with 
+      clinically relevant levels of distress varied. Typically, anxiety, parenting 
+      stress and general stress scored above clinical threshold. Quality appraisal 
+      revealed few studies with a clearly defined control group, or attempts to control 
+      for important variables such as parent gender. CONCLUSIONS: The somewhat mixed 
+      results suggest clinical anxiety, parenting and general stress may be common, 
+      with sometimes high depression. Assessment and support for parents of CYP with 
+      mental health problems is required. Further controlled studies, with 
+      consideration of pre-existing parental mental health difficulties are required. 
+      PROSPERO REGISTRATION NUMBER: CRD42022344453.
+CI  - © Author(s) (or their employer(s)) 2024. Re-use permitted under CC BY. Published 
+      by BMJ.
+FAU - Martin, Faith
+AU  - Martin F
+AUID- ORCID: 0000-0002-0141-1210
+AD  - School of Psychology, Cardiff University, Cardiff, UK martinf8@cardiff.ac.uk.
+FAU - Dahmash, Dania
+AU  - Dahmash D
+AD  - Coventry University, Coventry, UK.
+FAU - Wicker, Sarah
+AU  - Wicker S
+AD  - School of Psychology, Cardiff University, Cardiff, UK.
+FAU - Glover, Sarah-Lou
+AU  - Glover SL
+AD  - Parental Minds, Honiton, UK.
+FAU - Duncan, Charlie
+AU  - Duncan C
+AD  - British Association for Counselling and Psychotherapy, Lutterworth, UK.
+FAU - Anastassiou, Andrea
+AU  - Anastassiou A
+AD  - British Association for Counselling and Psychotherapy, Lutterworth, UK.
+FAU - Docherty, Lucy
+AU  - Docherty L
+AD  - University of Bath, Bath, UK.
+FAU - Halligan, Sarah
+AU  - Halligan S
+AD  - University of Bath, Bath, UK.
+LA  - eng
+PT  - Journal Article
+PT  - Meta-Analysis
+PT  - Systematic Review
+DEP - 20240804
+PL  - England
+TA  - BMJ Ment Health
+JT  - BMJ mental health
+JID - 9918521385306676
+SB  - IM
+MH  - Humans
+MH  - Child
+MH  - Adolescent
+MH  - *Parents/psychology
+MH  - *Caregivers/psychology
+MH  - Stress, Psychological/psychology
+MH  - Depression/psychology/epidemiology
+MH  - Mental Disorders/psychology/epidemiology/nursing
+MH  - Anxiety/psychology
+MH  - Child, Preschool
+MH  - Parenting/psychology
+MH  - Mental Health
+MH  - Male
+MH  - Female
+MH  - Psychological Well-Being
+PMC - PMC11298743
+OTO - NOTNLM
+OT  - adult psychiatry
+OT  - child & adolescent psychiatry
+OT  - data interpretation, statistical
+COIS- Competing interests: None declared.
+EDAT- 2024/08/06 00:41
+MHDA- 2024/08/06 00:42
+PMCR- 2024/08/02
+CRDT- 2024/08/05 20:43
+PHST- 2023/12/18 00:00 [received]
+PHST- 2024/04/26 00:00 [accepted]
+PHST- 2024/08/06 00:42 [medline]
+PHST- 2024/08/06 00:41 [pubmed]
+PHST- 2024/08/05 20:43 [entrez]
+PHST- 2024/08/02 00:00 [pmc-release]
+AID - bmjment-2023-300971 [pii]
+AID - 10.1136/bmjment-2023-300971 [doi]
+PST - epublish
+SO  - BMJ Ment Health. 2024 Aug 4;27(1):e300971. doi: 10.1136/bmjment-2023-300971.
+
+PMID- 36208472
+OWN - NLM
+STAT- MEDLINE
+DCOM- 20230213
+LR  - 20250623
+IS  - 1469-8749 (Electronic)
+IS  - 0012-1622 (Print)
+IS  - 0012-1622 (Linking)
+VI  - 65
+IP  - 3
+DP  - 2023 Mar
+TI  - Psychological interventions targeting mental health and the mother-child 
+      relationship in autism: Systematic review and meta-analysis.
+PG  - 329-345
+LID - 10.1111/dmcn.15432 [doi]
+AB  - AIM: To investigate the efficacy of psychological interventions delivered to 
+      mothers of young children with autism spectrum disorder (ASD) in improving 
+      maternal mental health and the parent-child relationship. METHOD: Electronic 
+      databases were searched from inception to December 2021. Studies were included if 
+      they were randomized controlled trials (RCTs) of psychological interventions that 
+      targeted maternal mental health (primary outcome) and/or the parent-child 
+      relationship (secondary outcome), delivered to mothers of children (mean 
+      age < 60 months) with ASD. Meta-analyses of three parent mental health outcomes 
+      (stress, depressive symptomatology, and general mental health) and seven 
+      parent-child relationship outcomes (parent responsiveness, affect, directiveness, 
+      non-directiveness, child initiation, infant positive affect, and infant 
+      attentiveness) were conducted using both mean and standardized mean differences. 
+      RESULTS: Thirty-two RCTs met the inclusion criteria (2336 participants). Six RCTs 
+      showed improved maternal mental health (Cohen's d = 0.41-1.15), with moderate 
+      certainty of evidence for improvement in parental stress. There was low and high 
+      certainty of evidence of treatment effect on parental depressive symptoms and 
+      general mental health respectively, which did not show significant treatment 
+      effects post-intervention. Seventeen RCTs showed improved parent-child 
+      relationship (d = 0.33-2.28; low certainty of evidence). INTERPRETATION: Results 
+      demonstrated that parenting interventions promoting responsiveness had the 
+      largest positive effect on the parent-child relationship and a moderate effect on 
+      overall parenting stress; however, the studies were heterogeneous, making it 
+      difficult to identify the intervention components that were responsible for the 
+      positive treatment effects. There was no significant treatment effect for studies 
+      targeting depression or general mental health, likely due to the lack of an 
+      interventional component directly targeting mental health.
+CI  - © 2022 The Authors. Developmental Medicine & Child Neurology published by John 
+      Wiley & Sons Ltd on behalf of Mac Keith Press.
+FAU - Kulasinghe, Kavindri
+AU  - Kulasinghe K
+AUID- ORCID: 0000-0003-3519-5533
+AD  - Queensland Cerebral Palsy and Rehabilitation Research Centre, Centre for 
+      Children's Health Research, Faculty of Medicine, University of Queensland, 
+      Brisbane, QLD, Australia.
+FAU - Whittingham, Koa
+AU  - Whittingham K
+AUID- ORCID: 0000-0002-5344-9907
+AD  - Queensland Cerebral Palsy and Rehabilitation Research Centre, Centre for 
+      Children's Health Research, Faculty of Medicine, University of Queensland, 
+      Brisbane, QLD, Australia.
+FAU - Mitchell, Amy E
+AU  - Mitchell AE
+AUID- ORCID: 0000-0003-3352-3046
+AD  - School of Nursing and Midwifery, Griffith University, Brisbane, QLD, Australia.
+AD  - Menzies Health Institute Queensland, Griffith University, Brisbane, QLD, 
+      Australia.
+AD  - Parenting and Family Support Centre, School of Psychology, University of 
+      Queensland, Brisbane, QLD, Australia.
+FAU - Boyd, Roslyn N
+AU  - Boyd RN
+AUID- ORCID: 0000-0002-4919-5975
+AD  - Queensland Cerebral Palsy and Rehabilitation Research Centre, Centre for 
+      Children's Health Research, Faculty of Medicine, University of Queensland, 
+      Brisbane, QLD, Australia.
+LA  - eng
+PT  - Journal Article
+PT  - Meta-Analysis
+PT  - Research Support, Non-U.S. Gov't
+PT  - Systematic Review
+DEP - 20221008
+PL  - England
+TA  - Dev Med Child Neurol
+JT  - Developmental medicine and child neurology
+JID - 0006761
+SB  - IM
+MH  - Female
+MH  - Infant
+MH  - Humans
+MH  - Child, Preschool
+MH  - *Mental Health
+MH  - *Autistic Disorder
+MH  - Psychosocial Intervention
+MH  - Mother-Child Relations
+MH  - Parents/psychology
+MH  - Randomized Controlled Trials as Topic
+PMC - PMC10953452
+EDAT- 2022/10/09 06:00
+MHDA- 2023/02/14 06:00
+PMCR- 2024/03/20
+CRDT- 2022/10/08 14:52
+PHST- 2022/08/28 00:00 [revised]
+PHST- 2021/03/08 00:00 [received]
+PHST- 2022/09/02 00:00 [accepted]
+PHST- 2022/10/09 06:00 [pubmed]
+PHST- 2023/02/14 06:00 [medline]
+PHST- 2022/10/08 14:52 [entrez]
+PHST- 2024/03/20 00:00 [pmc-release]
+AID - DMCN15432 [pii]
+AID - 10.1111/dmcn.15432 [doi]
+PST - ppublish
+SO  - Dev Med Child Neurol. 2023 Mar;65(3):329-345. doi: 10.1111/dmcn.15432. Epub 2022 
+      Oct 8.
