@@ -2,6 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Git Workflow
+
+**Always follow this workflow for any task:**
+
+1. **Create a feature branch** before starting work:
+   ```bash
+   git checkout -b feature/<short-description>
+   # Examples: feature/screening-agent, feature/criteria-crud, fix/auth-bug
+   ```
+
+2. **Commit frequently** with clear messages describing changes
+
+3. **Create a pull request** when the task is complete:
+   ```bash
+   git push -u origin <branch-name>
+   gh pr create --title "Description" --body "Summary of changes"
+   ```
+
+4. **Never commit directly to master/main** - always use feature branches
+
 ## Project Overview
 
 Excludr is a FastAPI application for research project management. It uses SQLModel for database models, Celery for background tasks, and Alembic for migrations.
