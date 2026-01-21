@@ -13,6 +13,16 @@ class MessageType(str, Enum):
     BROADCAST = "broadcast"
     ERROR = "error"
     INFO = "info"
+    NOTIFICATION = "notification"
+
+
+class NotificationLevel(str, Enum):
+    """Notification severity levels."""
+
+    INFO = "info"
+    SUCCESS = "success"
+    WARNING = "warning"
+    ERROR = "error"
 
 
 class WebSocketMessage(BaseModel):
