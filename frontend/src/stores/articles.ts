@@ -1,7 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
-import type { Article, ArticleStats, PaginatedResponse, ArticleStatus, FinalDecision } from '@/types'
+import type {
+  Article,
+  ArticleStats,
+  PaginatedResponse,
+  ArticleStatus,
+  FinalDecision,
+  WebSocketResponse,
+} from '@/types'
+import { useWebSocketStore } from './websocket'
 
 export const useArticlesStore = defineStore('articles', () => {
   const { get, getRaw } = useApi()
@@ -17,6 +25,42 @@ export const useArticlesStore = defineStore('articles', () => {
   })
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const lastFetchOptions = ref<any>(null)
+
+  // WebSocket integration
+  let wsUnsubscribe: (() => void) | null = null
+
+  const setupWebSocketListeners = () => {
+    const wsStore = useWebSocketStore()
+
+    wsUnsubscribe = wsStore.onMessage('*', async (response: WebSocketResponse) => {
+      // Handle article status updates
+      if (response.data?.event === 'article_updated' && response.data?.project_id) {
+        await fetchStats(response.data.project_id)
+
+        // Refresh articles list if we have a current project context
+        if (lastFetchOptions.value?.projectId === response.data.project_id) {
+          await fetchArticles(response.data.project_id, lastFetchOptions.value.options)
+        }
+      }
+
+      // Handle upload completion - refresh stats and articles
+      if (response.data?.event === 'upload_complete' && response.data?.project_id) {
+        await fetchStats(response.data.project_id)
+
+        if (lastFetchOptions.value?.projectId === response.data.project_id) {
+          await fetchArticles(response.data.project_id, lastFetchOptions.value.options)
+        }
+      }
+    })
+  }
+
+  const cleanupWebSocketListeners = () => {
+    if (wsUnsubscribe) {
+      wsUnsubscribe()
+      wsUnsubscribe = null
+    }
+  }
 
   const fetchArticles = async (
     projectId: number,
@@ -29,6 +73,9 @@ export const useArticlesStore = defineStore('articles', () => {
   ) => {
     loading.value = true
     error.value = null
+
+    // Save fetch options for WebSocket refresh
+    lastFetchOptions.value = { projectId, options }
 
     try {
       const params = new URLSearchParams()
@@ -83,6 +130,9 @@ export const useArticlesStore = defineStore('articles', () => {
     }
   }
 
+  // Initialize WebSocket listeners
+  setupWebSocketListeners()
+
   return {
     articles,
     currentArticle,
@@ -93,5 +143,7 @@ export const useArticlesStore = defineStore('articles', () => {
     fetchArticles,
     fetchArticle,
     fetchStats,
+    setupWebSocketListeners,
+    cleanupWebSocketListeners,
   }
 })

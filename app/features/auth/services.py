@@ -39,23 +39,33 @@ def verify_password(plain_password, user: User):
     return pwd_context.verify(plain_password, user.hashed_password)
 
 
-def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], us: UserServiceDep):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+def verify_token_and_get_user(token: str, us: UserServiceDep) -> User | None:
+    """
+    Verify JWT token and return the user.
+    Returns None if token is invalid or user not found.
+    This function can be used by both HTTP and WebSocket endpoints.
+    """
     try:
         payload = jwt.decode(
             token, settings.secret_key, algorithms=[settings.algorithm]
         )
         username = payload.get("sub")
         if username is None:
-            raise credentials_exception
+            return None
         token_data = TokenData(username=username)
     except InvalidTokenError:
-        raise credentials_exception from None
+        return None
     user = us.get_user_by_email(token_data.username)
+    return user
+
+
+def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], us: UserServiceDep):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    user = verify_token_and_get_user(token, us)
     if user is None:
         raise credentials_exception
     return user

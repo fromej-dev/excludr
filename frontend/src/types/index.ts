@@ -195,3 +195,44 @@ export interface PaginatedResponse<T> {
   }
   links: PaginationLinks
 }
+
+// WebSocket types
+export type MessageType =
+  | 'text'
+  | 'join_room'
+  | 'leave_room'
+  | 'room_message'
+  | 'broadcast'
+  | 'error'
+  | 'info'
+  | 'notification'
+
+export type NotificationLevel = 'info' | 'success' | 'warning' | 'error'
+
+export interface WebSocketMessage {
+  type: MessageType
+  data: any
+  room?: string
+}
+
+export interface WebSocketResponse {
+  type: MessageType
+  message: string
+  data?: {
+    level?: NotificationLevel
+    notification?: boolean
+    project_id?: number
+    user_id?: number
+    rooms?: string[]
+    [key: string]: any
+  }
+  room?: string
+}
+
+export interface ToastNotification {
+  id: string
+  message: string
+  level: NotificationLevel
+  duration?: number
+  timestamp: number
+}

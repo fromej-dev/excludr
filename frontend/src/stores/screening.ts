@@ -7,7 +7,9 @@ import type {
   ScreeningDecisionCreate,
   ScreeningStats,
   ScreeningStage,
+  WebSocketResponse,
 } from '@/types'
+import { useWebSocketStore } from './websocket'
 
 export const useScreeningStore = defineStore('screening', () => {
   const { get, post } = useApi()
@@ -17,6 +19,32 @@ export const useScreeningStore = defineStore('screening', () => {
   const stats = ref<ScreeningStats | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  // WebSocket integration
+  let wsUnsubscribe: (() => void) | null = null
+
+  const setupWebSocketListeners = () => {
+    const wsStore = useWebSocketStore()
+
+    wsUnsubscribe = wsStore.onMessage('*', async (response: WebSocketResponse) => {
+      // Handle screening decision updates
+      if (response.data?.event === 'screening_decision' && response.data?.project_id) {
+        await fetchStats(response.data.project_id)
+      }
+
+      // Handle AI screening completion
+      if (response.data?.event === 'ai_screening_complete' && response.data?.project_id) {
+        await fetchStats(response.data.project_id)
+      }
+    })
+  }
+
+  const cleanupWebSocketListeners = () => {
+    if (wsUnsubscribe) {
+      wsUnsubscribe()
+      wsUnsubscribe = null
+    }
+  }
 
   const fetchNextArticle = async (projectId: number, stage: ScreeningStage) => {
     loading.value = true
@@ -87,6 +115,9 @@ export const useScreeningStore = defineStore('screening', () => {
     }
   }
 
+  // Initialize WebSocket listeners
+  setupWebSocketListeners()
+
   return {
     currentArticle,
     decisions,
@@ -97,5 +128,7 @@ export const useScreeningStore = defineStore('screening', () => {
     submitDecision,
     fetchDecisions,
     fetchStats,
+    setupWebSocketListeners,
+    cleanupWebSocketListeners,
   }
 })
