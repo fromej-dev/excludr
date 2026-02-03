@@ -145,11 +145,12 @@ async def upload_fulltext(
     ps: ProjectServiceDep,
     article_service: ArticleServiceDep,
 ):
-    """Upload a full-text PDF for an article."""
+    """Upload a full-text PDF for an article and extract text content."""
     import os
     import shutil
     import uuid
     from app.core.config import get_settings
+    from .pdf_extraction import extract_text_from_pdf_safe
 
     verify_project_ownership(project_id, current_user, ps)
     article = article_service.get_article_by_id(article_id)
@@ -169,13 +170,26 @@ async def upload_fulltext(
     file_path = os.path.join(pdf_dir, safe_filename)
 
     try:
+        # Save the PDF file
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        article_service.set_full_text_retrieved(article, file_path)
+        # Extract text from the PDF
+        extracted_text = extract_text_from_pdf_safe(file_path)
 
-        return {"message": "Full text uploaded successfully", "path": file_path}
+        # Update article with file path and extracted text
+        article_service.set_full_text_retrieved(article, file_path, extracted_text)
+
+        return {
+            "message": "Full text uploaded successfully",
+            "path": file_path,
+            "text_extracted": extracted_text is not None,
+            "text_length": len(extracted_text) if extracted_text else 0,
+        }
     except Exception as e:
+        # Clean up the file if something went wrong
+        if os.path.exists(file_path):
+            os.remove(file_path)
         raise HTTPException(status_code=500, detail="Failed to upload file") from e
     finally:
         await file.close()
