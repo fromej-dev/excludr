@@ -111,6 +111,11 @@ class Article(SQLModel, table=True):
         default=None,
         description="Local file system path to the stored full text content",
     )
+    full_text_content: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text),
+        description="Extracted text content from the full-text PDF",
+    )
 
     ai_check_status: Optional[str] = Field(
         default="pending",
