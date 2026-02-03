@@ -10,13 +10,18 @@ import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Textarea from '@/components/ui/Textarea.vue'
 import Label from '@/components/ui/Label.vue'
+import AiDecisionPanel from '@/components/screening/AiDecisionPanel.vue'
+import { useWebSocketStore } from '@/stores/websocket'
 
 const route = useRoute()
 const screeningStore = useScreeningStore()
 const criteriaStore = useCriteriaStore()
+const wsStore = useWebSocketStore()
 
 const projectId = computed(() => Number(route.params.id))
 const article = computed(() => screeningStore.currentArticle)
+const aiDecision = computed(() => screeningStore.aiDecision)
+const aiScreeningLoading = computed(() => screeningStore.aiScreeningLoading)
 
 const stage = ref<ScreeningStage>('title_abstract')
 const reasoning = ref('')
@@ -25,14 +30,27 @@ const submitting = ref(false)
 const { i, e, u } = useMagicKeys()
 
 onMounted(async () => {
+  // Join project WebSocket room for real-time updates
+  wsStore.joinProjectRoom(projectId.value)
+
   await criteriaStore.fetchCriteria(projectId.value)
   await screeningStore.fetchStats(projectId.value)
   await loadNextArticle()
 })
 
+onUnmounted(() => {
+  // Leave project WebSocket room
+  wsStore.leaveProjectRoom(projectId.value)
+})
+
 const loadNextArticle = async () => {
   reasoning.value = ''
   await screeningStore.fetchNextArticle(projectId.value, stage.value)
+
+  // Fetch AI decision for the loaded article if one exists
+  if (screeningStore.currentArticle) {
+    await screeningStore.fetchAiDecision(projectId.value, screeningStore.currentArticle.id)
+  }
 }
 
 const submitDecision = async (decision: ScreeningDecisionType) => {
@@ -50,6 +68,25 @@ const submitDecision = async (decision: ScreeningDecisionType) => {
   submitting.value = false
   await screeningStore.fetchStats(projectId.value)
   await loadNextArticle()
+}
+
+const triggerAiScreening = async () => {
+  if (!article.value) return
+
+  const result = await screeningStore.triggerAiScreening(projectId.value, article.value.id)
+  if (result) {
+    wsStore.addNotification('AI screening completed', 'success')
+  }
+}
+
+const triggerBatchAiScreening = async () => {
+  const result = await screeningStore.triggerBatchAiScreening(projectId.value)
+  if (result) {
+    wsStore.addNotification(
+      `Batch AI screening started for ${result.article_count} articles`,
+      'success'
+    )
+  }
 }
 
 // Keyboard shortcuts
@@ -87,7 +124,17 @@ const stats = computed(() => screeningStore.stats)
   <div class="space-y-6">
     <!-- Stats Card -->
     <Card v-if="stats" class="p-6">
-      <h2 class="text-lg font-semibold mb-4">Screening Progress</h2>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold">Screening Progress</h2>
+        <Button
+          @click="triggerBatchAiScreening"
+          :disabled="aiScreeningLoading"
+          variant="outline"
+          size="sm"
+        >
+          {{ aiScreeningLoading ? 'Running...' : 'Run AI Screening (Batch)' }}
+        </Button>
+      </div>
       <div class="grid grid-cols-4 gap-4">
         <div>
           <p class="text-2xl font-bold">{{ stats.total_articles }}</p>
@@ -114,7 +161,17 @@ const stats = computed(() => screeningStore.stats)
         <div class="space-y-4">
           <div class="flex items-start justify-between gap-4">
             <h1 class="text-2xl font-bold flex-1">{{ article.title || 'Untitled' }}</h1>
-            <Badge>{{ article.current_stage }}</Badge>
+            <div class="flex items-center gap-2">
+              <Badge>{{ article.current_stage }}</Badge>
+              <Button
+                v-if="!aiDecision && !aiScreeningLoading"
+                @click="triggerAiScreening"
+                variant="outline"
+                size="sm"
+              >
+                Screen with AI
+              </Button>
+            </div>
           </div>
 
           <div v-if="article.authors.length > 0" class="text-muted-foreground">
@@ -141,6 +198,9 @@ const stats = computed(() => screeningStore.stats)
           </div>
         </div>
       </Card>
+
+      <!-- AI Decision Panel -->
+      <AiDecisionPanel :decision="aiDecision" :loading="aiScreeningLoading" />
 
       <!-- Criteria Reference -->
       <div class="grid gap-4 md:grid-cols-2">

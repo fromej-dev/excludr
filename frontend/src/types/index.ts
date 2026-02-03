@@ -135,6 +135,14 @@ export interface CriteriaEvaluation {
   reasoning?: string
 }
 
+export interface CriterionEvaluation {
+  criterion_code: string
+  criterion_type: string
+  met: boolean | null
+  confidence: number
+  reasoning: string
+}
+
 export interface ScreeningDecision {
   id: number
   article_id: number
@@ -144,7 +152,7 @@ export interface ScreeningDecision {
   confidence_score?: number
   reasoning?: string
   primary_exclusion_reason?: string
-  criteria_evaluations?: Record<string, CriteriaEvaluation>
+  criteria_evaluations?: CriterionEvaluation[] | Record<string, CriteriaEvaluation>
   reviewer_id?: number
   created_at: string
 }
