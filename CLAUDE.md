@@ -24,7 +24,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Excludr is a FastAPI application for research project management. It uses SQLModel for database models, Celery for background tasks, and Alembic for migrations.
+Excludr is a **systematic review screening tool** for researchers. In a systematic review, researchers must screen large numbers of articles against predefined inclusion and exclusion criteria. Excludr focuses on the **full-text review stage**, using a **pydantic-ai agent** to assist with screening decisions.
+
+### Core Workflow
+
+1. A researcher creates a **project** with a review question
+2. They import articles (RIS or PubMed format)
+3. They define **inclusion/exclusion criteria** (e.g., I1, E1) with descriptions and rationale
+4. Articles are screened against criteria — either by the **AI screening agent** or by **human reviewers**
+5. The AI agent evaluates each article's full text, produces per-criterion assessments with confidence scores and reasoning, and recommends include/exclude/uncertain
+6. Human reviewers can review AI decisions, override them, or screen independently
+7. Articles reach a final decision: **included** or **excluded**
+
+### Key Concepts
+
+- **Article pipeline**: `imported → screening → awaiting_full_text → full_text_retrieved → included/excluded`
+- **Screening stages**: `title_abstract` | `full_text` | `completed`
+- **Decision sources**: `ai_agent` | `human`
+- **Criteria types**: `inclusion` | `exclusion` — each with a code, description, and rationale
+
+### Tech Stack
+
+- **FastAPI** — web framework
+- **SQLModel** — ORM (SQLAlchemy + Pydantic)
+- **pydantic-ai** — AI screening agent
+- **Celery + Redis** — background tasks
+- **Alembic** — database migrations
+- **Prefect** — workflow orchestration for file parsing
+- **Vue 3** — frontend (in progress)
 
 ## Common Commands
 
@@ -79,7 +106,7 @@ docker-compose up -d
 ### Application Structure
 - `app/main.py` - FastAPI app entry point
 - `app/core/` - Core infrastructure (config, database, API router, Celery)
-- `app/features/` - Feature modules (auth, users, projects, research)
+- `app/features/` - Feature modules (auth, users, projects, research, criteria, screening)
 
 ### Feature Module Pattern
 Each feature in `app/features/` follows this structure:
