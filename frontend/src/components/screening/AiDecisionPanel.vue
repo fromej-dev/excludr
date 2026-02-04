@@ -65,10 +65,10 @@ const criteriaEvaluations = computed(() => {
   // Convert object format to array
   return Object.entries(props.decision.criteria_evaluations).map(([code, evaluation]) => ({
     criterion_code: code,
-    criterion_type: 'unknown',
+    criterion_type: evaluation.criterion_type,
     met: evaluation.met,
-    confidence: 1.0,
-    reasoning: evaluation.reasoning || '',
+    confidence: evaluation.confidence,
+    reasoning: evaluation.reasoning,
   })) as CriterionEvaluation[]
 })
 
@@ -83,6 +83,14 @@ const getCriterionTypeClass = (type: string) => {
   if (type === 'exclusion') return 'text-red-600'
   return 'text-muted-foreground'
 }
+
+const inclusionEvaluations = computed(() => {
+  return criteriaEvaluations.value.filter((e) => e.criterion_type === 'inclusion')
+})
+
+const exclusionEvaluations = computed(() => {
+  return criteriaEvaluations.value.filter((e) => e.criterion_type === 'exclusion')
+})
 </script>
 
 <template>
@@ -133,37 +141,71 @@ const getCriterionTypeClass = (type: string) => {
         </div>
 
         <!-- Criteria Evaluations -->
-        <div v-if="criteriaEvaluations.length > 0" class="space-y-3">
+        <div v-if="criteriaEvaluations.length > 0" class="space-y-4">
           <h4 class="text-sm font-semibold">Criteria Evaluations</h4>
 
-          <div class="space-y-2">
-            <div
-              v-for="(evaluation, index) in criteriaEvaluations"
-              :key="index"
-              class="border rounded-lg p-3 space-y-2"
-            >
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
+          <!-- Inclusion Criteria -->
+          <div v-if="inclusionEvaluations.length > 0" class="space-y-2">
+            <h5 class="text-xs font-semibold text-green-600 uppercase tracking-wide">
+              Inclusion Criteria
+            </h5>
+            <div class="space-y-2">
+              <div
+                v-for="(evaluation, index) in inclusionEvaluations"
+                :key="index"
+                class="border rounded-lg p-3 space-y-2"
+              >
+                <div class="flex items-center justify-between">
                   <Badge variant="outline" class="font-mono">
                     {{ evaluation.criterion_code }}
                   </Badge>
-                  <span class="text-xs" :class="getCriterionTypeClass(evaluation.criterion_type)">
-                    {{ evaluation.criterion_type }}
-                  </span>
+
+                  <div class="flex items-center gap-2">
+                    <Badge :class="getMetStatusBadge(evaluation.met).class" class="text-xs">
+                      {{ getMetStatusBadge(evaluation.met).text }}
+                    </Badge>
+                    <span class="text-xs text-muted-foreground">
+                      {{ Math.round(evaluation.confidence * 100) }}%
+                    </span>
+                  </div>
                 </div>
 
-                <div class="flex items-center gap-2">
-                  <Badge :class="getMetStatusBadge(evaluation.met).class" class="text-xs">
-                    {{ getMetStatusBadge(evaluation.met).text }}
-                  </Badge>
-                  <span class="text-xs text-muted-foreground">
-                    {{ Math.round(evaluation.confidence * 100) }}%
-                  </span>
+                <div v-if="evaluation.reasoning" class="text-xs text-muted-foreground leading-relaxed">
+                  {{ evaluation.reasoning }}
                 </div>
               </div>
+            </div>
+          </div>
 
-              <div v-if="evaluation.reasoning" class="text-xs text-muted-foreground leading-relaxed">
-                {{ evaluation.reasoning }}
+          <!-- Exclusion Criteria -->
+          <div v-if="exclusionEvaluations.length > 0" class="space-y-2">
+            <h5 class="text-xs font-semibold text-red-600 uppercase tracking-wide">
+              Exclusion Criteria
+            </h5>
+            <div class="space-y-2">
+              <div
+                v-for="(evaluation, index) in exclusionEvaluations"
+                :key="index"
+                class="border rounded-lg p-3 space-y-2"
+              >
+                <div class="flex items-center justify-between">
+                  <Badge variant="outline" class="font-mono">
+                    {{ evaluation.criterion_code }}
+                  </Badge>
+
+                  <div class="flex items-center gap-2">
+                    <Badge :class="getMetStatusBadge(evaluation.met).class" class="text-xs">
+                      {{ getMetStatusBadge(evaluation.met).text }}
+                    </Badge>
+                    <span class="text-xs text-muted-foreground">
+                      {{ Math.round(evaluation.confidence * 100) }}%
+                    </span>
+                  </div>
+                </div>
+
+                <div v-if="evaluation.reasoning" class="text-xs text-muted-foreground leading-relaxed">
+                  {{ evaluation.reasoning }}
+                </div>
               </div>
             </div>
           </div>
