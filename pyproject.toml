@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.16.4",
     "faker>=37.5.3",
-    "fastapi[standard]>=1.0.3",
+    "fastapi[standard]>=0.115.0",
     "fastapi-fsp>=0.2.1",
     "httpx>=0.28.1",
     "passlib[bcrypt]>=1.7.4",
@@ -21,6 +21,9 @@ dependencies = [
     "pydantic-ai>=1.0.1",
     "rispy>=0.10.0",
 ]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=app --cov-report=term-missing"
