@@ -131,8 +131,10 @@ export type ScreeningDecisionType = 'include' | 'exclude' | 'uncertain'
 export type DecisionSource = 'ai_agent' | 'human'
 
 export interface CriteriaEvaluation {
-  met: boolean
-  reasoning?: string
+  criterion_type: string
+  met: boolean | null
+  confidence: number
+  reasoning: string
 }
 
 export interface CriterionEvaluation {
