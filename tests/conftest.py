@@ -1,6 +1,7 @@
 from typing import Callable
 
 import pytest
+from faker import Faker
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
@@ -11,6 +12,11 @@ from app.features.projects.models import Project
 from app.features.users.models import User
 from app.features.users.services import UserService
 from app.main import app
+
+
+@pytest.fixture(name="faker", scope="session")
+def faker_fixture():
+    return Faker()
 
 
 @pytest.fixture(name="engine", scope="session")

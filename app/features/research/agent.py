@@ -32,27 +32,31 @@ class ScreeningDeps:
     criteria: list[dict]
 
 
-# Initialize the screening agent
-settings = get_settings()
-model_name = f"anthropic:{settings.default_llm_model}"
-
-screening_agent = Agent(
-    model_name,
-    result_type=ScreeningResult,
-    deps_type=ScreeningDeps,
-)
+# Lazy-initialized screening agent (deferred to avoid requiring API key at import time)
+_screening_agent: Optional[Agent] = None
 
 
-@screening_agent.system_prompt
-async def build_system_prompt(ctx: RunContext[ScreeningDeps]) -> str:
-    """Build a dynamic system prompt with review question and criteria.
+def get_screening_agent() -> Agent:
+    """Get or create the screening agent (lazy initialization)."""
+    global _screening_agent
+    if _screening_agent is None:
+        settings = get_settings()
+        model_name = f"anthropic:{settings.default_llm_model}"
+        _screening_agent = Agent(
+            model_name,
+            result_type=ScreeningResult,
+            deps_type=ScreeningDeps,
+        )
 
-    Args:
-        ctx: Run context containing dependencies with review question and criteria
+        @_screening_agent.system_prompt
+        async def build_system_prompt(ctx: RunContext[ScreeningDeps]) -> str:
+            return _build_system_prompt(ctx)
 
-    Returns:
-        System prompt string for the agent
-    """
+    return _screening_agent
+
+
+def _build_system_prompt(ctx: RunContext[ScreeningDeps]) -> str:
+    """Build a dynamic system prompt with review question and criteria."""
     review_question = ctx.deps.review_question
     criteria = ctx.deps.criteria
 
@@ -235,7 +239,8 @@ async def screen_article(
 
     # Run the agent
     try:
-        result = await screening_agent.run(article_text, deps=deps)
+        agent = get_screening_agent()
+        result = await agent.run(article_text, deps=deps)
         screening_result: ScreeningResult = result.data
 
         # Determine screening stage based on whether full text was used

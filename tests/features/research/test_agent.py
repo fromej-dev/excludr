@@ -241,10 +241,11 @@ class TestScreenArticle:
         mock_run_result = MagicMock()
         mock_run_result.data = mock_result
 
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
         with patch(
-            "app.features.research.agent.screening_agent.run",
-            new_callable=AsyncMock,
-            return_value=mock_run_result,
+            "app.features.research.agent.get_screening_agent",
+            return_value=mock_agent,
         ):
             decision = await screen_article(
                 article=sample_article,
@@ -324,10 +325,11 @@ class TestScreenArticle:
         mock_run_result = MagicMock()
         mock_run_result.data = mock_result
 
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
         with patch(
-            "app.features.research.agent.screening_agent.run",
-            new_callable=AsyncMock,
-            return_value=mock_run_result,
+            "app.features.research.agent.get_screening_agent",
+            return_value=mock_agent,
         ):
             decision = await screen_article(
                 article=sample_article,
@@ -394,10 +396,11 @@ class TestScreenArticle:
         mock_run_result = MagicMock()
         mock_run_result.data = mock_result
 
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
         with patch(
-            "app.features.research.agent.screening_agent.run",
-            new_callable=AsyncMock,
-            return_value=mock_run_result,
+            "app.features.research.agent.get_screening_agent",
+            return_value=mock_agent,
         ):
             decision = await screen_article(
                 article=sample_article,
@@ -468,10 +471,11 @@ class TestScreenArticle:
         mock_run_result = MagicMock()
         mock_run_result.data = mock_result
 
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
         with patch(
-            "app.features.research.agent.screening_agent.run",
-            new_callable=AsyncMock,
-            return_value=mock_run_result,
+            "app.features.research.agent.get_screening_agent",
+            return_value=mock_agent,
         ):
             decision = await screen_article(
                 article=sample_article,
@@ -492,10 +496,11 @@ class TestScreenArticle:
         sample_project: Project,
     ):
         """Test that agent errors are handled gracefully."""
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(side_effect=Exception("API rate limit exceeded"))
         with patch(
-            "app.features.research.agent.screening_agent.run",
-            new_callable=AsyncMock,
-            side_effect=Exception("API rate limit exceeded"),
+            "app.features.research.agent.get_screening_agent",
+            return_value=mock_agent,
         ):
             with pytest.raises(Exception, match="API rate limit exceeded"):
                 await screen_article(
@@ -564,10 +569,11 @@ class TestScreenArticle:
         mock_run_result = MagicMock()
         mock_run_result.data = mock_result
 
+        mock_agent = MagicMock()
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
         with patch(
-            "app.features.research.agent.screening_agent.run",
-            new_callable=AsyncMock,
-            return_value=mock_run_result,
+            "app.features.research.agent.get_screening_agent",
+            return_value=mock_agent,
         ):
             decision = await screen_article(
                 article=sample_article,
