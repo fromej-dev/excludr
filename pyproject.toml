@@ -31,6 +31,9 @@ pythonpath = ["."]
 testpaths = [
     "tests",
 ]
+markers = [
+    "e2e: End-to-end integration tests that test complete user flows",
+]
 
 [tool.coverage.run]
 omit = ["*/tests/*", "*/venv/*"]
