@@ -17,7 +17,9 @@ settings = get_settings()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_prefix}/auth/token")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["bcrypt"], deprecated="auto", bcrypt__truncate_error=False
+)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -36,7 +38,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
 
 def verify_password(plain_password, user: User):
-    return pwd_context.verify(plain_password, user.hashed_password)
+    return pwd_context.verify(plain_password[:72], user.hashed_password)
 
 
 def verify_token_and_get_user(token: str, us: UserServiceDep) -> User | None:
