@@ -76,10 +76,8 @@ class UserService:
         Returns:
             str: Hashed password
         """
-        pwd_context = CryptContext(
-            schemes=["bcrypt"], deprecated="auto", bcrypt__truncate_error=False
-        )
-        return pwd_context.hash(password[:72])
+        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        return pwd_context.hash(password)
 
 
 def get_user_service(session: SessionDep):

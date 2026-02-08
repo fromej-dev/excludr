@@ -83,12 +83,13 @@ def test_register_and_login_flow(client: TestClient, faker):
 @pytest.mark.e2e
 def test_register_duplicate_email(client: TestClient, faker):
     """
-    Test that registering with a duplicate email returns an error.
+    Test that registering with a duplicate email is rejected.
 
     Steps:
     1. Register a user
     2. Try to register again with the same email
-    3. Expect error response
+    3. Expect an error (the app currently lacks a graceful handler,
+       so this may surface as an IntegrityError or a 4xx/5xx response)
     """
     email = faker.email()
     registration_data = {
@@ -116,8 +117,8 @@ def test_register_duplicate_email(client: TestClient, faker):
         json=duplicate_data,
     )
 
-    assert second_response.status_code in [400, 409, 422]  # Bad request or conflict
-    assert "detail" in second_response.json()
+    assert second_response.status_code == 409
+    assert "already registered" in second_response.json()["detail"].lower()
 
 
 @pytest.mark.e2e
