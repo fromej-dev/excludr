@@ -30,4 +30,6 @@ def register(
     data: UserCreate,
     us: UserServiceDep,
 ):
+    if us.get_user_by_email(data.email):
+        raise HTTPException(status_code=409, detail="Email already registered")
     return us.create_user(data)
