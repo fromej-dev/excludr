@@ -42,7 +42,7 @@ def test_article_lifecycle(auth_as, a_project, an_article):
     assert response.status_code == 200
     data = response.json()
     assert len(data["data"]) == 3
-    assert data["meta"]["pagination"]["total"] == 3
+    assert data["meta"]["pagination"]["total_items"] == 3
 
     # Get individual article
     response = client.get(f"{API}/projects/{project.id}/articles/{article1.id}")
@@ -65,7 +65,7 @@ def test_article_lifecycle(auth_as, a_project, an_article):
     assert response.status_code == 200
     data = response.json()
     assert len(data["data"]) == 2
-    assert data["meta"]["pagination"]["total"] == 2
+    assert data["meta"]["pagination"]["total_items"] == 2
 
     # Verify deleted article no longer accessible
     response = client.get(f"{API}/projects/{project.id}/articles/{article2.id}")
@@ -371,6 +371,8 @@ def test_article_ownership_isolation(auth_as, a_user, a_project, an_article):
     assert response.status_code == 403
 
     # Verify User A can still access their own articles
+    # Re-authenticate as user_a since auth_as shares the same client
+    auth_as(user_a)
     response = client_a.get(f"{API}/projects/{project_a.id}/articles/{article_a.id}")
     assert response.status_code == 200
     assert response.json()["title"] == "User A's Article"

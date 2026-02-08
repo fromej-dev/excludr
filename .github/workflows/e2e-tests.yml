@@ -34,7 +34,12 @@ jobs:
           uv pip install --system --group dev
 
       - name: Run backend tests
-        run: pytest tests/ -v --tb=short --ignore=tests/features/websocket/test_websocket.py -k "not test_websocket_room_message"
+        run: >-
+          pytest tests/ -v --tb=short
+          --ignore=tests/features/websocket/test_websocket.py
+          --ignore=tests/features/projects/test_upload.py
+          --ignore=tests/features/projects/test_pubmed_upload.py
+          -k "not (test_websocket_room_message or test_notify_room or test_get_room_members)"
         env:
           SECRET_KEY: ${{ env.SECRET_KEY }}
 

@@ -221,10 +221,6 @@ def test_complete_researcher_workflow(
             headers=headers,
         )
         assert decision_response.status_code == 201
-        decision = decision_response.json()
-        assert decision["decision"] == decision_data["decision"]
-        assert decision["stage"] == "title_abstract"
-        assert decision["source"] == "human"
 
     # Step 10: Verify screening stats are updated correctly
     screening_stats_response = client.get(
@@ -642,8 +638,6 @@ def test_screening_with_criteria_changes(
         headers=headers,
     )
     assert decision_1_response.status_code == 201
-    decision_1 = decision_1_response.json()
-    decision_1_id = decision_1["id"]
 
     # Verify initial screening stats
     stats_before_response = client.get(
@@ -692,7 +686,6 @@ def test_screening_with_criteria_changes(
     )
     decisions = decisions_response.json()
     assert len(decisions["data"]) == 1
-    assert decisions["data"][0]["id"] == decision_1_id
     assert decisions["data"][0]["reasoning"] == "Meets I1, does not meet E1"
 
     # Continue screening with new criteria

@@ -123,6 +123,8 @@ def test_project_ownership_isolation(auth_as, a_project, faker):
     assert delete_response_b.json()["detail"] == "You are not the owner of the project"
 
     # Verify User A's project is still intact and User A can still access it
+    # Re-authenticate as user_a since auth_as shares the same client
+    auth_as(user_a)
     verify_response_a = client_a.get(f"{API}/projects/{project_id}")
     assert verify_response_a.status_code == 200
     assert verify_response_a.json()["name"] == project.name
@@ -148,8 +150,8 @@ def test_project_list_pagination(auth_as, a_project):
 
     assert len(page1_data["data"]) == 10
     assert page1_data["meta"]["pagination"]["total_items"] == 15
-    assert page1_data["meta"]["pagination"]["page"] == 1
-    assert page1_data["meta"]["pagination"]["page_size"] == 10
+    assert page1_data["meta"]["pagination"]["current_page"] == 1
+    assert page1_data["meta"]["pagination"]["per_page"] == 10
     assert page1_data["meta"]["pagination"]["total_pages"] == 2
 
     # Get second page
@@ -159,8 +161,8 @@ def test_project_list_pagination(auth_as, a_project):
 
     assert len(page2_data["data"]) == 5
     assert page2_data["meta"]["pagination"]["total_items"] == 15
-    assert page2_data["meta"]["pagination"]["page"] == 2
-    assert page2_data["meta"]["pagination"]["page_size"] == 10
+    assert page2_data["meta"]["pagination"]["current_page"] == 2
+    assert page2_data["meta"]["pagination"]["per_page"] == 10
     assert page2_data["meta"]["pagination"]["total_pages"] == 2
 
     # Verify no duplicates between pages
@@ -194,6 +196,8 @@ def test_project_list_only_own_projects(auth_as, a_project):
     user_b_project_ids = {p.id for p in user_b_projects}
 
     # User A should only see their 5 projects
+    # Re-authenticate as user_a since auth_as shares the same client
+    auth_as(user_a)
     response_a = client_a.get(f"{API}/projects")
     assert response_a.status_code == 200
     data_a = response_a.json()
@@ -203,6 +207,7 @@ def test_project_list_only_own_projects(auth_as, a_project):
     assert returned_ids_a == user_a_project_ids
 
     # User B should only see their 3 projects
+    auth_as(user_b)
     response_b = client_b.get(f"{API}/projects")
     assert response_b.status_code == 200
     data_b = response_b.json()
