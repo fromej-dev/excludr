@@ -10,8 +10,13 @@ settings = get_settings()
 
 def lifespan(app: FastAPI):
     print("Starting the application")
-    # not needed since we are using Alembic
-    # create_db_and_tables()
+    # Auto-create tables for SQLite (used in E2E/development).
+    # Production uses Alembic migrations with PostgreSQL.
+    if settings.database_url.startswith("sqlite"):
+        from sqlmodel import SQLModel
+        from app.core.database import engine
+
+        SQLModel.metadata.create_all(engine)
     os.makedirs(settings.upload_directory, exist_ok=True)
     yield
     print("Stopping the application")

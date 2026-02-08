@@ -2,8 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import func, Column
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy import func, Column, JSON
 from sqlmodel import SQLModel, Field, Relationship
 
 
