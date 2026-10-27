@@ -1,7 +1,7 @@
 """AI screening agent using pydantic-ai for systematic review screening."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -9,7 +9,7 @@ from pydantic_ai import Agent, RunContext
 from sqlmodel import Session
 
 from app.core.config import get_settings
-from app.features.criteria.models import Criterion, CriterionType
+from app.features.criteria.models import Criterion
 from app.features.research.models import Article, ScreeningStage
 from app.features.research.schemas import ScreeningResult
 from app.features.screening.models import (
@@ -44,7 +44,7 @@ def get_screening_agent() -> Agent:
         model_name = f"anthropic:{settings.default_llm_model}"
         _screening_agent = Agent(
             model_name,
-            result_type=ScreeningResult,
+            output_type=ScreeningResult,
             deps_type=ScreeningDeps,
         )
 
@@ -241,7 +241,7 @@ async def screen_article(
     try:
         agent = get_screening_agent()
         result = await agent.run(article_text, deps=deps)
-        screening_result: ScreeningResult = result.data
+        screening_result: ScreeningResult = result.output
 
         # Determine screening stage based on whether full text was used
         stage = (
@@ -292,7 +292,7 @@ async def screen_article(
             "criteria_evaluations": criteria_evaluations,
             "summary": screening_result.summary_reasoning,
         }
-        article.last_ai_check = datetime.utcnow()
+        article.last_ai_check = datetime.now(timezone.utc)
 
         session.add(article)
         session.commit()
@@ -304,7 +304,7 @@ async def screen_article(
         # Update article with error status
         article.ai_check_status = "error"
         article.ai_check_result = {"error": str(e)}
-        article.last_ai_check = datetime.utcnow()
+        article.last_ai_check = datetime.now(timezone.utc)
         session.add(article)
         session.commit()
         raise

@@ -1,6 +1,5 @@
 """Tests for the AI screening agent."""
 
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -18,11 +17,9 @@ from app.features.research.models import Article
 from app.features.research.schemas import CriterionEvaluation, ScreeningResult
 from app.features.screening.models import (
     DecisionSource,
-    ScreeningDecision,
     ScreeningDecisionType,
     ScreeningStage,
 )
-from app.features.users.models import User
 
 
 @pytest.fixture
@@ -170,7 +167,10 @@ class TestPrepareCriteriaList:
         # Check first criterion
         i1 = next(c for c in criteria_dicts if c["code"] == "I1")
         assert i1["type"] == "inclusion"
-        assert i1["description"] == "Study investigates the effects of exercise on mental health"
+        assert (
+            i1["description"]
+            == "Study investigates the effects of exercise on mental health"
+        )
         assert "directly relevant" in i1["rationale"]
 
     def test_filters_inactive_criteria(
@@ -239,7 +239,7 @@ class TestScreenArticle:
         )
 
         mock_run_result = MagicMock()
-        mock_run_result.data = mock_result
+        mock_run_result.output = mock_result
 
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -323,7 +323,7 @@ class TestScreenArticle:
         )
 
         mock_run_result = MagicMock()
-        mock_run_result.data = mock_result
+        mock_run_result.output = mock_result
 
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -394,7 +394,7 @@ class TestScreenArticle:
         )
 
         mock_run_result = MagicMock()
-        mock_run_result.data = mock_result
+        mock_run_result.output = mock_result
 
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -469,7 +469,7 @@ class TestScreenArticle:
         )
 
         mock_run_result = MagicMock()
-        mock_run_result.data = mock_result
+        mock_run_result.output = mock_result
 
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -567,7 +567,7 @@ class TestScreenArticle:
         )
 
         mock_run_result = MagicMock()
-        mock_run_result.data = mock_result
+        mock_run_result.output = mock_result
 
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_run_result)

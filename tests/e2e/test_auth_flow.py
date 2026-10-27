@@ -292,7 +292,9 @@ def test_full_auth_lifecycle(client: TestClient, faker):
         json=user_credentials,
     )
 
-    assert register_response.status_code == 201, f"Registration failed: {register_response.json()}"
+    assert register_response.status_code == 201, (
+        f"Registration failed: {register_response.json()}"
+    )
 
     registered_user = register_response.json()
     assert registered_user["email"] == user_credentials["email"]
@@ -332,7 +334,9 @@ def test_full_auth_lifecycle(client: TestClient, faker):
         headers={"Authorization": f"Bearer {access_token}"},
     )
 
-    assert me_response.status_code == 200, f"Failed to access /users/me: {me_response.json()}"
+    assert me_response.status_code == 200, (
+        f"Failed to access /users/me: {me_response.json()}"
+    )
 
     current_user = me_response.json()
 

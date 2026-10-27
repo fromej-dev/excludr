@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from sqlmodel import Field, SQLModel, Column, JSON, Text, Relationship
 
@@ -10,6 +10,11 @@ if TYPE_CHECKING:
 
 # Import ScreeningStage from screening to avoid duplication
 from app.features.screening.models import ScreeningStage
+
+
+def _utcnow() -> datetime:
+    """Return the current time as a timezone-aware UTC datetime."""
+    return datetime.now(timezone.utc)
 
 
 class ArticleStatus(str, Enum):
@@ -158,9 +163,9 @@ class Article(SQLModel, table=True):
         default=None,
         description="The name of the RIS file this article originated from",
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=_utcnow,
         nullable=False,
-        sa_column_kwargs={"onupdate": datetime.utcnow},
+        sa_column_kwargs={"onupdate": _utcnow},
     )

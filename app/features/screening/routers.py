@@ -156,7 +156,7 @@ async def screen_article_with_ai(
     # Fetch active criteria
     criteria = session.exec(
         select(Criterion).where(
-            Criterion.project_id == project_id, Criterion.is_active == True
+            Criterion.project_id == project_id, Criterion.is_active.is_(True)
         )
     ).all()
 
@@ -321,7 +321,7 @@ async def run_batch_ai_screening(
     # Fetch active criteria
     criteria = session.exec(
         select(Criterion).where(
-            Criterion.project_id == project_id, Criterion.is_active == True
+            Criterion.project_id == project_id, Criterion.is_active.is_(True)
         )
     ).all()
 
@@ -336,7 +336,9 @@ async def run_batch_ai_screening(
     # AND no existing AI decision for current stage
     query = select(Article).where(
         Article.project_id == project_id,
-        Article.status.in_([ArticleStatus.screening, ArticleStatus.full_text_retrieved]),
+        Article.status.in_(
+            [ArticleStatus.screening, ArticleStatus.full_text_retrieved]
+        ),
     )
 
     # Apply stage filter if provided
@@ -350,8 +352,7 @@ async def run_batch_ai_screening(
     eligible_articles = []
     for article in all_articles:
         existing_ai_decision = session.exec(
-            select(ScreeningDecision)
-            .where(
+            select(ScreeningDecision).where(
                 ScreeningDecision.article_id == article.id,
                 ScreeningDecision.source == DecisionSource.ai_agent,
                 ScreeningDecision.stage == article.current_stage,

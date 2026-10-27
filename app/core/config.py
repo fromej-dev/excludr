@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # AI/LLM settings
     anthropic_api_key: Optional[str] = None
-    default_llm_model: str = "claude-sonnet-4-20250514"
+    default_llm_model: str = "claude-sonnet-5-5"
     screening_confidence_threshold: float = 0.7
 
     # Unpaywall settings for full-text retrieval

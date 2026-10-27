@@ -100,7 +100,10 @@ class ArticleService:
         return article
 
     def set_full_text_retrieved(
-        self, article: Article, full_text_path: str, full_text_content: str | None = None
+        self,
+        article: Article,
+        full_text_path: str,
+        full_text_content: str | None = None,
     ) -> Article:
         """
         Mark an article as having its full text retrieved.

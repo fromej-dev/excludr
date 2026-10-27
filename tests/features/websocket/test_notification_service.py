@@ -98,9 +98,10 @@ async def test_notify_room(client: TestClient, a_user, token_for):
     token1 = token_for(user1)
     token2 = token_for(user2)
 
-    with client.websocket_connect(
-        f"/api/v1/ws?token={token1}"
-    ) as ws1, client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2:
+    with (
+        client.websocket_connect(f"/api/v1/ws?token={token1}") as ws1,
+        client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2,
+    ):
         # Skip welcome messages
         ws1.receive_text()
         ws2.receive_text()
@@ -160,13 +161,11 @@ async def test_broadcast(client: TestClient, a_user, token_for):
     token2 = token_for(user2)
     token3 = token_for(user3)
 
-    with client.websocket_connect(
-        f"/api/v1/ws?token={token1}"
-    ) as ws1, client.websocket_connect(
-        f"/api/v1/ws?token={token2}"
-    ) as ws2, client.websocket_connect(
-        f"/api/v1/ws?token={token3}"
-    ) as ws3:
+    with (
+        client.websocket_connect(f"/api/v1/ws?token={token1}") as ws1,
+        client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2,
+        client.websocket_connect(f"/api/v1/ws?token={token3}") as ws3,
+    ):
         # Skip welcome messages
         ws1.receive_text()
         ws2.receive_text()
@@ -277,9 +276,10 @@ async def test_get_room_members(client: TestClient, a_user, token_for):
 
     room_name = "test_room"
 
-    with client.websocket_connect(
-        f"/api/v1/ws?token={token1}"
-    ) as ws1, client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2:
+    with (
+        client.websocket_connect(f"/api/v1/ws?token={token1}") as ws1,
+        client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2,
+    ):
         # Skip welcome messages
         ws1.receive_text()
         ws2.receive_text()

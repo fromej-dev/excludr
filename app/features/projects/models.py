@@ -38,8 +38,14 @@ class Project(ProjectBase, table=True):
     owner_id: int = Field(foreign_key="user.id")
 
     owner: "User" = Relationship(back_populates="projects")  # noqa: F821
-    articles: List["Article"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})  # noqa: F821
-    criteria: List["Criterion"] = Relationship(back_populates="project", sa_relationship_kwargs={"cascade": "all, delete-orphan"})  # noqa: F821
+    articles: List["Article"] = Relationship(  # noqa: F821
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    criteria: List["Criterion"] = Relationship(  # noqa: F821
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
     @computed_field
     @property

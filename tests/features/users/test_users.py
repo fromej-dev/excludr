@@ -1,5 +1,9 @@
-def test_users(admin_client, a_user):
+def test_users(admin_client, a_user, session):
     user = a_user()
+    # Unique name so the contains-filter below cannot match random faker names
+    user.name = "Zyxwvut Qwerty"
+    session.add(user)
+    session.commit()
     res = admin_client.get("api/v1/users")
     assert res.status_code == 200
     assert res.json()
@@ -16,7 +20,7 @@ def test_users(admin_client, a_user):
 
     # test filtering
     res = admin_client.get(
-        f"api/v1/users?field=name&operator=contains&value={user.name[2:5]}"
+        f"api/v1/users?field=name&operator=contains&value={user.name[2:6]}"
     )
     assert res.status_code == 200
     assert res.json()

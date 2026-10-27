@@ -270,10 +270,22 @@ def project_with_criteria_fixture(a_project, a_criterion, a_user):
             user = a_user()
         project = a_project(user)
         criteria = [
-            a_criterion(project.id, CriterionType.inclusion, "I1", "Population includes adults"),
-            a_criterion(project.id, CriterionType.inclusion, "I2", "Study is an RCT", order=1),
-            a_criterion(project.id, CriterionType.exclusion, "E1", "Non-English language"),
-            a_criterion(project.id, CriterionType.exclusion, "E2", "Animal studies only", order=1),
+            a_criterion(
+                project.id, CriterionType.inclusion, "I1", "Population includes adults"
+            ),
+            a_criterion(
+                project.id, CriterionType.inclusion, "I2", "Study is an RCT", order=1
+            ),
+            a_criterion(
+                project.id, CriterionType.exclusion, "E1", "Non-English language"
+            ),
+            a_criterion(
+                project.id,
+                CriterionType.exclusion,
+                "E2",
+                "Animal studies only",
+                order=1,
+            ),
         ]
         return project, user, criteria
 
@@ -306,8 +318,12 @@ def screening_ready_project_fixture(
 
         # Create criteria
         criteria = [
-            a_criterion(project.id, CriterionType.inclusion, "I1", "Population includes adults"),
-            a_criterion(project.id, CriterionType.exclusion, "E1", "Non-English language"),
+            a_criterion(
+                project.id, CriterionType.inclusion, "I1", "Population includes adults"
+            ),
+            a_criterion(
+                project.id, CriterionType.exclusion, "E1", "Non-English language"
+            ),
         ]
 
         return project, user, articles, criteria

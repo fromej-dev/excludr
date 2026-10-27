@@ -9,7 +9,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.core.database import SessionDep
 from app.features.auth.services import get_current_user
 from app.features.users.models import User
 from .services import NotificationService
@@ -235,4 +234,8 @@ async def get_room_members(
 ):
     """Example: Get all users in a specific room."""
     members = NotificationService.get_room_members(room_name)
-    return {"room_name": room_name, "member_count": len(members), "member_ids": list(members)}
+    return {
+        "room_name": room_name,
+        "member_count": len(members),
+        "member_ids": list(members),
+    }

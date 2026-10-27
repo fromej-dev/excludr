@@ -1,6 +1,7 @@
 import json
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from app.features.websocket.manager import ConnectionManager
 from app.features.websocket.schemas import MessageType
@@ -38,14 +39,14 @@ def test_websocket_connect_with_valid_token(client: TestClient, a_user, token_fo
 
 def test_websocket_connect_with_invalid_token(client: TestClient):
     """Test WebSocket connection rejection with invalid token."""
-    with pytest.raises(Exception):
+    with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/api/v1/ws?token=invalid_token"):
             pass
 
 
 def test_websocket_connect_without_token(client: TestClient):
     """Test WebSocket connection rejection without token."""
-    with pytest.raises(Exception):
+    with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/api/v1/ws"):
             pass
 
@@ -128,9 +129,10 @@ def test_websocket_room_message(client: TestClient, a_user, token_for):
     token1 = token_for(user1)
     token2 = token_for(user2)
 
-    with client.websocket_connect(
-        f"/api/v1/ws?token={token1}"
-    ) as ws1, client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2:
+    with (
+        client.websocket_connect(f"/api/v1/ws?token={token1}") as ws1,
+        client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2,
+    ):
         # Skip welcome messages
         ws1.receive_text()
         ws2.receive_text()
@@ -174,9 +176,10 @@ def test_websocket_broadcast(client: TestClient, a_user, token_for):
     token1 = token_for(user1)
     token2 = token_for(user2)
 
-    with client.websocket_connect(
-        f"/api/v1/ws?token={token1}"
-    ) as ws1, client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2:
+    with (
+        client.websocket_connect(f"/api/v1/ws?token={token1}") as ws1,
+        client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2,
+    ):
         # Skip welcome messages
         ws1.receive_text()
         ws2.receive_text()

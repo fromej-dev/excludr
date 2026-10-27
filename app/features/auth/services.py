@@ -5,7 +5,7 @@ import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from jwt import InvalidTokenError
-from passlib.context import CryptContext
+from app.core.security import verify_password as _verify_password
 from starlette import status
 
 from app.core.config import get_settings
@@ -16,8 +16,6 @@ from ..users.services import UserServiceDep
 settings = get_settings()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_prefix}/auth/token")
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -36,7 +34,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
 
 def verify_password(plain_password, user: User):
-    return pwd_context.verify(plain_password, user.hashed_password)
+    return _verify_password(plain_password, user.hashed_password)
 
 
 def verify_token_and_get_user(token: str, us: UserServiceDep) -> User | None:
