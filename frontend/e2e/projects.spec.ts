@@ -180,7 +180,11 @@ test.describe('Project Management Flow', () => {
     await tab('Screening').click()
     await expect(page).toHaveURL(`/projects/${project.id}/screening`)
     await expect(tab('Screening')).toHaveAttribute('aria-selected', 'true')
+    // The AI batch card now lives in a dialog opened from the screening toolbar
+    await page.getByTestId('ai-batch-open').click()
     await expect(page.getByTestId('ai-batch-card')).toBeVisible()
+    await page.getByRole('button', { name: 'Close' }).click()
+    await expect(page.getByTestId('ai-batch-card')).toBeHidden()
 
     // Navigate back to Overview
     await tab('Overview').click()

@@ -40,6 +40,7 @@ watch(
   { immediate: true }
 )
 
+const isScreening = computed(() => currentTab.value === 'screening')
 const isOwner = computed(() => membersStore.isOwner)
 
 const navigateToTab = (tab: string) => {
@@ -58,10 +59,10 @@ const navigateToTab = (tab: string) => {
 </script>
 
 <template>
-  <AppLayout>
-    <div class="space-y-6">
+  <AppLayout :full-width="isScreening">
+    <div :class="isScreening ? 'space-y-3' : 'space-y-6'">
       <div>
-        <h1 class="text-3xl font-bold">{{ projectsStore.currentProject?.name }}</h1>
+        <h1 :class="isScreening ? 'text-xl font-bold' : 'text-3xl font-bold'">{{ projectsStore.currentProject?.name }}</h1>
       </div>
 
       <Tabs :model-value="currentTab" @update:model-value="navigateToTab">

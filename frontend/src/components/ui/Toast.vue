@@ -5,6 +5,8 @@ import type { NotificationLevel } from '@/types'
 interface Props {
   message: string
   level?: NotificationLevel
+  /** Optional action button label (emits `action`). */
+  actionLabel?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -13,6 +15,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   close: []
+  action: []
 }>()
 
 const levelStyles = computed(() => {
@@ -65,6 +68,14 @@ const icon = computed(() => {
     <div class="flex items-start gap-3">
       <span :class="iconStyles" class="text-xl font-bold flex-shrink-0">{{ icon }}</span>
       <p class="flex-1 text-sm">{{ message }}</p>
+      <button
+        v-if="actionLabel"
+        type="button"
+        class="flex-shrink-0 rounded-md border border-current/30 px-2 py-0.5 text-xs font-semibold hover:bg-black/5 transition-colors"
+        @click="emit('action')"
+      >
+        {{ actionLabel }}
+      </button>
       <button
         @click="emit('close')"
         class="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"

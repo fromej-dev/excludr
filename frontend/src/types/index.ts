@@ -437,6 +437,13 @@ export interface ToastNotification {
   level: NotificationLevel
   duration?: number
   timestamp: number
+  /** Optional button rendered in the toast (e.g. "Undo"). */
+  action?: ToastAction
+}
+
+export interface ToastAction {
+  label: string
+  onClick: () => void
 }
 
 // Full-text retrieval

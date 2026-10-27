@@ -98,18 +98,61 @@ test.describe('Screening Workflow', () => {
 
     await page.getByTestId('article-title').waitFor({ timeout: 10000 })
 
-    // Assert stats card shows total articles count
-    const totalLabel = page.getByText('Total', { exact: true })
-    await expect(totalLabel).toBeVisible()
-
-    // Check that we have the expected number of articles (5)
-    const totalCount = page.locator('p.text-2xl', { hasText: /^5$/ })
-    await expect(totalCount.first()).toBeVisible()
-
-    // Assert other stat labels are visible
-    await expect(page.getByText('Screened', { exact: true })).toBeVisible()
+    // Toolbar shows progress for the current stage (nothing screened yet, 5 articles total)
+    await expect(page.getByTestId('screening-progress')).toContainText('0 / 5 screened')
     await expect(page.getByText('Included', { exact: true })).toBeVisible()
     await expect(page.getByText('Excluded', { exact: true })).toBeVisible()
+  })
+
+  test('should use full-text screened count when on the full text stage', async ({ page, pageHelper, testUser }) => {
+    await pageHelper.loginDirect(testUser.token)
+    // Stats are mocked so the two stages report different counts
+    await page.route('**/screening/stats', async (route) => {
+      const res = await route.fetch()
+      const body = await res.json()
+      const data = { ...(body.data ?? body), screened_title_abstract: 2, screened_full_text: 4 }
+      await route.fulfill({ response: res, json: body.data ? { ...body, data } : data })
+    })
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
+
+    await expect(page.getByTestId('screened-count')).toHaveText('2')
+    await page.getByRole('tab', { name: 'Full text' }).click()
+    await expect(page.getByRole('tab', { name: 'Full text' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByTestId('screened-count')).toHaveText('4')
+  })
+
+  test('should undo the last decision via the toast', async ({ page, pageHelper, testUser }) => {
+    await pageHelper.loginDirect(testUser.token)
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
+
+    const firstTitle = (await page.getByTestId('article-title').first().textContent())!.trim()
+    await page.getByRole('button', { name: /include \(i\)/i }).click()
+
+    const toast = page.getByRole('alert').filter({ hasText: 'Included:' })
+    await expect(toast).toBeVisible()
+    await expect(page.getByTestId('article-title')).not.toHaveText(firstTitle)
+
+    await toast.getByRole('button', { name: 'Undo' }).click()
+
+    await expect(page.getByTestId('article-title')).toHaveText(firstTitle)
+    await expect(page.getByTestId('my-decision')).toContainText('Include')
+    await expect(toast).toHaveCount(0)
+  })
+
+  test('should undo the last decision with the Z shortcut', async ({ page, pageHelper, testUser }) => {
+    await pageHelper.loginDirect(testUser.token)
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
+
+    const firstTitle = (await page.getByTestId('article-title').first().textContent())!.trim()
+    await page.keyboard.press('e')
+    await expect(page.getByTestId('article-title')).not.toHaveText(firstTitle)
+
+    await page.keyboard.press('z')
+    await expect(page.getByTestId('article-title')).toHaveText(firstTitle)
+    await expect(page.getByTestId('my-decision')).toContainText('Exclude')
   })
 
   test('should submit include decision and load next article', async ({ page, pageHelper, testUser }) => {

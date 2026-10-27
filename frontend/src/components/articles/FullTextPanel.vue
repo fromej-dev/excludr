@@ -15,11 +15,14 @@ interface Props {
   canUpload?: boolean
   /** Scroll height of the text viewer. */
   heightClass?: string
+  /** Height of the embedded PDF viewer. */
+  pdfHeightClass?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   canUpload: false,
   heightClass: 'max-h-[70vh]',
+  pdfHeightClass: 'h-[70vh]',
 })
 const emit = defineEmits<{ uploaded: [] }>()
 
@@ -227,7 +230,7 @@ const onFile = async (event: Event) => {
         v-else-if="pdfUrl"
         :src="pdfUrl"
         title="Full-text PDF"
-        class="w-full h-[70vh] rounded-md border"
+        :class="['w-full rounded-md border', pdfHeightClass]"
         data-testid="pdf-viewer"
       />
       <p v-else-if="pdfError" class="text-sm text-destructive" role="alert">{{ pdfError }}</p>

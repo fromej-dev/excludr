@@ -5,6 +5,7 @@ import type {
   WebSocketResponse,
   NotificationLevel,
   ToastNotification,
+  ToastAction,
 } from '@/types'
 
 // Generate unique notification ID
@@ -48,14 +49,18 @@ export const useWebSocketStore = defineStore('websocket', () => {
   const addNotification = (
     message: string,
     level: NotificationLevel = 'info',
-    duration: number = 5000
+    duration: number = 5000,
+    action?: ToastAction
   ) => {
-    // Drop identical toasts fired within 2s (e.g. same message via project and user rooms)
-    const key = `${level}:${message}`
-    const now = Date.now()
-    const last = recentToasts.get(key)
-    if (last !== undefined && now - last < 2000) return ''
-    recentToasts.set(key, now)
+    // Drop identical toasts fired within 2s (e.g. same message via project and user rooms).
+    // Toasts with an action are user-initiated and always shown.
+    if (!action) {
+      const key = `${level}:${message}`
+      const now = Date.now()
+      const last = recentToasts.get(key)
+      if (last !== undefined && now - last < 2000) return ''
+      recentToasts.set(key, now)
+    }
 
     const notification: ToastNotification = {
       id: generateId(),
@@ -63,6 +68,7 @@ export const useWebSocketStore = defineStore('websocket', () => {
       level,
       duration,
       timestamp: Date.now(),
+      action,
     }
 
     notifications.value.push(notification)
