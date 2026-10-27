@@ -179,14 +179,14 @@ class ScreeningService:
         self.session.refresh(decision)
         return decision
 
-    def get_next_article_for_screening(
+    def pending_articles_query(
         self,
         project_id: int,
         stage: ScreeningStage,
         reviewer_id: Optional[int] = None,
         required_reviewers: int = 1,
-    ) -> Article | None:
-        """Get the next article this reviewer should screen at the given stage.
+    ):
+        """Select the articles a reviewer still has to screen at ``stage``.
 
         Skips articles the reviewer already decided on (AI decisions and other
         reviewers' decisions are ignored, which keeps screening independent), and,
@@ -224,6 +224,19 @@ class ScreeningService:
                 )
             )
             query = query.where(Article.id.notin_(fully_reviewed))
+        return query
+
+    def get_next_article_for_screening(
+        self,
+        project_id: int,
+        stage: ScreeningStage,
+        reviewer_id: Optional[int] = None,
+        required_reviewers: int = 1,
+    ) -> Article | None:
+        """Get the next article this reviewer should screen at the given stage."""
+        query = self.pending_articles_query(
+            project_id, stage, reviewer_id, required_reviewers
+        )
         return self.session.exec(query.order_by(Article.id)).first()
 
     # ------------------------------------------------------------------

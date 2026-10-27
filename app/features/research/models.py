@@ -29,6 +29,15 @@ class ArticleStatus(str, Enum):
     excluded = "excluded"
 
 
+class FullTextSource(str, Enum):
+    """Where an article's full text came from."""
+
+    unpaywall = "unpaywall"
+    pmc = "pmc"
+    europepmc = "europepmc"
+    manual = "manual"
+
+
 class FinalDecision(str, Enum):
     """Final decision for an article."""
 
@@ -125,6 +134,18 @@ class Article(SQLModel, table=True):
         default=None,
         sa_column=Column(Text),
         description="Extracted text content from the full-text PDF",
+    )
+
+    full_text_source: Optional[str] = Field(
+        default=None,
+        description="Where the full text came from: unpaywall, pmc, europepmc, manual",
+    )
+    full_text_retrieval_error: Optional[str] = Field(
+        default=None,
+        description="Why the last automatic retrieval attempt failed (cleared on success)",
+    )
+    full_text_attempted_at: Optional[datetime] = Field(
+        default=None, description="When automatic retrieval was last attempted"
     )
 
     ai_check_status: Optional[str] = Field(

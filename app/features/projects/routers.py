@@ -40,6 +40,16 @@ def get_project(access: ViewerAccess):
     return access.project
 
 
+@router.get("/{project_id}/me")
+def get_my_role(access: ViewerAccess):
+    """The caller's role in the project (viewer, reviewer or owner)."""
+    return {
+        "project_id": access.project.id,
+        "user_id": access.user.id,
+        "role": access.role,
+    }
+
+
 @router.post("", response_model=Project, status_code=201)
 def create_project(
     data: ProjectCreate,

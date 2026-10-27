@@ -48,3 +48,30 @@ class ScreeningResult(BaseModel):
         default=None, description="Main reason for exclusion if excluded"
     )
     summary_reasoning: str = Field(description="Overall summary reasoning")
+
+
+class SourceAttempt(BaseModel):
+    """Outcome of trying one full-text source."""
+
+    source: str = Field(description="unpaywall, pmc or europepmc")
+    status: Literal["success", "not_configured", "not_available", "error"]
+    detail: str | None = None
+
+
+class FullTextRetrievalResult(BaseModel):
+    """Outcome of an automatic full-text retrieval for one article."""
+
+    article_id: int
+    retrieved: bool
+    source: str | None = None
+    error: str | None = None
+    attempts: list[SourceAttempt] = Field(default_factory=list)
+
+
+class RetrieveFullTextRequest(BaseModel):
+    """Optional body for the bulk retrieval endpoint."""
+
+    article_ids: list[int] | None = Field(
+        default=None,
+        description="Articles to retrieve; default: all awaiting full text",
+    )

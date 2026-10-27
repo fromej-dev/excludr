@@ -19,6 +19,8 @@ MEMBER_REMOVED = "member.removed"
 IMPORT_COMPLETED = "import.completed"
 AI_BATCH_STARTED = "ai_batch.started"
 AI_BATCH_FINISHED = "ai_batch.finished"
+FULLTEXT_BATCH_STARTED = "fulltext_batch.started"
+FULLTEXT_BATCH_FINISHED = "fulltext_batch.finished"
 EXPORT_CREATED = "export.created"
 PROJECT_SETTINGS_UPDATED = "project.settings_updated"
 

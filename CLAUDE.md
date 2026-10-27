@@ -40,6 +40,7 @@ Excludr is a **systematic review screening tool** for researchers. In a systemat
 
 - **Article pipeline**: `imported → screening → awaiting_full_text → full_text_retrieved → included/excluded`
 - **Screening stages**: `title_abstract` | `full_text` | `completed`
+- **Full-text retrieval**: owners trigger `POST /projects/{id}/articles/retrieve-fulltext` (bulk, Prefect flow `retrieve_fulltext_flow`) or `.../{aid}/retrieve-fulltext` (single). `app/features/research/fulltext_retrieval.py` tries Unpaywall (needs `UNPAYWALL_EMAIL`), PubMed Central OA PDF, then Europe PMC full-text XML (text only, no PDF). The source is stored in `Article.full_text_source` (`unpaywall|pmc|europepmc|manual`); failures stay in `awaiting_full_text` with `full_text_retrieval_error`. Tests must mock HTTP (`httpx.MockTransport`, see `tests/features/research/fulltext_helpers.py`), never the network.
 - **Decision sources**: `ai_agent` | `human`
 - **Criteria types**: `inclusion` | `exclusion` — each with a code, description, and rationale
 - **Roles**: `owner` | `reviewer` | `viewer` per project (`ProjectMember`); enforced with `require_project_role(min_role)` from `app/features/projects/permissions.py` (viewer reads, reviewer also decides + runs AI, owner does everything else)
