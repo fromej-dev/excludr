@@ -25,23 +25,25 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     // ========================================
     // 2. CREATE PROJECT
     // ========================================
-    await page.getByRole('button', { name: /create project/i }).click()
-    await page.waitForSelector('#project-name', { timeout: 5_000 })
+    await page.getByTestId('create-project').click()
+    const dialog = page.getByRole('dialog', { name: 'Create New Project' })
+    await expect(dialog).toBeVisible()
 
     await page.locator('#project-name').fill('Effects of Exercise on Depression')
     await page.locator('#project-description').fill('A systematic review of exercise interventions')
     await page.locator('#review-question').fill('Does exercise reduce depression in adults?')
 
     // Click the "Create Project" button inside the dialog
-    await page.getByRole('button', { name: /^create project$/i }).click()
+    await dialog.getByTestId('create-project-submit').click()
 
     // Wait for project card to appear
-    await expect(page.getByText('Effects of Exercise on Depression')).toBeVisible({ timeout: 10_000 })
+    await expect(dialog).toBeHidden({ timeout: 10_000 })
+    await expect(page.getByRole('heading', { name: 'Effects of Exercise on Depression' })).toBeVisible({ timeout: 10_000 })
 
     // ========================================
     // 3. NAVIGATE TO PROJECT
     // ========================================
-    await page.getByText('Effects of Exercise on Depression').click()
+    await page.getByRole('heading', { name: 'Effects of Exercise on Depression' }).click()
     await page.waitForLoadState('networkidle')
 
     // Extract project ID from URL
@@ -51,72 +53,62 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     const projectId = Number(match![1])
 
     // Verify project overview loaded
-    await expect(page.getByText('Overview')).toBeVisible()
-    await expect(page.getByText('Criteria')).toBeVisible()
-    await expect(page.getByText('Articles')).toBeVisible()
-    await expect(page.getByText('Screening')).toBeVisible()
+    for (const name of ['Overview', 'Criteria', 'Articles', 'Screening']) {
+      await expect(page.getByRole('tab', { name, exact: true })).toBeVisible()
+    }
 
     // ========================================
     // 4. UPLOAD ARTICLES
     // ========================================
-    await page.getByRole('button', { name: /upload file/i }).click()
-    await page.waitForSelector('#article-file, input[type="file"]', { timeout: 5_000 })
-
-    const risContent = generateRisContent(3)
-    const fileInput = page.locator('#article-file, input[type="file"]').first()
-    await fileInput.setInputFiles({
+    await expect(page.getByRole('button', { name: /upload ris/i })).toBeVisible()
+    // Upload starts as soon as a file is chosen
+    await page.getByTestId('ris-input').setInputFiles({
       name: 'test_articles.ris',
       mimeType: 'application/x-research-info-systems',
-      buffer: Buffer.from(risContent),
+      buffer: Buffer.from(generateRisContent(3)),
     })
 
-    await page.getByRole('button', { name: /^upload$/i }).click()
-
-    // Wait for upload to complete
-    await expect(
-      page.getByText(/upload.*success|processing|imported|complete/i)
-    ).toBeVisible({ timeout: 15_000 })
+    // Wait for the import summary
+    const importResult = page.getByTestId('import-result')
+    await expect(importResult).toBeVisible({ timeout: 30_000 })
+    await expect(importResult).toContainText('3')
 
     // ========================================
     // 5. DEFINE CRITERIA
     // ========================================
-    await page.getByRole('link', { name: 'Criteria' }).click()
+    await page.getByRole('tab', { name: 'Criteria', exact: true }).click()
     await page.waitForLoadState('networkidle')
 
     // Add inclusion criterion
-    const inclusionSection = page.locator('div').filter({ hasText: /^Inclusion Criteria/ }).first()
-    await inclusionSection.getByRole('button', { name: /add/i }).click()
+    await page.getByTestId('add-inclusion').click()
 
     await page.locator('#code').fill('I1')
     await page.locator('#description').fill('RCT study design')
     await page.locator('#rationale').fill('RCTs provide the highest level of evidence')
-    await page.getByRole('button', { name: /submit|create|save|add/i }).last().click()
+    await page.getByRole('button', { name: 'Add Criterion', exact: true }).click()
 
     // Wait for criterion to appear
-    await expect(page.getByText('I1')).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByTestId('inclusion-column').getByText('I1', { exact: true })).toBeVisible({ timeout: 5_000 })
 
     // Add exclusion criterion
-    const exclusionSection = page.locator('div').filter({ hasText: /^Exclusion Criteria/ }).first()
-    await exclusionSection.getByRole('button', { name: /add/i }).click()
+    await page.getByTestId('add-exclusion').click()
 
     await page.locator('#code').fill('E1')
     await page.locator('#description').fill('Non-English language')
     await page.locator('#rationale').fill('Translation resources unavailable')
-    await page.getByRole('button', { name: /submit|create|save|add/i }).last().click()
+    await page.getByRole('button', { name: 'Add Criterion', exact: true }).click()
 
-    // Both criteria should be visible
-    await expect(page.getByText('E1')).toBeVisible({ timeout: 5_000 })
+    // Both criteria should be visible, each in its own column
+    await expect(page.getByTestId('exclusion-column').getByText('E1', { exact: true })).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByTestId('inclusion-column').getByText('I1', { exact: true })).toBeVisible()
 
     // ========================================
     // 6. VIEW ARTICLES
     // ========================================
-    await page.getByRole('link', { name: 'Articles' }).click()
-    await page.waitForLoadState('networkidle')
+    await page.getByRole('tab', { name: 'Articles', exact: true }).click()
 
     // Wait for articles to appear
-    await page.waitForSelector('h3', { timeout: 10_000 })
-    const articleCount = await page.locator('h3').count()
-    expect(articleCount).toBe(3)
+    await expect(page.getByTestId('article-card')).toHaveCount(3, { timeout: 10_000 })
 
     // ========================================
     // 7. START SCREENING (via API — no UI button for this)
@@ -127,53 +119,54 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     // ========================================
     // 8. SCREEN ARTICLES
     // ========================================
-    await page.getByRole('link', { name: 'Screening' }).click()
-    await page.waitForLoadState('networkidle')
+    await page.getByRole('tab', { name: 'Screening', exact: true }).click()
 
     // Wait for first article to load
-    await page.waitForSelector('h1', { timeout: 10_000 })
-    const firstTitle = await page.locator('h1').first().textContent()
+    const articleTitle = page.getByTestId('article-title')
+    await expect(articleTitle).toBeVisible({ timeout: 10_000 })
+    const firstTitle = (await articleTitle.textContent())?.trim()
     expect(firstTitle).toContain('E2E Test Article')
+    const include = page.getByRole('button', { name: 'Include (I)' })
+    const exclude = page.getByRole('button', { name: 'Exclude (E)' })
 
     // Article 1: Include with reasoning
     await page.locator('#reasoning').fill('Meets inclusion criteria — RCT design confirmed')
-    await page.getByRole('button', { name: /include/i }).first().click()
-    await page.waitForTimeout(1_500)
+    await include.click()
 
     // Article 2: Exclude with reasoning
-    const secondTitle = await page.locator('h1').first().textContent()
-    expect(secondTitle).not.toBe(firstTitle)
+    await expect(articleTitle).not.toHaveText(firstTitle!)
+    const secondTitle = (await articleTitle.textContent())?.trim()
+    await expect(page.locator('#reasoning')).toHaveValue('')
     await page.locator('#reasoning').fill('Non-English publication — excluded per E1')
-    await page.getByRole('button', { name: /exclude/i }).first().click()
-    await page.waitForTimeout(1_500)
+    await exclude.click()
 
     // Article 3: Include
+    await expect(articleTitle).not.toHaveText(secondTitle!)
     await page.locator('#reasoning').fill('Strong methodology, meets all criteria')
-    await page.getByRole('button', { name: /include/i }).first().click()
-    await page.waitForTimeout(1_500)
+    await include.click()
+
+    // Queue is empty once all three are decided
+    await expect(page.getByRole('heading', { name: /no more articles to screen/i })).toBeVisible({ timeout: 10_000 })
 
     // ========================================
     // 9. VERIFY STATS
     // ========================================
     // After screening all articles, stats should show counts
-    const pageContent = await page.content()
-    const hasIncluded = pageContent.toLowerCase().includes('included')
-    const hasExcluded = pageContent.toLowerCase().includes('excluded')
-    expect(hasIncluded || hasExcluded).toBeTruthy()
+    await expect(page.getByText('Included', { exact: true })).toBeVisible()
+    await expect(page.getByText('Excluded', { exact: true })).toBeVisible()
 
     // ========================================
     // 10. VIEW ARTICLE DETAIL
     // ========================================
-    await page.getByRole('link', { name: 'Articles' }).click()
-    await page.waitForLoadState('networkidle')
-    await page.waitForSelector('h3', { timeout: 10_000 })
+    await page.getByRole('tab', { name: 'Articles', exact: true }).click()
+    await expect(page.getByTestId('article-card')).toHaveCount(3, { timeout: 10_000 })
 
     // Click on first article to view detail
-    await page.locator('h3').first().click()
-    await page.waitForLoadState('networkidle')
+    await page.getByTestId('article-card-title').first().click()
 
     // Assert detail page shows article info
-    await expect(page.locator('h1').first()).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByTestId('article-detail-title')).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByRole('heading', { name: 'Screening History' })).toBeVisible()
 
     // Look for screening history / decision info
     const detailContent = await page.content()

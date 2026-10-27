@@ -33,6 +33,9 @@ onClickOutside(dialogRef, () => {
         <div class="fixed inset-0 bg-black/50" @click="close" />
         <div
           ref="dialogRef"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="title"
           class="relative z-50 w-full max-w-lg rounded-lg border bg-card p-6 shadow-lg"
         >
           <div v-if="title" class="mb-4">

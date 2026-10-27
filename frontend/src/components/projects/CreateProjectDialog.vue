@@ -92,7 +92,7 @@ watch(() => props.open, (isOpen) => {
         >
           Cancel
         </Button>
-        <Button type="submit" :disabled="projectsStore.loading">
+        <Button type="submit" data-testid="create-project-submit" :disabled="projectsStore.loading">
           {{ projectsStore.loading ? 'Creating...' : 'Create Project' }}
         </Button>
       </div>

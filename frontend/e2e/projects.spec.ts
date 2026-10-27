@@ -8,14 +8,17 @@ test.describe('Project Management Flow', () => {
     // Assert empty state is visible
     await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
     await expect(page.getByText(/no projects/i)).toBeVisible()
-    await expect(page.getByRole('button', { name: /create project/i })).toBeVisible()
+    await expect(page.getByTestId('create-project')).toBeVisible()
+    await expect(page.getByTestId('create-first-project')).toBeVisible()
   })
 
   test('should create a project via dialog', async ({ page, pageHelper, testUser }) => {
     await pageHelper.loginDirect(testUser.token)
 
     // Open create dialog
-    await page.getByRole('button', { name: /create project/i }).click()
+    await page.getByTestId('create-project').click()
+    const dialog = page.getByRole('dialog', { name: 'Create New Project' })
+    await expect(dialog).toBeVisible()
 
     // Fill all fields
     await page.locator('#project-name').fill('My Systematic Review')
@@ -23,11 +26,10 @@ test.describe('Project Management Flow', () => {
     await page.locator('#review-question').fill('What is the effect of intervention X on outcome Y in adults?')
 
     // Submit form
-    await page.getByRole('button', { name: /^create project$/i }).click()
+    await dialog.getByTestId('create-project-submit').click()
 
-    // Wait for loading state to disappear
-    await expect(page.getByRole('button', { name: /creating/i })).toBeVisible({ timeout: 2000 })
-    await expect(page.getByRole('button', { name: /creating/i })).toBeHidden({ timeout: 10000 })
+    // Dialog closes once the project has been created
+    await expect(dialog).toBeHidden({ timeout: 10000 })
 
     // Assert project card appears in the list
     await expect(page.getByText('My Systematic Review')).toBeVisible()
@@ -49,13 +51,14 @@ test.describe('Project Management Flow', () => {
 
     // Assert we're on the project overview page
     await expect(page).toHaveURL(`/projects/${project.id}`)
-    await expect(page.getByRole('heading', { name: 'Navigate Test Project' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Navigate Test Project', level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Navigate Test Project', level: 2 })).toBeVisible()
 
     // Verify tab navigation is visible
-    await expect(page.getByRole('link', { name: 'Overview' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Criteria' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Articles' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Screening' })).toBeVisible()
+    for (const name of ['Overview', 'Criteria', 'Articles', 'Screening']) {
+      await expect(page.getByRole('tab', { name, exact: true })).toBeVisible()
+    }
+    await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toHaveAttribute('aria-selected', 'true')
   })
 
   test('should edit project details', async ({ page, pageHelper, testUser, api }) => {
@@ -70,29 +73,22 @@ test.describe('Project Management Flow', () => {
     await pageHelper.goToProjectTab(project.id, 'overview')
 
     // Click edit button
-    await page.getByRole('button', { name: /edit/i }).click()
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
 
     // Modify fields
-    const nameInput = page.locator('input[name="name"], input#name, input').filter({ hasText: '' }).first()
-    await nameInput.clear()
-    await nameInput.fill('Updated Project Name')
-
-    const descInput = page.locator('textarea[name="description"], textarea#description, textarea').filter({ hasText: '' }).first()
-    await descInput.clear()
-    await descInput.fill('Updated description text')
-
-    const questionInput = page.locator('textarea[name="review_question"], textarea#review-question, textarea').filter({ hasText: '' }).nth(1)
-    await questionInput.clear()
-    await questionInput.fill('Updated review question')
+    await page.getByLabel('Project Name').fill('Updated Project Name')
+    await page.getByLabel('Description', { exact: true }).fill('Updated description text')
+    await page.getByLabel('Review Question').fill('Updated review question')
 
     // Save changes
-    await page.getByRole('button', { name: /save changes/i }).click()
+    await page.getByRole('button', { name: 'Save Changes' }).click()
 
     // Wait for save to complete
-    await expect(page.getByRole('button', { name: /edit/i })).toBeVisible({ timeout: 10000 })
+    await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible({ timeout: 10000 })
 
-    // Assert changes are reflected
-    await expect(page.getByRole('heading', { name: 'Updated Project Name' })).toBeVisible()
+    // Assert changes are reflected (page title and overview card)
+    await expect(page.getByRole('heading', { name: 'Updated Project Name', level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Updated Project Name', level: 2 })).toBeVisible()
     await expect(page.getByText('Updated description text')).toBeVisible()
     await expect(page.getByText('Updated review question')).toBeVisible()
   })
@@ -109,10 +105,10 @@ test.describe('Project Management Flow', () => {
     await pageHelper.goToProjectTab(project.id, 'overview')
 
     // Click delete button
-    await page.getByRole('button', { name: /delete/i }).first().click()
+    await page.getByRole('button', { name: 'Delete', exact: true }).click()
 
     // Confirm deletion in dialog
-    await page.getByRole('button', { name: /^delete project$/i }).click()
+    await page.getByRole('dialog', { name: 'Delete Project' }).getByRole('button', { name: 'Delete Project' }).click()
 
     // Wait for redirect to dashboard
     await expect(page).toHaveURL('/', { timeout: 10000 })
@@ -166,24 +162,30 @@ test.describe('Project Management Flow', () => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(project.id, 'overview')
 
+    const tab = (name: string) => page.getByRole('tab', { name, exact: true })
+
     // Navigate to Criteria tab
-    await page.getByRole('link', { name: 'Criteria' }).click()
+    await tab('Criteria').click()
     await expect(page).toHaveURL(`/projects/${project.id}/criteria`)
-    await expect(page.getByRole('heading', { name: /criteria/i })).toBeVisible()
+    await expect(tab('Criteria')).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('heading', { name: 'Inclusion Criteria' })).toBeVisible()
 
     // Navigate to Articles tab
-    await page.getByRole('link', { name: 'Articles' }).click()
+    await tab('Articles').click()
     await expect(page).toHaveURL(`/projects/${project.id}/articles`)
-    await expect(page.getByRole('heading', { name: /articles/i })).toBeVisible()
+    await expect(tab('Articles')).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('button', { name: 'Clear Filters' })).toBeVisible()
 
     // Navigate to Screening tab
-    await page.getByRole('link', { name: 'Screening' }).click()
+    await tab('Screening').click()
     await expect(page).toHaveURL(`/projects/${project.id}/screening`)
-    await expect(page.getByRole('heading', { name: /screening/i })).toBeVisible()
+    await expect(tab('Screening')).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByTestId('ai-batch-card')).toBeVisible()
 
     // Navigate back to Overview
-    await page.getByRole('link', { name: 'Overview' }).click()
+    await tab('Overview').click()
     await expect(page).toHaveURL(`/projects/${project.id}`)
+    await expect(tab('Overview')).toHaveAttribute('aria-selected', 'true')
   })
 
   test('should show article count after import', async ({ page, pageHelper, testUser, api }) => {

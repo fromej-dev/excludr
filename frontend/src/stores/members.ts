@@ -1,33 +1,31 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useApi } from '@/composables/useApi'
-import { useAuthStore } from './auth'
-import { useProjectsStore } from './projects'
 import { getErrorMessage } from '@/utils/errors'
-import type { ProjectMember, ProjectRole } from '@/types'
+import type { MyProjectRole, ProjectMember, ProjectRole } from '@/types'
 
 const ROLE_RANK: Record<ProjectRole, number> = { viewer: 1, reviewer: 2, owner: 3 }
 
 /** Members of the current project and the current user's role in it. */
 export const useMembersStore = defineStore('members', () => {
   const { get, post, patch, delete: del } = useApi()
-  const authStore = useAuthStore()
-  const projectsStore = useProjectsStore()
 
   const members = ref<ProjectMember[]>([])
   const loadedProjectId = ref<number | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  /** Role of the signed-in user; null while unknown or when not a member. */
-  const role = computed<ProjectRole | null>(() => {
-    const userId = authStore.user?.id
-    if (userId === undefined) return null
-    const project = projectsStore.currentProject
-    // Project.owner_id is authoritative for ownership
-    if (project && loadedProjectId.value === project.id && project.owner_id === userId) return 'owner'
-    return members.value.find((m) => m.user_id === userId)?.role ?? null
-  })
+  /** Role of the signed-in user (from GET /projects/{id}/me); null while unknown or when not a member. */
+  const role = ref<ProjectRole | null>(null)
+
+  const fetchMyRole = async (projectId: number) => {
+    try {
+      const res = await get<MyProjectRole>(`/projects/${projectId}/me`)
+      role.value = res.role
+    } catch {
+      role.value = null
+    }
+  }
 
   const hasRole = (min: ProjectRole): boolean =>
     role.value !== null && ROLE_RANK[role.value] >= ROLE_RANK[min]
@@ -94,6 +92,7 @@ export const useMembersStore = defineStore('members', () => {
   const reset = () => {
     members.value = []
     loadedProjectId.value = null
+    role.value = null
     error.value = null
   }
 
@@ -105,6 +104,7 @@ export const useMembersStore = defineStore('members', () => {
     isOwner,
     canReview,
     hasRole,
+    fetchMyRole,
     fetchMembers,
     addMember,
     changeRole,

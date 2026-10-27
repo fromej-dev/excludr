@@ -91,16 +91,13 @@ export const useScreeningStore = defineStore('screening', () => {
     }
   }
 
-  /** Ids of articles in the given stage still in the screening pipeline, ascending. */
+  /** Ids of articles at `stage` this reviewer still has to decide, ascending. */
   const fetchQueueIds = async (projectId: number, stage: ScreeningStage) => {
     try {
       const res = await getRaw<PaginatedResponse<Article>>(`/projects/${projectId}/articles`, {
-        params: { stage, per_page: 100 },
+        params: { pending_for_me: true, stage, per_page: 100 },
       })
-      return res.data
-        .filter((a) => a.status === 'screening' || a.status === 'full_text_retrieved')
-        .map((a) => a.id)
-        .sort((x, y) => x - y)
+      return res.data.map((a) => a.id).sort((x, y) => x - y)
     } catch {
       return []
     }

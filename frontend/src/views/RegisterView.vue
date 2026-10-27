@@ -91,7 +91,7 @@ const handleSubmit = async () => {
           />
         </div>
 
-        <div v-if="errorMessage" class="rounded-md bg-destructive/15 p-3 text-sm text-destructive">
+        <div v-if="errorMessage" role="alert" data-testid="auth-error" class="rounded-md bg-destructive/15 p-3 text-sm text-destructive">
           {{ errorMessage }}
         </div>
 

@@ -34,6 +34,7 @@ watch(
   (id) => {
     membersStore.reset()
     projectsStore.fetchProject(id)
+    membersStore.fetchMyRole(id)
     membersStore.fetchMembers(id)
   },
   { immediate: true }

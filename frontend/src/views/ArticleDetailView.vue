@@ -64,7 +64,7 @@ const goBack = () => {
       <div class="space-y-6">
         <div>
           <div class="flex items-start justify-between gap-4 mb-4">
-            <h1 class="text-2xl font-bold flex-1">{{ article.title || 'Untitled' }}</h1>
+            <h1 class="text-2xl font-bold flex-1" data-testid="article-detail-title">{{ article.title || 'Untitled' }}</h1>
             <div class="flex gap-2 flex-shrink-0">
               <Badge>{{ article.status }}</Badge>
               <Badge>{{ article.final_decision }}</Badge>

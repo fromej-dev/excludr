@@ -28,7 +28,7 @@ const handleProjectCreated = () => {
             Manage your systematic review projects
           </p>
         </div>
-        <Button @click="showCreateDialog = true">
+        <Button data-testid="create-project" @click="showCreateDialog = true">
           Create Project
         </Button>
       </div>
@@ -46,7 +46,7 @@ const handleProjectCreated = () => {
         class="text-center py-12"
       >
         <p class="text-muted-foreground mb-4">No projects yet</p>
-        <Button @click="showCreateDialog = true">
+        <Button data-testid="create-first-project" @click="showCreateDialog = true">
           Create your first project
         </Button>
       </div>

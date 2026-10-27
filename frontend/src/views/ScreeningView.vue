@@ -163,6 +163,10 @@ const setStage = async (value: 'title_abstract' | 'full_text') => {
   await resetQueue()
 }
 
+const refreshArticle = () => {
+  if (article.value) void screeningStore.loadArticle(projectId.value, article.value.id)
+}
+
 const onBatchFinished = async () => {
   await screeningStore.fetchStats(projectId.value)
   if (article.value) await screeningStore.fetchAiDecision(projectId.value, article.value.id)
@@ -330,6 +334,7 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
           v-if="article.current_stage === 'full_text' || article.full_text_content"
           :article="article"
           height-class="max-h-96"
+          @uploaded="refreshArticle"
         />
 
         <!-- Criteria Reference -->

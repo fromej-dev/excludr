@@ -119,6 +119,10 @@ export interface Article {
   full_text_retrieved?: boolean
   full_text_path?: string | null
   full_text_content?: string | null
+  /** Where the stored full text came from (unpaywall, pmc, europepmc, upload ...). */
+  full_text_source?: string | null
+  /** Last automatic retrieval failure, if any. */
+  full_text_retrieval_error?: string | null
   status: ArticleStatus
   current_stage: ScreeningStage
   final_decision: FinalDecision
@@ -433,4 +437,30 @@ export interface ToastNotification {
   level: NotificationLevel
   duration?: number
   timestamp: number
+}
+
+// Full-text retrieval
+export interface FullTextSourceAttempt {
+  source: string
+  status: 'success' | 'not_configured' | 'not_available' | 'error'
+  detail?: string | null
+}
+
+export interface FullTextRetrievalResult {
+  article_id: number
+  retrieved: boolean
+  source?: string | null
+  error?: string | null
+  attempts: FullTextSourceAttempt[]
+}
+
+export interface RetrieveFullTextBulkResponse {
+  message: string
+  count: number
+}
+
+export interface MyProjectRole {
+  project_id: number
+  user_id: number
+  role: ProjectRole
 }

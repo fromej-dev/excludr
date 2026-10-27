@@ -10,6 +10,7 @@ import Card from '@/components/ui/Card.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 import Badge from '@/components/ui/Badge.vue'
 import ImportCard from '@/components/projects/ImportCard.vue'
+import FullTextBatchCard from '@/components/articles/FullTextBatchCard.vue'
 import ReviewSettingsCard from '@/components/projects/ReviewSettingsCard.vue'
 import { useMembersStore } from '@/stores/members'
 
@@ -136,6 +137,8 @@ const handleDelete = async () => {
     <ReviewSettingsCard v-if="project" :project="project" :can-edit="isOwner" />
 
     <ImportCard :project-id="projectId" :can-upload="isOwner" @imported="onImported" />
+
+    <FullTextBatchCard :project-id="projectId" :can-run="isOwner" />
 
     <Dialog v-model:open="showDeleteDialog" title="Delete Project">
       <div class="space-y-4">

@@ -31,8 +31,10 @@ export default defineConfig({
   /* Start both servers before running tests */
   webServer: [
     {
+      // PREFECT_API_URL is unset on purpose: with no Prefect server running, imports use
+      // Prefect's ephemeral in-process API instead of failing to reach localhost:4200.
       command:
-        'cd .. && SECRET_KEY="${SECRET_KEY:-e2e-test-secret-key}" DATABASE_URL="${DATABASE_URL:-sqlite:///e2e_test.db}" uvicorn app.main:app --host 0.0.0.0 --port 8000',
+        'cd .. && unset PREFECT_API_URL && SECRET_KEY="${SECRET_KEY:-e2e-test-secret-key-not-for-production}" DATABASE_URL="${DATABASE_URL:-sqlite:///e2e_test.db}" uvicorn app.main:app --host 0.0.0.0 --port 8000',
       url: 'http://localhost:8000/ping',
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
