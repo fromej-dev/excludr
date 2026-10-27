@@ -8,6 +8,7 @@ from fastapi_fsp.models import PaginatedResponse
 from app.core.database import SessionDep
 from app.core.prefect_config import run_flow_in_background
 from app.features.audit import services as audit
+from app.features.billing import services as billing
 from app.features.projects.models import ProjectRole
 from app.features.projects.permissions import (
     OwnerAccess,
@@ -305,6 +306,11 @@ async def screen_article_with_ai(
     except AIScreeningNotConfiguredError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
+    try:
+        billing.check_can_ai_screen(session, project, article)
+    except billing.BillingError as e:
+        raise HTTPException(status_code=402, detail=str(e)) from e
+
     # Run AI screening
     try:
         decision = await screen_article(
@@ -478,7 +484,18 @@ async def run_batch_ai_screening(
     if limit:
         query = query.limit(limit)
 
-    candidates = session.exec(query).all()
+    candidates = list(session.exec(query).all())
+    # Only queue what the plan's AI allowance still covers.
+    skipped = 0
+    if candidates:
+        try:
+            allowed, skipped = billing.split_by_allowance(
+                session, access.project, [article_id for article_id, _ in candidates]
+            )
+        except billing.BillingError as e:
+            raise HTTPException(status_code=402, detail=str(e)) from e
+        allowed_ids = set(allowed)
+        candidates = [c for c in candidates if c[0] in allowed_ids]
     # Skip articles another running batch already has queued at this stage
     keys = inflight.claim(
         (project_id, article_id, ScreeningStage(article_stage).value)
@@ -492,6 +509,7 @@ async def run_batch_ai_screening(
             "message": "No eligible articles to screen",
             "article_count": 0,
             "article_ids": [],
+            "skipped_over_allowance": skipped,
         }
 
     try:
@@ -506,6 +524,7 @@ async def run_batch_ai_screening(
                 "article_count": article_count,
                 "stage": stage.value if stage else None,
                 "rescreen_stale": rescreen_stale,
+                "skipped_over_allowance": skipped,
                 **({"article_ids": article_ids} if requested_ids is not None else {}),
             },
         )
@@ -526,4 +545,5 @@ async def run_batch_ai_screening(
         "message": "AI screening started",
         "article_count": article_count,
         "article_ids": article_ids,
+        "skipped_over_allowance": skipped,
     }

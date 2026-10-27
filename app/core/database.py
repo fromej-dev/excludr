@@ -27,3 +27,4 @@ from app.features.research.models import *  # noqa: F403, E402
 from app.features.criteria.models import *  # noqa: F403, E402
 from app.features.screening.models import *  # noqa: F403, E402
 from app.features.audit.models import *  # noqa: F403, E402
+from app.features.billing.models import *  # noqa: F403, E402

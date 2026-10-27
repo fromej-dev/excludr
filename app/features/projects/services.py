@@ -117,8 +117,9 @@ class ProjectService:
         # Child rows without an ORM cascade (also covered by DB-level ON DELETE
         # CASCADE; done explicitly so it works on databases without FK enforcement).
         from app.features.audit.models import AuditEvent
+        from app.features.billing.models import ProjectPlan
 
-        for model in (ProjectMember, ImportBatch, AuditEvent):
+        for model in (ProjectMember, ImportBatch, AuditEvent, ProjectPlan):
             self.session.exec(delete(model).where(model.project_id == project.id))
         self.session.delete(project)
         self.session.commit()

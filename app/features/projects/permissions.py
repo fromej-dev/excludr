@@ -6,6 +6,9 @@ Roles are ordered ``viewer < reviewer < owner``:
 * reviewer: viewer + create their own human decisions + run AI screening
 * owner: everything else (edit project, criteria, imports, uploads, members, ...)
 
+When a project's review pass has expired (billing enabled), reviewer- and
+owner-level writes are refused with 402: the project is read-only.
+
 Usage in a route::
 
     def handler(access: OwnerAccess): ...
@@ -15,7 +18,7 @@ Usage in a route::
 from dataclasses import dataclass
 from typing import Annotated, Callable, Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from sqlmodel import Session, select
 
 from app.core.database import SessionDep
@@ -62,18 +65,30 @@ def has_role(role: Optional[ProjectRole], min_role: ProjectRole) -> bool:
     return role is not None and ROLE_RANK[role] >= ROLE_RANK[min_role]
 
 
-def require_project_role(min_role: ProjectRole) -> Callable[..., ProjectAccess]:
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def require_project_role(
+    min_role: ProjectRole, allow_read_only: bool = False
+) -> Callable[..., ProjectAccess]:
     """Build a dependency that enforces ``min_role`` on the ``project_id`` path param.
+
+    Args:
+        min_role: Lowest role allowed.
+        allow_read_only: Let writes through on a read-only (expired) project,
+            e.g. to renew its pass or delete it.
 
     Raises:
         HTTPException: 404 if the project does not exist; 403 if the user is not a
-            member (legacy message kept for compatibility) or their role is too low.
+            member (legacy message kept for compatibility) or their role is too low;
+            402 for a write to a read-only project.
     """
 
     def dependency(
         project_id: int,
         current_user: Annotated[User, Depends(get_current_user)],
         session: SessionDep,
+        request: Request,
     ) -> ProjectAccess:
         project = session.get(Project, project_id)
         if project is None:
@@ -88,6 +103,15 @@ def require_project_role(min_role: ProjectRole) -> Callable[..., ProjectAccess]:
                 status_code=403,
                 detail=f"This action requires the '{min_role.value}' role",
             )
+        if (
+            min_role != ProjectRole.viewer
+            and not allow_read_only
+            and request.method not in SAFE_METHODS
+        ):
+            from app.features.billing import services as billing
+
+            if billing.is_read_only(session, project):
+                raise HTTPException(status_code=402, detail=billing.READ_ONLY_MESSAGE)
         return ProjectAccess(project=project, user=current_user, role=role)
 
     return dependency
@@ -100,3 +124,8 @@ ReviewerAccess = Annotated[
     ProjectAccess, Depends(require_project_role(ProjectRole.reviewer))
 ]
 OwnerAccess = Annotated[ProjectAccess, Depends(require_project_role(ProjectRole.owner))]
+# Owner actions that stay allowed on a read-only project (e.g. deleting it)
+OwnerAccessAnyState = Annotated[
+    ProjectAccess,
+    Depends(require_project_role(ProjectRole.owner, allow_read_only=True)),
+]
