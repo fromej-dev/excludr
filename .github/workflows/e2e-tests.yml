@@ -9,7 +9,6 @@ on:
 env:
   SECRET_KEY: e2e-test-secret-key-not-for-production
   DATABASE_URL: sqlite:///test.db
-  PREFECT_API_URL: http://localhost:4200/api
 
 jobs:
   # ── Backend API integration tests ──────────────────────────────────────

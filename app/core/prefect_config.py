@@ -1,6 +1,8 @@
 """Prefect configuration and utilities for background task processing."""
 
+from collections.abc import Callable
 from contextlib import contextmanager
+from typing import Any
 
 from sqlmodel import Session, create_engine
 
@@ -32,3 +34,14 @@ def get_prefect_session():
         raise
     finally:
         session.close()
+
+
+async def run_flow_in_background(flow_fn: Callable[..., Any], *args: Any) -> None:
+    """Await a Prefect flow from FastAPI ``BackgroundTasks``.
+
+    A Prefect ``Flow`` object is not recognised as a coroutine function by
+    Starlette, so ``background_tasks.add_task(some_async_flow, ...)`` would run
+    it in a thread and silently drop the coroutine. Schedule this wrapper instead:
+    ``background_tasks.add_task(run_flow_in_background, some_async_flow, ...)``.
+    """
+    await flow_fn(*args)

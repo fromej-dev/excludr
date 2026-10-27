@@ -6,6 +6,7 @@ from fastapi_fsp import FSPManager
 from fastapi_fsp.models import PaginatedResponse
 
 from app.core.database import SessionDep
+from app.core.prefect_config import run_flow_in_background
 from app.features.audit import services as audit
 from app.features.projects.models import ProjectRole
 from app.features.projects.permissions import (
@@ -478,7 +479,11 @@ async def run_batch_ai_screening(
 
     # Schedule the flow with primitive ids only: it opens its own session.
     background_tasks.add_task(
-        batch_ai_screening_flow, project_id, article_ids, access.user.id
+        run_flow_in_background,
+        batch_ai_screening_flow,
+        project_id,
+        article_ids,
+        access.user.id,
     )
 
     return {

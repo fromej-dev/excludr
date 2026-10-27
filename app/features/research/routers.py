@@ -15,6 +15,7 @@ from fastapi_fsp import FSPManager
 from fastapi_fsp.models import PaginatedResponse
 
 from app.core.database import SessionDep
+from app.core.prefect_config import run_flow_in_background
 from app.features.projects.permissions import OwnerAccess, ViewerAccess
 from .models import Article, ArticleStatus, ScreeningStage
 from .flows import retrieve_fulltext_flow
@@ -189,7 +190,11 @@ def retrieve_fulltext_bulk(
 
     # Primitive ids only: the flow opens its own session.
     background_tasks.add_task(
-        retrieve_fulltext_flow, project_id, article_ids, access.user.id
+        run_flow_in_background,
+        retrieve_fulltext_flow,
+        project_id,
+        article_ids,
+        access.user.id,
     )
     return {"message": "Full-text retrieval started", "count": len(article_ids)}
 
