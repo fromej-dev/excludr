@@ -52,7 +52,8 @@ test.describe('Project Management Flow', () => {
     // Assert we're on the project overview page
     await expect(page).toHaveURL(`/projects/${project.id}`)
     await expect(page.getByRole('heading', { name: 'Navigate Test Project', level: 1 })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Navigate Test Project', level: 2 })).toBeVisible()
+    // The name is the page heading only once (no duplicate card title)
+    await expect(page.getByRole('heading', { name: 'Navigate Test Project' })).toHaveCount(1)
 
     // Verify tab navigation is visible
     for (const name of ['Overview', 'Criteria', 'Articles', 'Title/abstract']) {
@@ -88,7 +89,7 @@ test.describe('Project Management Flow', () => {
 
     // Assert changes are reflected (page title and overview card)
     await expect(page.getByRole('heading', { name: 'Updated Project Name', level: 1 })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Updated Project Name', level: 2 })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Updated Project Name' })).toHaveCount(1)
     await expect(page.getByText('Updated description text')).toBeVisible()
     await expect(page.getByText('Updated review question')).toBeVisible()
   })
@@ -210,6 +211,6 @@ test.describe('Project Management Flow', () => {
     await pageHelper.goToProjectTab(project.id, 'overview')
 
     // Assert article count is shown
-    await expect(page.getByText(/5.*article/i)).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('project-header').getByText('5 articles')).toBeVisible({ timeout: 10000 })
   })
 })

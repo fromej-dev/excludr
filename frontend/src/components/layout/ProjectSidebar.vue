@@ -3,6 +3,7 @@ import { computed, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
 import { storeToRefs } from 'pinia'
+import { useStorage } from '@vueuse/core'
 import { useProjectsStore } from '@/stores/projects'
 import { useMembersStore } from '@/stores/members'
 import { useProjectNavStore } from '@/stores/projectNav'
@@ -101,6 +102,33 @@ watch(
   { immediate: true, flush: 'post' }
 )
 
+// Below lg the two stage pills collapse into one "Screening" pill (the toolbar switches stage)
+const lastStage = useStorage<'title_abstract' | 'full_text'>('excludr-last-screening-stage', 'title_abstract')
+watch(
+  () => (name.value === 'project-screening' ? stage.value : null),
+  (s) => {
+    if (s) lastStage.value = s
+  },
+  { immediate: true }
+)
+const mobileGroups = computed<NavGroup[]>(() =>
+  groups.value.map((g) => {
+    if (g.label !== 'Screening') return g
+    const stages = g.items.filter((i) => i.key === 'title_abstract' || i.key === 'full_text')
+    const rest = g.items.filter((i) => i.key !== 'title_abstract' && i.key !== 'full_text')
+    const target = stages.find((i) => i.key === lastStage.value) ?? stages[0]
+    const total = stages.some((i) => i.count !== null) ? stages.reduce((n, i) => n + (i.count ?? 0), 0) : null
+    const merged: NavItem = {
+      ...target,
+      key: 'screening',
+      label: 'Screening',
+      active: stages.some((i) => i.active),
+      count: total,
+    }
+    return { ...g, items: [merged, ...rest] }
+  })
+)
+
 const showCount = (item: NavItem) => item.count !== null && (item.tone !== 'conflict' || item.count > 0)
 
 const countClasses = (item: NavItem, mobile: boolean): string => {
@@ -155,7 +183,7 @@ const countAria = (item: NavItem) => (item.countLabel ? `${item.count} ${item.co
 
   <!-- Below lg: project name and horizontally scrollable pills -->
   <div class="min-w-0 space-y-2 lg:hidden">
-    <p class="truncate text-xl font-bold" :title="projectsStore.currentProject?.name">
+    <p v-if="name !== 'project-overview'" class="truncate text-xl font-bold" :title="projectsStore.currentProject?.name">
       {{ projectsStore.currentProject?.name }}
     </p>
   <nav
@@ -164,7 +192,7 @@ const countAria = (item: NavItem) => (item.countLabel ? `${item.count} ${item.co
     data-testid="project-pills"
   >
     <ul class="flex w-max items-center gap-1.5">
-      <template v-for="(group, gi) in groups" :key="group.label">
+      <template v-for="(group, gi) in mobileGroups" :key="group.label">
         <li v-if="gi > 0" aria-hidden="true" class="mx-1 h-5 w-px bg-border" />
         <li v-for="item in group.items" :key="item.key">
           <router-link

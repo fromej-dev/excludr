@@ -19,6 +19,8 @@ export const useProjectNavStore = defineStore('projectNav', () => {
   const pendingFullText = ref<number | null>(null)
   const conflicts = ref<number | null>(null)
   const criteria = ref<number | null>(null)
+  /** True once the last refresh has finished, whether its requests succeeded or failed. */
+  const settled = ref(false)
 
   const reset = () => {
     projectId.value = null
@@ -26,6 +28,7 @@ export const useProjectNavStore = defineStore('projectNav', () => {
     pendingFullText.value = null
     conflicts.value = null
     criteria.value = null
+    settled.value = false
   }
 
   const fetchPending = async (id: number, stage: CountedStage): Promise<number | null> => {
@@ -56,6 +59,7 @@ export const useProjectNavStore = defineStore('projectNav', () => {
   const refresh = async (id: number, opts: NavRefreshOptions) => {
     if (projectId.value !== id) reset()
     projectId.value = id
+    settled.value = false
     const tasks: Promise<void>[] = [
       get<Criterion[]>(`/projects/${id}/criteria`)
         .then((list) => ifCurrent(id, () => (criteria.value = list.filter((c) => c.is_active).length)))
@@ -70,6 +74,7 @@ export const useProjectNavStore = defineStore('projectNav', () => {
       )
     }
     await Promise.all(tasks)
+    ifCurrent(id, () => (settled.value = true))
   }
 
   const setConflicts = (n: number) => {
@@ -82,6 +87,7 @@ export const useProjectNavStore = defineStore('projectNav', () => {
     pendingFullText,
     conflicts,
     criteria,
+    settled,
     refresh,
     refreshScreening,
     setConflicts,

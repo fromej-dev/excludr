@@ -262,12 +262,8 @@ test.describe('Screening Workflow', () => {
     // Press 'i' key for include
     await page.keyboard.press('i')
 
-    // Wait for next article to load
-    await page.waitForTimeout(1000)
-
-    // Assert next article loaded
-    const secondTitle = await page.getByTestId('article-title').first().textContent()
-    expect(secondTitle).not.toBe(firstTitle)
+    // Assert the next article loads (auto-retrying instead of a fixed sleep)
+    await expect(page.getByTestId('article-title').first()).not.toHaveText(firstTitle ?? '', { timeout: 10000 })
 
     // The legend is collapsed behind a toggle
     await page.getByRole('button', { name: 'Shortcuts' }).click()

@@ -18,12 +18,18 @@ export const useMembersStore = defineStore('members', () => {
   /** Role of the signed-in user (from GET /projects/{id}/me); null while unknown or when not a member. */
   const role = ref<ProjectRole | null>(null)
 
+  /** True once the role request has finished (successfully or not). */
+  const roleSettled = ref(false)
+
   const fetchMyRole = async (projectId: number) => {
+    roleSettled.value = false
     try {
       const res = await get<MyProjectRole>(`/projects/${projectId}/me`)
       role.value = res.role
     } catch {
       role.value = null
+    } finally {
+      roleSettled.value = true
     }
   }
 
@@ -93,10 +99,12 @@ export const useMembersStore = defineStore('members', () => {
     members.value = []
     loadedProjectId.value = null
     role.value = null
+    roleSettled.value = false
     error.value = null
   }
 
   return {
+    roleSettled,
     members,
     loading,
     error,
