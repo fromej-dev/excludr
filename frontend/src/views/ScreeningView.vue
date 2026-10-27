@@ -10,8 +10,6 @@ import type { ScreeningDecisionType, ScreeningStage } from '@/types'
 import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
-import Textarea from '@/components/ui/Textarea.vue'
-import Label from '@/components/ui/Label.vue'
 import ScreeningToolbar from '@/components/screening/ScreeningToolbar.vue'
 import AiVerdict from '@/components/screening/AiVerdict.vue'
 import CriteriaEvaluationList from '@/components/screening/CriteriaEvaluationList.vue'
@@ -284,11 +282,57 @@ watch(
   }
 )
 
+// Compact note field: one line until focused or filled
+const noteFocused = ref(false)
+const noteExpanded = computed(() => noteFocused.value || reasoning.value.length > 0)
+
+// Shortcut legend is collapsed by default; remember the choice
+const SHORTCUTS_KEY = 'excludr_shortcuts_open'
+const readShortcutsOpen = (): boolean => {
+  try {
+    return localStorage.getItem(SHORTCUTS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const showShortcuts = ref(readShortcutsOpen())
+watch(showShortcuts, (open) => {
+  try {
+    localStorage.setItem(SHORTCUTS_KEY, open ? '1' : '0')
+  } catch {
+    /* storage unavailable */
+  }
+})
+
+// Fade cue when the criteria list overflows its scroll area
+const criteriaScroll = ref<HTMLElement | null>(null)
+const moreBelow = ref(false)
+const updateOverflow = () => {
+  const el = criteriaScroll.value
+  moreBelow.value = !!el && el.scrollHeight - el.scrollTop - el.clientHeight > 4
+}
+let resizeObserver: ResizeObserver | null = null
+watch(
+  criteriaScroll,
+  (el) => {
+    resizeObserver?.disconnect()
+    if (!el) return
+    resizeObserver ??= new ResizeObserver(updateOverflow)
+    resizeObserver.observe(el)
+    if (el.firstElementChild) resizeObserver.observe(el.firstElementChild)
+    updateOverflow()
+  },
+  { flush: 'post' }
+)
+onUnmounted(() => resizeObserver?.disconnect())
+
 const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + d.slice(1)
 </script>
 
 <template>
-  <div class="flex flex-col gap-3 lg:h-[calc(100vh-12.5rem)] lg:min-h-[32rem]">
+  <div
+    class="flex flex-col gap-3 pb-[calc(7rem+env(safe-area-inset-bottom))] lg:h-[calc(100vh-12.5rem)] lg:min-h-[32rem] lg:pb-0"
+  >
     <ScreeningToolbar
       :project-id="projectId"
       :stage="stage"
@@ -355,7 +399,7 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
 
       <!-- Right: decision rail. Verdict and criteria scroll; the decision controls stay in view. -->
       <Card class="flex min-w-0 flex-col overflow-hidden lg:h-full" data-testid="decision-rail">
-        <div class="shrink-0 space-y-3 border-b p-4">
+        <div class="shrink-0 space-y-2 border-b px-4 py-3">
           <AiVerdict
             :decision="aiDecision"
             :loading="aiScreeningLoading"
@@ -369,21 +413,39 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
           </div>
         </div>
 
-        <div class="p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-          <CriteriaEvaluationList
-            :inclusion="criteriaStore.inclusionCriteria"
-            :exclusion="criteriaStore.exclusionCriteria"
-            :evaluations="evaluations"
+        <div class="relative lg:min-h-0 lg:flex-1">
+          <div
+            ref="criteriaScroll"
+            class="px-4 py-3 lg:h-full lg:overflow-y-auto"
+            data-testid="criteria-scroll"
+            @scroll.passive="updateOverflow"
+          >
+            <CriteriaEvaluationList
+              :inclusion="criteriaStore.inclusionCriteria"
+              :exclusion="criteriaStore.exclusionCriteria"
+              :evaluations="evaluations"
+            />
+          </div>
+          <div
+            v-show="moreBelow"
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-x-0 bottom-0 hidden h-8 bg-gradient-to-t from-card to-transparent shadow-[0_8px_8px_-8px_rgba(0,0,0,0.25)_inset] lg:block"
           />
         </div>
 
-        <div class="shrink-0 space-y-3 border-t bg-card p-4">
-          <div class="space-y-1.5">
-            <Label for="reasoning">Reasoning (Optional)</Label>
-            <Textarea id="reasoning" v-model="reasoning" placeholder="Add notes about your decision" :rows="1" />
-          </div>
+        <div class="shrink-0 space-y-1.5 border-t bg-card px-3 py-2">
+          <label for="reasoning" class="sr-only">Reasoning (Optional)</label>
+          <textarea
+            id="reasoning"
+            v-model="reasoning"
+            :rows="noteExpanded ? 3 : 1"
+            placeholder="+ Add a note (optional)"
+            class="block w-full resize-none rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            @focus="noteFocused = true"
+            @blur="noteFocused = false"
+          />
 
-          <div class="grid grid-cols-3 gap-2">
+          <div class="hidden grid-cols-3 gap-2 lg:grid">
             <Button
               :disabled="submitting"
               variant="include"
@@ -409,16 +471,56 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
             </Button>
           </div>
 
-          <div class="flex justify-between gap-2">
-            <Button variant="ghost" size="sm" :disabled="pos <= 0 || submitting" @click="previousArticle">
+          <div class="hidden items-center justify-between gap-2 lg:flex">
+            <Button variant="ghost" size="sm" class="h-7" :disabled="pos <= 0 || submitting" @click="previousArticle">
               Previous (P)
             </Button>
-            <Button variant="ghost" size="sm" :disabled="submitting" @click="nextArticle">Next (N)</Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              class="h-7 text-muted-foreground"
+              :aria-expanded="showShortcuts"
+              aria-controls="shortcut-legend-panel"
+              @click="showShortcuts = !showShortcuts"
+            >
+              Shortcuts
+            </Button>
+            <Button variant="ghost" size="sm" class="h-7" :disabled="submitting" @click="nextArticle">Next (N)</Button>
           </div>
 
-          <ShortcutLegend />
+          <div v-if="showShortcuts" id="shortcut-legend-panel" class="hidden lg:block">
+            <ShortcutLegend />
+          </div>
         </div>
       </Card>
+
+      <!-- Mobile: fixed action bar (the rail controls are shown from lg up) -->
+      <div
+        class="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 px-3 pt-2 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] backdrop-blur lg:hidden"
+        style="padding-bottom: calc(0.5rem + env(safe-area-inset-bottom))"
+        data-testid="mobile-action-bar"
+      >
+        <div class="mx-auto max-w-xl space-y-1">
+          <div class="grid grid-cols-3 gap-2">
+            <Button :disabled="submitting" variant="include" class="gap-1 whitespace-nowrap px-1" @click="submitDecision('include')">
+              <span aria-hidden="true" class="font-bold">✓</span>
+              Include
+            </Button>
+            <Button :disabled="submitting" variant="uncertain" class="gap-1 whitespace-nowrap px-1" @click="submitDecision('uncertain')">
+              <span aria-hidden="true" class="font-bold">?</span>
+              Uncertain
+            </Button>
+            <Button :disabled="submitting" variant="exclude" class="gap-1 whitespace-nowrap px-1" @click="submitDecision('exclude')">
+              <span aria-hidden="true" class="font-bold">✕</span>
+              Exclude
+            </Button>
+          </div>
+          <div class="flex justify-between">
+            <Button variant="ghost" size="sm" :disabled="pos <= 0 || submitting" @click="previousArticle">Previous</Button>
+            <Button variant="ghost" size="sm" :disabled="submitting" @click="nextArticle">Next</Button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-else-if="screeningStore.loading" class="py-12 text-center">

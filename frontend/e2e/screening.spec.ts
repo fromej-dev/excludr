@@ -233,6 +233,24 @@ test.describe('Screening Workflow', () => {
     expect(secondTitle).not.toBe(firstTitle)
   })
 
+  test('mobile bottom bar Include button records a decision', async ({ page, pageHelper, testUser }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await pageHelper.loginDirect(testUser.token)
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
+
+    const bar = page.getByTestId('mobile-action-bar')
+    await expect(bar).toBeVisible()
+    // Only one set of decision buttons is displayed below lg
+    await expect(page.getByRole('button', { name: /include/i })).toHaveCount(1)
+
+    const firstTitle = (await page.getByTestId('article-title').first().textContent())!.trim()
+    await bar.getByRole('button', { name: 'Include' }).click()
+
+    await expect(page.getByRole('alert').filter({ hasText: 'Included:' })).toBeVisible()
+    await expect(page.getByTestId('article-title')).not.toHaveText(firstTitle)
+  })
+
   test('should use keyboard shortcut for include', async ({ page, pageHelper, testUser }) => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(projectId, 'screening')
@@ -251,6 +269,8 @@ test.describe('Screening Workflow', () => {
     const secondTitle = await page.getByTestId('article-title').first().textContent()
     expect(secondTitle).not.toBe(firstTitle)
 
+    // The legend is collapsed behind a toggle
+    await page.getByRole('button', { name: 'Shortcuts' }).click()
     // Verify keyboard shortcut hint is visible
     const shortcutHint = page.getByTestId('shortcut-legend').getByText(/use keyboard shortcuts/i)
     await expect(shortcutHint).toBeVisible()

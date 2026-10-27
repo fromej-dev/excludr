@@ -36,11 +36,11 @@ const groups = computed(() => [
 </script>
 
 <template>
-  <div class="space-y-4" data-testid="criteria-list">
-    <section v-for="g in groups" :key="g.key" class="space-y-2">
+  <div class="space-y-3" data-testid="criteria-list">
+    <section v-for="g in groups" :key="g.key" class="space-y-1.5">
       <h3 :class="['text-xs font-semibold uppercase tracking-wide', g.titleClass]">{{ g.title }}</h3>
       <p v-if="g.items.length === 0" class="text-xs text-muted-foreground">None defined.</p>
-      <ul class="space-y-2">
+      <ul class="space-y-1.5">
         <li
           v-for="c in g.items"
           :key="c.id"
@@ -62,7 +62,7 @@ const groups = computed(() => [
           <template v-if="byCode.get(c.code)?.reasoning">
             <button
               type="button"
-              class="mt-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              class="mt-0.5 text-xs leading-4 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               :aria-expanded="open.has(c.code)"
               @click="toggle(c.code)"
             >
@@ -78,7 +78,7 @@ const groups = computed(() => [
 
     <section v-if="orphaned.length > 0" class="space-y-2">
       <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Other AI evaluations</h3>
-      <ul class="space-y-2">
+      <ul class="space-y-1.5">
         <li v-for="e in orphaned" :key="e.criterion_code" class="rounded-md border p-2 text-sm">
           <div class="flex items-center gap-2">
             <Badge variant="outline" class="font-mono">{{ e.criterion_code }}</Badge>
