@@ -1,9 +1,16 @@
 from typing import Annotated
 
 from fastapi import Depends
-from sqlmodel import Session, select
+from sqlalchemy import or_
+from sqlmodel import Session, delete, select
 
-from .models import Project, ProjectCreate, ProjectUpdate
+from .models import (
+    ImportBatch,
+    Project,
+    ProjectCreate,
+    ProjectMember,
+    ProjectUpdate,
+)
 from ..users.models import User
 from ...core.database import SessionDep
 
@@ -43,7 +50,9 @@ class ProjectService:
 
     @staticmethod
     def get_projects_of_user(user: User):
-        """Get select statement for all projects owned by a user.
+        """Get select statement for all projects a user is a member of.
+
+        Includes owned projects even if the membership row is missing.
 
         Args:
             user (User): User whose projects to retrieve
@@ -51,7 +60,12 @@ class ProjectService:
         Returns:
             Select statement for querying user's projects
         """
-        return select(Project).where(Project.owner_id == user.id)
+        member_of = select(ProjectMember.project_id).where(
+            ProjectMember.user_id == user.id
+        )
+        return select(Project).where(
+            or_(Project.owner_id == user.id, Project.id.in_(member_of))
+        )
 
     def create_project(self, data: ProjectCreate, user: User):
         """Create a new project.
@@ -65,6 +79,8 @@ class ProjectService:
         """
         project = Project(**data.model_dump())
         project.owner_id = user.id
+        # The owner's ProjectMember row is created by an after_insert listener
+        # on Project (see models.py) so every creation path gets one.
         self.session.add(project)
         self.session.commit()
         self.session.refresh(project)
@@ -98,6 +114,12 @@ class ProjectService:
 
         Returns:
         """
+        # Child rows without an ORM cascade (also covered by DB-level ON DELETE
+        # CASCADE; done explicitly so it works on databases without FK enforcement).
+        from app.features.audit.models import AuditEvent
+
+        for model in (ProjectMember, ImportBatch, AuditEvent):
+            self.session.exec(delete(model).where(model.project_id == project.id))
         self.session.delete(project)
         self.session.commit()
         return

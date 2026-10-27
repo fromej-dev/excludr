@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel, Column, JSON, Text, Relationship
 
 from app.features.projects.models import Project
@@ -12,6 +13,11 @@ if TYPE_CHECKING:
 from app.features.screening.models import ScreeningStage
 
 
+def _utcnow() -> datetime:
+    """Return the current time as a timezone-aware UTC datetime."""
+    return datetime.now(timezone.utc)
+
+
 class ArticleStatus(str, Enum):
     """Status of an article in the screening pipeline."""
 
@@ -21,6 +27,15 @@ class ArticleStatus(str, Enum):
     full_text_retrieved = "full_text_retrieved"
     included = "included"
     excluded = "excluded"
+
+
+class FullTextSource(str, Enum):
+    """Where an article's full text came from."""
+
+    unpaywall = "unpaywall"
+    pmc = "pmc"
+    europepmc = "europepmc"
+    manual = "manual"
 
 
 class FinalDecision(str, Enum):
@@ -35,6 +50,13 @@ class Article(SQLModel, table=True):
     """
     Represents an article with comprehensive details for processing and analysis.
     """
+
+    # Identifiers are unique per project (the same paper may live in several projects).
+    __table_args__ = (
+        UniqueConstraint("project_id", "doi", name="uq_article_project_doi"),
+        UniqueConstraint("project_id", "pmid", name="uq_article_project_pmid"),
+        UniqueConstraint("project_id", "pmcid", name="uq_article_project_pmcid"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
 
@@ -65,13 +87,10 @@ class Article(SQLModel, table=True):
     )
 
     # --- Standard Identifiers ---
-    doi: Optional[str] = Field(default=None, unique=True, index=True)
-    pmid: Optional[str] = Field(
-        default=None, unique=True, index=True, description="PubMed ID"
-    )
+    doi: Optional[str] = Field(default=None, index=True)
+    pmid: Optional[str] = Field(default=None, index=True, description="PubMed ID")
     pmcid: Optional[str] = Field(
         default=None,
-        unique=True,
         index=True,
         description="PubMed Central ID for full-text",
     )
@@ -101,7 +120,7 @@ class Article(SQLModel, table=True):
     )
 
     # --- Full Text & AI Agent Processing Pipeline ---
-    # These fields will be updated by your future Celery tasks.
+    # These fields will be updated by your Prefect flows.
     full_text_retrieved: bool = Field(
         default=False,
         index=True,
@@ -115,6 +134,18 @@ class Article(SQLModel, table=True):
         default=None,
         sa_column=Column(Text),
         description="Extracted text content from the full-text PDF",
+    )
+
+    full_text_source: Optional[str] = Field(
+        default=None,
+        description="Where the full text came from: unpaywall, pmc, europepmc, manual",
+    )
+    full_text_retrieval_error: Optional[str] = Field(
+        default=None,
+        description="Why the last automatic retrieval attempt failed (cleared on success)",
+    )
+    full_text_attempted_at: Optional[datetime] = Field(
+        default=None, description="When automatic retrieval was last attempted"
     )
 
     ai_check_status: Optional[str] = Field(
@@ -158,9 +189,9 @@ class Article(SQLModel, table=True):
         default=None,
         description="The name of the RIS file this article originated from",
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=_utcnow,
         nullable=False,
-        sa_column_kwargs={"onupdate": datetime.utcnow},
+        sa_column_kwargs={"onupdate": _utcnow},
     )

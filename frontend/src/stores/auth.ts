@@ -28,7 +28,7 @@ export const useAuthStore = defineStore('auth', () => {
         },
       })
 
-      setToken(response.access_token)
+      setToken(response.access_token, response.refresh_token)
       await fetchCurrentUser()
       return true
     } catch (err: any) {
@@ -44,7 +44,7 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      const newUser = await post<User>('/auth/register', data)
+      await post<User>('/auth/register', data)
       // After registration, automatically log in
       await login({ username: data.email, password: data.password })
       return true

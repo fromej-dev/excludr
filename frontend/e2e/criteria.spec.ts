@@ -6,13 +6,14 @@ test.describe('Criteria Management', () => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(project.id, 'criteria')
 
-    // Both columns should show empty state with "Add Criterion" buttons
-    const addCriterionButtons = page.getByRole('button', { name: /add criterion/i })
-    await expect(addCriterionButtons).toHaveCount(2)
+    // Both columns should show an empty state with their own "Add ... Criterion" button
+    await expect(page.getByRole('button', { name: 'Add Inclusion Criterion' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Add Exclusion Criterion' })).toBeVisible()
+    await expect(page.getByTestId('criterion-card')).toHaveCount(0)
 
     // Verify column titles are present
-    await expect(page.getByText('Inclusion Criteria')).toBeVisible()
-    await expect(page.getByText('Exclusion Criteria')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Inclusion Criteria' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Exclusion Criteria' })).toBeVisible()
   })
 
   test('should create an inclusion criterion', async ({ page, pageHelper, testUser, api }) => {
@@ -22,8 +23,7 @@ test.describe('Criteria Management', () => {
 
     // Click "Add" button in inclusion criteria section
     // Find the section containing "Inclusion Criteria" heading
-    const inclusionSection = page.locator('div').filter({ hasText: /^Inclusion Criteria/ }).first()
-    await inclusionSection.getByRole('button', { name: /add/i }).click()
+    await page.getByTestId('add-inclusion').click()
 
     // Fill the criterion form
     await page.locator('#code').fill('I1')
@@ -31,12 +31,14 @@ test.describe('Criteria Management', () => {
     await page.locator('#rationale').fill('We need measurable outcomes for meta-analysis')
 
     // Submit the form
-    await page.getByRole('button', { name: /submit|create|save/i }).click()
+    await page.getByRole('button', { name: 'Add Criterion', exact: true }).click()
 
-    // Assert the criterion card appears with correct data
-    await expect(page.getByText('I1')).toBeVisible()
-    await expect(page.getByText('Studies must include quantitative data')).toBeVisible()
-    await expect(page.getByText('We need measurable outcomes for meta-analysis')).toBeVisible()
+    // Assert the criterion card appears with correct data, in the inclusion column
+    const inclusion = page.getByTestId('inclusion-column')
+    await expect(inclusion.getByText('I1', { exact: true })).toBeVisible()
+    await expect(inclusion.getByText('Studies must include quantitative data')).toBeVisible()
+    await expect(inclusion.getByText('We need measurable outcomes for meta-analysis')).toBeVisible()
+    await expect(page.getByTestId('exclusion-column').getByTestId('criterion-card')).toHaveCount(0)
   })
 
   test('should create an exclusion criterion', async ({ page, pageHelper, testUser, api }) => {
@@ -45,19 +47,20 @@ test.describe('Criteria Management', () => {
     await pageHelper.goToProjectTab(project.id, 'criteria')
 
     // Click "Add" button in exclusion criteria section
-    const exclusionSection = page.locator('div').filter({ hasText: /^Exclusion Criteria/ }).first()
-    await exclusionSection.getByRole('button', { name: /add/i }).click()
+    await page.getByTestId('add-exclusion').click()
 
     // Fill the criterion form (no rationale this time)
     await page.locator('#code').fill('E1')
     await page.locator('#description').fill('Animal studies must be excluded')
 
     // Submit the form
-    await page.getByRole('button', { name: /submit|create|save/i }).click()
+    await page.getByRole('button', { name: 'Add Criterion', exact: true }).click()
 
     // Assert the criterion card appears in the exclusion column
-    await expect(page.getByText('E1')).toBeVisible()
-    await expect(page.getByText('Animal studies must be excluded')).toBeVisible()
+    const exclusion = page.getByTestId('exclusion-column')
+    await expect(exclusion.getByText('E1', { exact: true })).toBeVisible()
+    await expect(exclusion.getByText('Animal studies must be excluded')).toBeVisible()
+    await expect(page.getByTestId('inclusion-column').getByTestId('criterion-card')).toHaveCount(0)
   })
 
   test('should edit a criterion', async ({ page, pageHelper, testUser, api }) => {
@@ -76,14 +79,14 @@ test.describe('Criteria Management', () => {
     await expect(page.getByText('Original description text')).toBeVisible()
 
     // Click edit button on the criterion card
-    await page.getByRole('button', { name: /edit/i }).first().click()
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
 
     // Change the description
     await page.locator('#description').clear()
     await page.locator('#description').fill('Updated description text')
 
     // Save the changes
-    await page.getByRole('button', { name: /submit|save|update/i }).click()
+    await page.getByRole('button', { name: 'Update Criterion' }).click()
 
     // Assert updated description is shown and original is gone
     await expect(page.getByText('Updated description text')).toBeVisible()
@@ -103,21 +106,20 @@ test.describe('Criteria Management', () => {
 
     // Verify the criterion exists
     await expect(page.getByText('This criterion will be deleted')).toBeVisible()
-    await expect(page.getByText('I1')).toBeVisible()
+    await expect(page.getByText('I1', { exact: true })).toBeVisible()
 
-    // Click delete button
-    await page.getByRole('button', { name: /delete/i }).first().click()
+    // Click delete on the criterion card
+    await page.getByTestId('criterion-card').getByRole('button', { name: 'Delete' }).click()
 
     // Confirm deletion in the dialog
-    // The delete button in the dialog should be the last one (after the cancel button)
-    const deleteButtons = page.getByRole('button', { name: /delete/i })
-    await deleteButtons.last().click()
+    await page.getByRole('dialog', { name: 'Delete Criterion' }).getByRole('button', { name: 'Delete', exact: true }).click()
 
     // Assert the criterion is removed from the list
     await expect(page.getByText('This criterion will be deleted')).not.toBeVisible()
 
     // Should show empty state again
-    await expect(page.getByRole('button', { name: /add criterion/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Add Inclusion Criterion' })).toBeVisible()
+    await expect(page.getByTestId('criterion-card')).toHaveCount(0)
   })
 
   test('should show criteria seeded via API', async ({ page, pageHelper, testUser, api }) => {
@@ -153,10 +155,10 @@ test.describe('Criteria Management', () => {
     await pageHelper.goToProjectTab(project.id, 'criteria')
 
     // Assert all criterion codes are visible
-    await expect(page.getByText('I1')).toBeVisible()
-    await expect(page.getByText('I2')).toBeVisible()
-    await expect(page.getByText('E1')).toBeVisible()
-    await expect(page.getByText('E2')).toBeVisible()
+    await expect(page.getByText('I1', { exact: true })).toBeVisible()
+    await expect(page.getByText('I2', { exact: true })).toBeVisible()
+    await expect(page.getByText('E1', { exact: true })).toBeVisible()
+    await expect(page.getByText('E2', { exact: true })).toBeVisible()
 
     // Assert all descriptions are visible
     await expect(page.getByText('First inclusion criterion')).toBeVisible()
@@ -194,29 +196,29 @@ test.describe('Criteria Management', () => {
     await pageHelper.goToProjectTab(project.id, 'criteria')
 
     // Locate the inclusion criteria column (left side, green)
-    const inclusionColumn = page.locator('div').filter({ hasText: /^Inclusion Criteria/ }).first()
+    const inclusionColumn = page.getByTestId('inclusion-column')
 
     // Locate the exclusion criteria column (right side, red)
-    const exclusionColumn = page.locator('div').filter({ hasText: /^Exclusion Criteria/ }).first()
+    const exclusionColumn = page.getByTestId('exclusion-column')
 
     // Assert inclusion criteria are in the inclusion column
-    await expect(inclusionColumn.getByText('I1')).toBeVisible()
+    await expect(inclusionColumn.getByText('I1', { exact: true })).toBeVisible()
     await expect(inclusionColumn.getByText('Include quantitative studies only')).toBeVisible()
-    await expect(inclusionColumn.getByText('I2')).toBeVisible()
+    await expect(inclusionColumn.getByText('I2', { exact: true })).toBeVisible()
     await expect(inclusionColumn.getByText('Include peer-reviewed publications')).toBeVisible()
 
     // Assert exclusion criteria are in the exclusion column
-    await expect(exclusionColumn.getByText('E1')).toBeVisible()
+    await expect(exclusionColumn.getByText('E1', { exact: true })).toBeVisible()
     await expect(exclusionColumn.getByText('Exclude animal studies')).toBeVisible()
-    await expect(exclusionColumn.getByText('E2')).toBeVisible()
+    await expect(exclusionColumn.getByText('E2', { exact: true })).toBeVisible()
     await expect(exclusionColumn.getByText('Exclude non-English publications')).toBeVisible()
 
     // Verify separation: inclusion column should NOT contain exclusion criteria
-    await expect(inclusionColumn.getByText('E1')).not.toBeVisible()
-    await expect(inclusionColumn.getByText('E2')).not.toBeVisible()
+    await expect(inclusionColumn.getByText('E1', { exact: true })).not.toBeVisible()
+    await expect(inclusionColumn.getByText('E2', { exact: true })).not.toBeVisible()
 
     // Verify separation: exclusion column should NOT contain inclusion criteria
-    await expect(exclusionColumn.getByText('I1')).not.toBeVisible()
-    await expect(exclusionColumn.getByText('I2')).not.toBeVisible()
+    await expect(exclusionColumn.getByText('I1', { exact: true })).not.toBeVisible()
+    await expect(exclusionColumn.getByText('I2', { exact: true })).not.toBeVisible()
   })
 })

@@ -3,8 +3,9 @@ import { test, expect } from './fixtures'
 test.describe('Authentication Flow', () => {
   test('should redirect to login when not authenticated', async ({ page }) => {
     await page.goto('/')
-    await page.waitForURL('/login')
-    expect(page.url()).toContain('/login')
+    // The router keeps the target in ?redirect=
+    await page.waitForURL(/\/login(\?|$)/)
+    expect(new URL(page.url()).searchParams.get('redirect')).toBe('/')
   })
 
   test('should register a new user and redirect to dashboard', async ({ page, api }) => {
@@ -41,7 +42,8 @@ test.describe('Authentication Flow', () => {
     await page.locator('button[type="submit"]').click()
 
     // Should show error message
-    await expect(page.getByText(/password/i)).toBeVisible()
+    await expect(page.getByRole('alert')).toHaveText('Passwords do not match')
+    await expect(page).toHaveURL(/\/register/)
   })
 
   test('should login with valid credentials', async ({ page, api }) => {
@@ -70,7 +72,7 @@ test.describe('Authentication Flow', () => {
     await page.locator('button[type="submit"]').click()
 
     // Should show error message
-    await expect(page.locator('div').filter({ hasText: /invalid|incorrect|error/i }).first()).toBeVisible({ timeout: 5000 })
+    await expect(page.getByRole('alert')).toContainText(/invalid|incorrect|failed/i, { timeout: 5000 })
   })
 
   test('should navigate between login and register pages', async ({ page }) => {
@@ -122,7 +124,6 @@ test.describe('Authentication Flow', () => {
     await page.goto('/')
 
     // Should redirect to login
-    await page.waitForURL('/login', { timeout: 10000 })
-    expect(page.url()).toContain('/login')
+    await page.waitForURL(/\/login(\?|$)/, { timeout: 10000 })
   })
 })

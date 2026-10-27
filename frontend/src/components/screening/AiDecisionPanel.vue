@@ -14,20 +14,6 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
 })
 
-const decisionBadgeVariant = computed(() => {
-  if (!props.decision) return 'default'
-  switch (props.decision.decision) {
-    case 'include':
-      return 'default'
-    case 'exclude':
-      return 'destructive'
-    case 'uncertain':
-      return 'secondary'
-    default:
-      return 'default'
-  }
-})
-
 const decisionBadgeClass = computed(() => {
   if (!props.decision) return ''
   switch (props.decision.decision) {
@@ -76,12 +62,6 @@ const getMetStatusBadge = (met: boolean | null) => {
   if (met === null) return { text: 'Uncertain', class: 'bg-yellow-600 text-white' }
   if (met) return { text: 'Met', class: 'bg-green-600 text-white' }
   return { text: 'Not Met', class: 'bg-red-600 text-white' }
-}
-
-const getCriterionTypeClass = (type: string) => {
-  if (type === 'inclusion') return 'text-green-600'
-  if (type === 'exclusion') return 'text-red-600'
-  return 'text-muted-foreground'
 }
 
 const inclusionEvaluations = computed(() => {

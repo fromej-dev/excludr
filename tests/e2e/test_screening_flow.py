@@ -68,7 +68,7 @@ def test_title_abstract_include_flow(
     # Act - Get next article to screen
     response = client.get(
         f"{API}/projects/{project.id}/screening/next",
-        params={"stage": "title_abstract"}
+        params={"stage": "title_abstract"},
     )
     assert response.status_code == 200
     data = response.json()
@@ -136,7 +136,7 @@ def test_title_abstract_exclude_flow(
     # Act - Get next article
     response = client.get(
         f"{API}/projects/{project.id}/screening/next",
-        params={"stage": "title_abstract"}
+        params={"stage": "title_abstract"},
     )
     assert response.status_code == 200
     article_id = response.json()["article"]["id"]
@@ -192,7 +192,7 @@ def test_title_abstract_uncertain_flow(
     # Act - Get next article
     first_response = client.get(
         f"{API}/projects/{project.id}/screening/next",
-        params={"stage": "title_abstract"}
+        params={"stage": "title_abstract"},
     )
     assert first_response.status_code == 200
     first_article_id = first_response.json()["article"]["id"]
@@ -221,7 +221,7 @@ def test_title_abstract_uncertain_flow(
     # Assert - Articles still available for screening (uncertain doesn't remove from queue)
     second_response = client.get(
         f"{API}/projects/{project.id}/screening/next",
-        params={"stage": "title_abstract"}
+        params={"stage": "title_abstract"},
     )
     assert second_response.status_code == 200
     assert second_response.json()["article"] is not None
@@ -297,7 +297,7 @@ def test_complete_screening_pipeline(
     # Act - Screen first article: include at title/abstract
     response1 = client.get(
         f"{API}/projects/{project.id}/screening/next",
-        params={"stage": "title_abstract"}
+        params={"stage": "title_abstract"},
     )
     article1_id = response1.json()["article"]["id"]
     client.post(
@@ -312,7 +312,7 @@ def test_complete_screening_pipeline(
     # Act - Screen second article: exclude at title/abstract
     response2 = client.get(
         f"{API}/projects/{project.id}/screening/next",
-        params={"stage": "title_abstract"}
+        params={"stage": "title_abstract"},
     )
     article2_id = response2.json()["article"]["id"]
     client.post(
@@ -347,9 +347,7 @@ def test_complete_screening_pipeline(
 
 
 @pytest.mark.e2e
-def test_get_next_article_none_remaining(
-    client: TestClient, screening_ready_project
-):
+def test_get_next_article_none_remaining(client: TestClient, screening_ready_project):
     """
     Test get next article when all articles have been screened.
 
@@ -365,7 +363,7 @@ def test_get_next_article_none_remaining(
     for _ in range(2):
         response = client.get(
             f"{API}/projects/{project.id}/screening/next",
-            params={"stage": "title_abstract"}
+            params={"stage": "title_abstract"},
         )
         article_id = response.json()["article"]["id"]
         client.post(
@@ -380,7 +378,7 @@ def test_get_next_article_none_remaining(
     # Act - Try to get next article
     response = client.get(
         f"{API}/projects/{project.id}/screening/next",
-        params={"stage": "title_abstract"}
+        params={"stage": "title_abstract"},
     )
 
     # Assert - No article available
@@ -415,7 +413,7 @@ def test_screening_ownership_isolation(
     # Act & Assert - User B cannot get next article from User A's project
     next_response = client.get(
         f"{API}/projects/{project.id}/screening/next",
-        params={"stage": "title_abstract"}
+        params={"stage": "title_abstract"},
     )
     assert next_response.status_code == 403
 
@@ -457,7 +455,7 @@ def test_multiple_decisions_per_article(
     # Get an article to screen
     response = client.get(
         f"{API}/projects/{project.id}/screening/next",
-        params={"stage": "title_abstract"}
+        params={"stage": "title_abstract"},
     )
     article_id = response.json()["article"]["id"]
 
@@ -512,7 +510,9 @@ def test_multiple_decisions_per_article(
 
 # Helper functions
 
+
 def _get_token(user) -> str:
     """Generate access token for a user."""
     from app.features.auth.services import create_access_token
+
     return create_access_token(data={"sub": user.email})

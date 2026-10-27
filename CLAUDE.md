@@ -40,17 +40,20 @@ Excludr is a **systematic review screening tool** for researchers. In a systemat
 
 - **Article pipeline**: `imported → screening → awaiting_full_text → full_text_retrieved → included/excluded`
 - **Screening stages**: `title_abstract` | `full_text` | `completed`
+- **Full-text retrieval**: owners trigger `POST /projects/{id}/articles/retrieve-fulltext` (bulk, Prefect flow `retrieve_fulltext_flow`) or `.../{aid}/retrieve-fulltext` (single). `app/features/research/fulltext_retrieval.py` tries Unpaywall (needs `UNPAYWALL_EMAIL`), PubMed Central OA PDF, then Europe PMC full-text XML (text only, no PDF). The source is stored in `Article.full_text_source` (`unpaywall|pmc|europepmc|manual`); failures stay in `awaiting_full_text` with `full_text_retrieval_error`. Tests must mock HTTP (`httpx.MockTransport`, see `tests/features/research/fulltext_helpers.py`), never the network.
 - **Decision sources**: `ai_agent` | `human`
 - **Criteria types**: `inclusion` | `exclusion` — each with a code, description, and rationale
+- **Roles**: `owner` | `reviewer` | `viewer` per project (`ProjectMember`); enforced with `require_project_role(min_role)` from `app/features/projects/permissions.py` (viewer reads, reviewer also decides + runs AI, owner does everything else)
+- **Dual screening & conflicts**: `Project.required_reviewers` (1 or 2). Each reviewer's latest human decision per article/stage counts; an article advances only when the required reviewers have decided and agree, otherwise it is *in conflict* (computed, no status value) and the owner resolves it (`is_resolution` decision). AI decisions never count as reviewers.
+- **Reporting & audit**: PRISMA counts (from `ImportBatch` + decisions), CSV/RIS export, agreement stats (Cohen's kappa), and an append-only `AuditEvent` log
 
 ### Tech Stack
 
 - **FastAPI** — web framework
 - **SQLModel** — ORM (SQLAlchemy + Pydantic)
 - **pydantic-ai** — AI screening agent
-- **Celery + Redis** — background tasks
 - **Alembic** — database migrations
-- **Prefect** — workflow orchestration for file parsing
+- **Prefect** — workflow orchestration (file parsing, batch AI screening)
 - **Vue 3** — frontend (in progress)
 
 ## Common Commands
@@ -90,14 +93,15 @@ alembic revision --autogenerate -m "description"
 alembic upgrade head
 ```
 
-### Celery Worker
+### Prefect
 ```bash
-celery -A app.core.celery.celery worker --loglevel=info
+# Flows run in-process by default; start a Prefect server (UI on :4200) if wanted
+prefect server start
 ```
 
 ### Docker Services
 ```bash
-# Start PostgreSQL, Redis, and Flower (Celery monitoring)
+# Start PostgreSQL, Prefect server and the API (needs SECRET_KEY set)
 docker-compose up -d
 ```
 
@@ -105,7 +109,7 @@ docker-compose up -d
 
 ### Application Structure
 - `app/main.py` - FastAPI app entry point
-- `app/core/` - Core infrastructure (config, database, API router, Celery)
+- `app/core/` - Core infrastructure (config, database, API router, Prefect config)
 - `app/features/` - Feature modules (auth, users, projects, research, criteria, screening)
 
 ### Feature Module Pattern
@@ -113,7 +117,7 @@ Each feature in `app/features/` follows this structure:
 - `models.py` - SQLModel database models
 - `routers.py` - FastAPI route handlers
 - `services.py` - Business logic
-- `tasks.py` - Celery background tasks (if applicable)
+- `flows.py` - Prefect flows/tasks for background work (if applicable)
 - `schemas.py` - Pydantic schemas for request/response (if applicable)
 
 ### Database
@@ -122,10 +126,9 @@ Each feature in `app/features/` follows this structure:
 - Use `SessionDep` type annotation for dependency injection in routes
 
 ### Background Tasks
-- Celery with Redis broker
-- Tasks defined in feature `tasks.py` files
-- `get_celery_session()` context manager for database access in workers
-- Task modules registered in `app/core/celery.py`
+- Prefect flows and tasks, defined in feature `flows.py` files
+- `get_prefect_session()` (`app/core/prefect_config.py`) gives tasks a database session
+- Flows that run inside the API process (e.g. batch AI screening) open their own `Session(engine)`; pass only primitive ids into flows
 
 ### Configuration
 - Environment variables via `.env` file
@@ -135,7 +138,7 @@ Each feature in `app/features/` follows this structure:
 ### Testing
 - pytest with fixtures in `tests/conftest.py`
 - In-memory SQLite database with transaction rollback per test
-- Celery runs in eager mode during tests (synchronous execution)
+- Prefect flows run synchronously in tests; tests monkeypatch `get_prefect_session` to reuse the test session
 - Key fixtures: `client`, `session`, `auth_client`, `admin_client`, `a_user`, `a_project`, `auth_as`
 
 ### API Routes

@@ -1,4 +1,8 @@
+import type { Page } from '@playwright/test'
 import { test, expect, generateRisContent } from './fixtures'
+
+const articleCards = (page: Page) => page.getByTestId('article-card')
+const articleTitles = (page: Page) => page.getByTestId('article-card-title')
 
 test.describe('Articles Management', () => {
   test('should show empty state when no articles', async ({ pageHelper, api, testUser, page }) => {
@@ -20,14 +24,14 @@ test.describe('Articles Management', () => {
     await pageHelper.goToProjectTab(project.id, 'articles')
 
     // Wait for article cards to appear
-    await page.waitForSelector('h3', { timeout: 10000 })
+    await articleCards(page).first().waitFor({ timeout: 10000 })
 
     // Assert 3 article cards are visible with titles
-    const articleTitles = await page.locator('h3').all()
-    expect(articleTitles.length).toBe(3)
+    const titles = await articleTitles(page).all()
+    expect(titles.length).toBe(3)
 
     // Verify titles contain expected pattern
-    const firstTitle = await articleTitles[0].textContent()
+    const firstTitle = await titles[0].textContent()
     expect(firstTitle).toContain('E2E Test Article')
   })
 
@@ -37,21 +41,21 @@ test.describe('Articles Management', () => {
     await api.uploadRisFile(testUser.token, project.id, generateRisContent(3))
 
     await pageHelper.goToProjectTab(project.id, 'articles')
-    await page.waitForSelector('h3', { timeout: 10000 })
+    await articleCards(page).first().waitFor({ timeout: 10000 })
 
     // Get the first article's title from the list
-    const firstArticleTitle = await page.locator('h3').first().textContent()
+    const firstArticleTitle = await articleTitles(page).first().textContent()
 
     // Click the first article card
-    await page.locator('article').first().click()
+    await articleCards(page).first().click()
 
     // Assert article detail page shows title as h1
-    await expect(page.locator('h1')).toBeVisible({ timeout: 5000 })
-    const detailTitle = await page.locator('h1').textContent()
-    expect(detailTitle).toBe(firstArticleTitle)
+    const detailHeading = page.getByTestId('article-detail-title')
+    await expect(detailHeading).toBeVisible({ timeout: 5000 })
+    expect((await detailHeading.textContent())?.trim()).toBe(firstArticleTitle?.trim())
 
     // Assert detail page shows abstract section
-    await expect(page.getByText(/abstract/i)).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Abstract' })).toBeVisible()
   })
 
   test('should navigate back from article detail', async ({ pageHelper, api, testUser, page }) => {
@@ -60,18 +64,18 @@ test.describe('Articles Management', () => {
     await api.uploadRisFile(testUser.token, project.id, generateRisContent(3))
 
     await pageHelper.goToProjectTab(project.id, 'articles')
-    await page.waitForSelector('h3', { timeout: 10000 })
+    await articleCards(page).first().waitFor({ timeout: 10000 })
 
     // Navigate to detail page
-    await page.locator('article').first().click()
-    await expect(page.locator('h1')).toBeVisible({ timeout: 5000 })
+    await articleCards(page).first().click()
+    await expect(page.getByTestId('article-detail-title')).toBeVisible({ timeout: 5000 })
 
     // Click back button
     await page.getByRole('button', { name: /back/i }).click()
 
     // Assert back on articles list - check for article cards
-    await expect(page.locator('h3').first()).toBeVisible({ timeout: 5000 })
-    const articleCount = await page.locator('h3').count()
+    await expect(articleTitles(page).first()).toBeVisible({ timeout: 5000 })
+    const articleCount = await articleTitles(page).count()
     expect(articleCount).toBe(3)
   })
 
@@ -86,22 +90,22 @@ test.describe('Articles Management', () => {
     await api.startScreening(testUser.token, project.id)
 
     await pageHelper.goToProjectTab(project.id, 'articles')
-    await page.waitForSelector('h3', { timeout: 10000 })
+    await articleCards(page).first().waitFor({ timeout: 10000 })
 
     // Get initial count
-    const initialCount = await page.locator('h3').count()
+    const initialCount = await articleTitles(page).count()
     expect(initialCount).toBe(5)
 
-    // Apply status filter - select "screening"
-    const statusSelect = page.getByLabel(/status/i).or(page.locator('select').filter({ hasText: /status/i }))
+    const statusSelect = page.getByLabel('Status', { exact: true })
+
+    // All 5 articles moved to "screening", so "imported" matches none
+    await statusSelect.selectOption('imported')
+    await expect(page.getByText(/no articles found/i)).toBeVisible()
+    await expect(articleTitles(page)).toHaveCount(0)
+
+    // ... and "screening" matches all of them
     await statusSelect.selectOption('screening')
-
-    // Wait for filtered results
-    await page.waitForTimeout(1000)
-
-    // Assert filtered results show fewer articles
-    const filteredCount = await page.locator('h3').count()
-    expect(filteredCount).toBeLessThan(initialCount)
+    await expect(articleTitles(page)).toHaveCount(initialCount)
   })
 
   test('should clear filters', async ({ pageHelper, api, testUser, page }) => {
@@ -110,24 +114,24 @@ test.describe('Articles Management', () => {
     await api.uploadRisFile(testUser.token, project.id, generateRisContent(5))
 
     await pageHelper.goToProjectTab(project.id, 'articles')
-    await page.waitForSelector('h3', { timeout: 10000 })
+    await articleCards(page).first().waitFor({ timeout: 10000 })
 
     // Get initial count
-    const initialCount = await page.locator('h3').count()
+    const initialCount = await articleTitles(page).count()
     expect(initialCount).toBe(5)
 
     // Apply a filter (filter by "imported" status)
-    const statusSelect = page.getByLabel(/status/i).or(page.locator('select').filter({ hasText: /status/i }))
-    await statusSelect.selectOption('imported')
-    await page.waitForTimeout(500)
+    const statusSelect = page.getByLabel('Status', { exact: true })
+    await statusSelect.selectOption('screening')
+    // Nothing has started screening, so the filter empties the list
+    await expect(articleTitles(page)).toHaveCount(0)
 
     // Click "Clear Filters" button
     await page.getByRole('button', { name: /clear filters/i }).click()
-    await page.waitForTimeout(500)
 
-    // Assert all articles shown again
-    const afterClearCount = await page.locator('h3').count()
-    expect(afterClearCount).toBe(initialCount)
+    // Assert all articles shown again and the filter reset
+    await expect(articleTitles(page)).toHaveCount(initialCount)
+    await expect(statusSelect).toHaveValue('')
   })
 
   test('should display article metadata', async ({ pageHelper, api, testUser, page }) => {
@@ -136,10 +140,10 @@ test.describe('Articles Management', () => {
     await api.uploadRisFile(testUser.token, project.id, generateRisContent(3))
 
     await pageHelper.goToProjectTab(project.id, 'articles')
-    await page.waitForSelector('h3', { timeout: 10000 })
+    await articleCards(page).first().waitFor({ timeout: 10000 })
 
     // Get the first article card
-    const firstArticle = page.locator('article').first()
+    const firstArticle = articleCards(page).first()
 
     // Assert article card displays metadata
     // Check for authors (should show "et al." pattern or author names)

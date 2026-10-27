@@ -144,7 +144,7 @@ def test_complete_researcher_workflow(
             project_id=project_id,
             status=ArticleStatus.imported,
             stage=ScreeningStage.title_abstract,
-            title=f"Article {i+1}: {faker.sentence()}",
+            title=f"Article {i + 1}: {faker.sentence()}",
             abstract=faker.paragraph(nb_sentences=5),
         )
         articles.append(article)
@@ -205,8 +205,9 @@ def test_complete_researcher_workflow(
 
     for decision_data in screening_decisions:
         article = session.exec(
-            select(Article)
-            .where(Article.id == articles[decision_data["article_index"]].id)
+            select(Article).where(
+                Article.id == articles[decision_data["article_index"]].id
+            )
         ).first()
 
         decision_response = client.post(
@@ -497,8 +498,8 @@ def test_project_teardown(
             f"{API}/projects/{project_id}/criteria",
             json={
                 "type": "inclusion" if i == 0 else "exclusion",
-                "code": f"{'I' if i == 0 else 'E'}{i+1}",
-                "description": f"Criterion {i+1}",
+                "code": f"{'I' if i == 0 else 'E'}{i + 1}",
+                "description": f"Criterion {i + 1}",
                 "rationale": "Test rationale",
             },
             headers=headers,
@@ -509,7 +510,7 @@ def test_project_teardown(
         an_article(
             project_id=project_id,
             status=ArticleStatus.imported,
-            title=f"Article {i+1}",
+            title=f"Article {i + 1}",
         )
 
     # Verify project exists

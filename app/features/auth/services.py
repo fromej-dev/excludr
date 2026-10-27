@@ -5,7 +5,7 @@ import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from jwt import InvalidTokenError
-from passlib.context import CryptContext
+from app.core.security import verify_password as _verify_password
 from starlette import status
 
 from app.core.config import get_settings
@@ -17,38 +17,57 @@ settings = get_settings()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_prefix}/auth/token")
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+ACCESS_TOKEN_TYPE = "access"
+REFRESH_TOKEN_TYPE = "refresh"
 
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
+def _create_token(data: dict, token_type: str, expires_delta: timedelta) -> str:
+    """Encode a signed JWT carrying a ``typ`` claim that distinguishes its purpose."""
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(
-            minutes=settings.access_token_expire_minutes
-        )
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(
-        to_encode, settings.secret_key, algorithm=settings.algorithm
+    to_encode.update(
+        {"exp": datetime.now(timezone.utc) + expires_delta, "typ": token_type}
     )
-    return encoded_jwt
+    return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    """Create a short-lived access token."""
+    return _create_token(
+        data,
+        ACCESS_TOKEN_TYPE,
+        expires_delta or timedelta(minutes=settings.access_token_expire_minutes),
+    )
+
+
+def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    """Create a long-lived refresh token (only accepted by ``/auth/refresh``)."""
+    return _create_token(
+        data,
+        REFRESH_TOKEN_TYPE,
+        expires_delta or timedelta(days=settings.refresh_token_expire_days),
+    )
 
 
 def verify_password(plain_password, user: User):
-    return pwd_context.verify(plain_password, user.hashed_password)
+    return _verify_password(plain_password, user.hashed_password)
 
 
-def verify_token_and_get_user(token: str, us: UserServiceDep) -> User | None:
+def verify_token_and_get_user(
+    token: str, us: UserServiceDep, token_type: str = ACCESS_TOKEN_TYPE
+) -> User | None:
     """
-    Verify JWT token and return the user.
-    Returns None if token is invalid or user not found.
+    Verify a JWT of the given type and return the (active) user.
+    Returns None if the token is invalid, of the wrong type, expired, or the user
+    is missing or inactive.
     This function can be used by both HTTP and WebSocket endpoints.
     """
     try:
         payload = jwt.decode(
             token, settings.secret_key, algorithms=[settings.algorithm]
         )
+        if payload.get("typ") != token_type:
+            return None
         username = payload.get("sub")
         if username is None:
             return None
@@ -56,6 +75,8 @@ def verify_token_and_get_user(token: str, us: UserServiceDep) -> User | None:
     except InvalidTokenError:
         return None
     user = us.get_user_by_email(token_data.username)
+    if user is None or not user.is_active:
+        return None
     return user
 
 

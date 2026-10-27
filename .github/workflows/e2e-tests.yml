@@ -9,7 +9,6 @@ on:
 env:
   SECRET_KEY: e2e-test-secret-key-not-for-production
   DATABASE_URL: sqlite:///test.db
-  PREFECT_API_URL: http://localhost:4200/api
 
 jobs:
   # ── Backend API integration tests ──────────────────────────────────────
@@ -29,17 +28,10 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
-        run: |
-          uv pip install --system -e .
-          uv pip install --system --group dev
+        run: uv sync --frozen
 
       - name: Run backend tests
-        run: >-
-          pytest tests/ -v --tb=short
-          --ignore=tests/features/websocket/test_websocket.py
-          --ignore=tests/features/projects/test_upload.py
-          --ignore=tests/features/projects/test_pubmed_upload.py
-          -k "not (test_websocket_room_message or test_notify_room or test_get_room_members)"
+        run: uv run --frozen pytest tests/ -v --tb=short
         env:
           SECRET_KEY: ${{ env.SECRET_KEY }}
 
@@ -60,7 +52,9 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install backend dependencies
-        run: uv pip install --system -e .
+        run: |
+          uv sync --frozen --no-dev
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -71,7 +65,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: frontend
-        run: npm ci --legacy-peer-deps
+        run: npm ci
 
       - name: Install Playwright browsers
         working-directory: frontend

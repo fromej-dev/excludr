@@ -1,6 +1,7 @@
 import json
 import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from app.features.websocket.manager import ConnectionManager
 from app.features.websocket.schemas import MessageType
@@ -38,14 +39,14 @@ def test_websocket_connect_with_valid_token(client: TestClient, a_user, token_fo
 
 def test_websocket_connect_with_invalid_token(client: TestClient):
     """Test WebSocket connection rejection with invalid token."""
-    with pytest.raises(Exception):
+    with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/api/v1/ws?token=invalid_token"):
             pass
 
 
 def test_websocket_connect_without_token(client: TestClient):
     """Test WebSocket connection rejection without token."""
-    with pytest.raises(Exception):
+    with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/api/v1/ws"):
             pass
 
@@ -71,130 +72,173 @@ def test_websocket_echo_message(client: TestClient, a_user, token_for):
         assert "Echo: Hello, WebSocket!" in response["message"]
 
 
-def test_websocket_join_room(client: TestClient, a_user, token_for):
-    """Test joining a custom room."""
+def _send(ws, **message):
+    ws.send_text(json.dumps(message))
+    return json.loads(ws.receive_text())
+
+
+def test_websocket_join_own_project_room(
+    client: TestClient, a_user, a_project, token_for
+):
+    """Owners may join the room of a project they own."""
     user = a_user()
-    token = token_for(user)
+    project = a_project(user)
 
-    with client.websocket_connect(f"/api/v1/ws?token={token}") as websocket:
-        # Skip welcome message
-        websocket.receive_text()
-
-        # Join a room
-        message = {"type": "join_room", "room": "test_room"}
-        websocket.send_text(json.dumps(message))
-
-        # Receive confirmation
-        data = websocket.receive_text()
-        response = json.loads(data)
+    with client.websocket_connect(f"/api/v1/ws?token={token_for(user)}") as ws:
+        ws.receive_text()
+        room = f"project_{project.id}"
+        response = _send(ws, type="join_room", room=room)
 
         assert response["type"] == MessageType.INFO
-        assert "Joined room: test_room" in response["message"]
-        assert "test_room" in response["data"]["rooms"]
+        assert f"Joined room: {room}" in response["message"]
+        assert room in response["data"]["rooms"]
         assert f"user_{user.id}" in response["data"]["rooms"]
 
 
-def test_websocket_leave_room(client: TestClient, a_user, token_for):
+def test_websocket_join_own_user_room(client: TestClient, a_user, token_for):
+    user = a_user()
+    with client.websocket_connect(f"/api/v1/ws?token={token_for(user)}") as ws:
+        ws.receive_text()
+        response = _send(ws, type="join_room", room=f"user_{user.id}")
+        assert response["type"] == MessageType.INFO
+
+
+@pytest.mark.parametrize(
+    "kind", ["other_user", "other_project", "arbitrary", "missing"]
+)
+def test_websocket_join_unauthorized_room_denied(
+    client: TestClient, a_user, a_project, token_for, kind
+):
+    """Users cannot join rooms of other users/projects or arbitrary rooms."""
+    from app.features.websocket.manager import manager
+
+    user, other = a_user(), a_user()
+    other_project = a_project(other)
+    room = {
+        "other_user": f"user_{other.id}",
+        "other_project": f"project_{other_project.id}",
+        "arbitrary": "test_room",
+        "missing": "project_999999",
+    }[kind]
+
+    with client.websocket_connect(f"/api/v1/ws?token={token_for(user)}") as ws:
+        ws.receive_text()
+        response = _send(ws, type="join_room", room=room)
+
+        assert response["type"] == MessageType.ERROR
+        assert room not in manager.get_user_rooms(user.id)
+        assert user.id not in manager.get_room_users(room)
+
+
+def test_websocket_leave_room(client: TestClient, a_user, a_project, token_for):
     """Test leaving a room."""
     user = a_user()
-    token = token_for(user)
+    room = f"project_{a_project(user).id}"
 
-    with client.websocket_connect(f"/api/v1/ws?token={token}") as websocket:
-        # Skip welcome message
-        websocket.receive_text()
+    with client.websocket_connect(f"/api/v1/ws?token={token_for(user)}") as ws:
+        ws.receive_text()
+        _send(ws, type="join_room", room=room)
 
-        # Join a room
-        join_message = {"type": "join_room", "room": "test_room"}
-        websocket.send_text(json.dumps(join_message))
-        websocket.receive_text()  # Skip confirmation
-
-        # Leave the room
-        leave_message = {"type": "leave_room", "room": "test_room"}
-        websocket.send_text(json.dumps(leave_message))
-
-        # Receive confirmation
-        data = websocket.receive_text()
-        response = json.loads(data)
+        response = _send(ws, type="leave_room", room=room)
 
         assert response["type"] == MessageType.INFO
-        assert "Left room: test_room" in response["message"]
-        assert "test_room" not in response["data"]["rooms"]
+        assert f"Left room: {room}" in response["message"]
+        assert room not in response["data"]["rooms"]
 
 
-def test_websocket_room_message(client: TestClient, a_user, token_for):
-    """Test sending a message to a room with multiple users."""
-    user1 = a_user()
-    user2 = a_user()
-    token1 = token_for(user1)
-    token2 = token_for(user2)
+def test_websocket_room_message_to_joined_room(
+    client: TestClient, a_user, a_project, token_for
+):
+    """A member can message a room they joined."""
+    user = a_user()
+    room = f"project_{a_project(user).id}"
 
-    with client.websocket_connect(
-        f"/api/v1/ws?token={token1}"
-    ) as ws1, client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2:
-        # Skip welcome messages
+    with client.websocket_connect(f"/api/v1/ws?token={token_for(user)}") as ws:
+        ws.receive_text()
+        _send(ws, type="join_room", room=room)
+
+        response = _send(ws, type="room_message", room=room, data="Hello everyone!")
+
+        assert response["type"] == MessageType.ROOM_MESSAGE
+        assert response["message"] == "Hello everyone!"
+        assert response["data"]["from_user_id"] == user.id
+
+
+def test_websocket_room_message_to_foreign_room_denied(
+    client: TestClient, a_user, a_project, token_for
+):
+    """Non-members cannot post into a room, and members never see the message."""
+    victim, attacker = a_user(), a_user()
+    room = f"project_{a_project(victim).id}"
+
+    with (
+        client.websocket_connect(f"/api/v1/ws?token={token_for(victim)}") as ws_victim,
+        client.websocket_connect(f"/api/v1/ws?token={token_for(attacker)}") as ws_att,
+    ):
+        ws_victim.receive_text()
+        ws_att.receive_text()
+        _send(ws_victim, type="join_room", room=room)
+
+        response = _send(ws_att, type="room_message", room=room, data="pwned")
+        assert response["type"] == MessageType.ERROR
+
+        # The victim's next frame is their own echo, not the attacker's message
+        echo = _send(ws_victim, type="text", data="ping")
+        assert echo["type"] == MessageType.TEXT
+
+
+def test_websocket_broadcast_denied_for_regular_user(
+    client: TestClient, a_user, token_for
+):
+    """Regular users cannot broadcast to everyone."""
+    user1, user2 = a_user(), a_user()
+
+    with (
+        client.websocket_connect(f"/api/v1/ws?token={token_for(user1)}") as ws1,
+        client.websocket_connect(f"/api/v1/ws?token={token_for(user2)}") as ws2,
+    ):
         ws1.receive_text()
         ws2.receive_text()
 
-        # Both users join the same room
-        room_name = "shared_room"
-        join_message = {"type": "join_room", "room": room_name}
+        response = _send(ws1, type="broadcast", data="Broadcast to all!")
+        assert response["type"] == MessageType.ERROR
 
-        ws1.send_text(json.dumps(join_message))
-        ws1.receive_text()  # Skip confirmation
-
-        ws2.send_text(json.dumps(join_message))
-        ws2.receive_text()  # Skip confirmation
-
-        # User 1 sends a message to the room
-        room_message = {
-            "type": "room_message",
-            "room": room_name,
-            "data": "Hello everyone!",
-        }
-        ws1.send_text(json.dumps(room_message))
-
-        # Both users should receive the message
-        data1 = ws1.receive_text()
-        response1 = json.loads(data1)
-        assert response1["type"] == MessageType.ROOM_MESSAGE
-        assert response1["message"] == "Hello everyone!"
-        assert response1["data"]["from_user_id"] == user1.id
-
-        data2 = ws2.receive_text()
-        response2 = json.loads(data2)
-        assert response2["type"] == MessageType.ROOM_MESSAGE
-        assert response2["message"] == "Hello everyone!"
-        assert response2["data"]["from_user_id"] == user1.id
+        echo = _send(ws2, type="text", data="ping")
+        assert echo["type"] == MessageType.TEXT
 
 
-def test_websocket_broadcast(client: TestClient, a_user, token_for):
-    """Test broadcasting a message to all connected users."""
-    user1 = a_user()
-    user2 = a_user()
-    token1 = token_for(user1)
-    token2 = token_for(user2)
+def test_websocket_broadcast_allowed_for_superuser(
+    client: TestClient, a_user, token_for, session
+):
+    """Superusers can broadcast to all connected users."""
+    admin, user2 = a_user(), a_user()
+    admin.is_superuser = True
+    session.add(admin)
+    session.commit()
 
-    with client.websocket_connect(
-        f"/api/v1/ws?token={token1}"
-    ) as ws1, client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2:
-        # Skip welcome messages
+    with (
+        client.websocket_connect(f"/api/v1/ws?token={token_for(admin)}") as ws1,
+        client.websocket_connect(f"/api/v1/ws?token={token_for(user2)}") as ws2,
+    ):
         ws1.receive_text()
         ws2.receive_text()
 
-        # User 1 broadcasts a message
-        broadcast_message = {"type": "broadcast", "data": "Broadcast to all!"}
-        ws1.send_text(json.dumps(broadcast_message))
+        ws1.send_text(json.dumps({"type": "broadcast", "data": "Broadcast to all!"}))
 
-        # Both users should receive the broadcast
-        data1 = ws1.receive_text()
-        response1 = json.loads(data1)
-        assert response1["type"] == MessageType.BROADCAST
-        assert response1["message"] == "Broadcast to all!"
+        for ws in (ws1, ws2):
+            response = json.loads(ws.receive_text())
+            assert response["type"] == MessageType.BROADCAST
+            assert response["message"] == "Broadcast to all!"
 
-        data2 = ws2.receive_text()
-        response2 = json.loads(data2)
-        assert response2["type"] == MessageType.BROADCAST
-        assert response2["message"] == "Broadcast to all!"
+
+def test_websocket_rejects_refresh_token(client: TestClient, a_user):
+    from app.features.auth.services import create_refresh_token
+
+    user = a_user()
+    token = create_refresh_token({"sub": user.email})
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(f"/api/v1/ws?token={token}"):
+            pass
 
 
 def test_websocket_invalid_message_format(client: TestClient, a_user, token_for):

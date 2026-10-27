@@ -9,7 +9,7 @@ import Badge from '@/components/ui/Badge.vue'
 import Card from '@/components/ui/Card.vue'
 
 const wsStore = useWebSocketStore()
-const { isConnected, connectionState, userRooms, notifications } = storeToRefs(wsStore)
+const { isConnected, connectionState, userRooms } = storeToRefs(wsStore)
 
 const messageText = ref('')
 const roomName = ref('')

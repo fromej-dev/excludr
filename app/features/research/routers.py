@@ -1,53 +1,79 @@
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile
+import os
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    HTTPException,
+    Depends,
+    Query,
+    UploadFile,
+)
+from fastapi.responses import FileResponse
+from sqlmodel import select
 from fastapi_fsp import FSPManager
 from fastapi_fsp.models import PaginatedResponse
 
 from app.core.database import SessionDep
-from app.features.auth.services import get_current_user
-from app.features.users.models import User
-from app.features.projects.services import ProjectServiceDep
+from app.core.prefect_config import run_flow_in_background
+from app.features.projects.permissions import OwnerAccess, ViewerAccess
 from .models import Article, ArticleStatus, ScreeningStage
+from .flows import retrieve_fulltext_flow
+from .fulltext_retrieval import retrieve_full_text
+from .schemas import FullTextRetrievalResult, RetrieveFullTextRequest
 from .services import ArticleServiceDep
+from app.features.screening.services import ScreeningServiceDep
 
 router = APIRouter(tags=["Articles"], prefix="/projects/{project_id}/articles")
-
-
-def verify_project_ownership(
-    project_id: int, current_user: User, ps: ProjectServiceDep
-):
-    """Helper to verify project exists and user owns it."""
-    project = ps.get_project_by_id(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="You are not the owner of the project"
-        )
-    return project
 
 
 @router.get("", response_model=PaginatedResponse[Article])
 def get_articles(
     project_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
+    access: ViewerAccess,
     session: SessionDep,
-    ps: ProjectServiceDep,
     article_service: ArticleServiceDep,
     fsp: Annotated[FSPManager, Depends()],
+    ss: ScreeningServiceDep,
     status: Annotated[Optional[ArticleStatus], Query()] = None,
     stage: Annotated[Optional[ScreeningStage], Query()] = None,
+    pending_for_me: Annotated[
+        bool,
+        Query(
+            description="Screening queue: articles at `stage` (default "
+            "title_abstract) that the caller has not decided yet"
+        ),
+    ] = False,
+    has_full_text: Annotated[Optional[bool], Query()] = None,
 ):
-    """Get all articles for a project with optional filtering."""
-    verify_project_ownership(project_id, current_user, ps)
+    """Get all articles for a project with optional filtering.
 
-    if status:
+    ``pending_for_me`` uses the same rules as ``GET /screening/next``: the article
+    must be waiting for screening at ``stage`` (``screening`` status for
+    title_abstract, ``full_text_retrieved`` for full_text), not yet decided by the
+    caller, and not already covered by enough reviewers in dual-screening mode.
+    """
+
+    if pending_for_me:
+        if stage == ScreeningStage.completed:
+            raise HTTPException(
+                status_code=422, detail="pending_for_me needs a screening stage"
+            )
+        query = ss.pending_articles_query(
+            project_id,
+            stage or ScreeningStage.title_abstract,
+            reviewer_id=access.user.id,
+            required_reviewers=access.project.required_reviewers,
+        )
+    elif status:
         query = article_service.get_articles_by_status(project_id, status)
     elif stage:
         query = article_service.get_articles_by_stage(project_id, stage)
     else:
         query = article_service.get_articles_for_project(project_id)
+
+    if has_full_text is not None:
+        query = query.where(Article.full_text_retrieved.is_(has_full_text))
 
     return fsp.generate_response(query, session)
 
@@ -55,14 +81,11 @@ def get_articles(
 @router.get("/stats")
 def get_article_stats(
     project_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
+    access: ViewerAccess,
     session: SessionDep,
-    ps: ProjectServiceDep,
 ):
     """Get article statistics for a project."""
     from sqlmodel import select, func
-
-    verify_project_ownership(project_id, current_user, ps)
 
     # Total count
     total = session.exec(
@@ -94,12 +117,10 @@ def get_article_stats(
 def get_article(
     project_id: int,
     article_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: ViewerAccess,
     article_service: ArticleServiceDep,
 ):
     """Get a single article by ID."""
-    verify_project_ownership(project_id, current_user, ps)
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -110,12 +131,10 @@ def get_article(
 def delete_article(
     project_id: int,
     article_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     article_service: ArticleServiceDep,
 ):
     """Delete an article."""
-    verify_project_ownership(project_id, current_user, ps)
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -126,14 +145,106 @@ def delete_article(
 @router.post("/start-screening")
 def start_screening(
     project_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     article_service: ArticleServiceDep,
 ):
     """Move all imported articles to screening status."""
-    verify_project_ownership(project_id, current_user, ps)
     count = article_service.start_screening(project_id)
     return {"message": f"Started screening for {count} articles", "count": count}
+
+
+def _eligible_for_retrieval(article: Article) -> bool:
+    """Articles that wait for a full text and do not have one yet."""
+    return (
+        article.status == ArticleStatus.awaiting_full_text
+        and not article.full_text_retrieved
+    )
+
+
+@router.post("/retrieve-fulltext")
+def retrieve_fulltext_bulk(
+    project_id: int,
+    access: OwnerAccess,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    body: Optional[RetrieveFullTextRequest] = None,
+):
+    """Start background full-text retrieval (Unpaywall, PMC, Europe PMC).
+
+    Without ``article_ids`` every article awaiting full text that has none yet is
+    processed; with ids, only those among them that are eligible. Progress is
+    broadcast on the project websocket room (``fulltext_progress`` /
+    ``fulltext_complete``). Failures stay in ``awaiting_full_text`` with the
+    error stored on the article.
+    """
+    query = select(Article.id).where(
+        Article.project_id == project_id,
+        Article.status == ArticleStatus.awaiting_full_text,
+        Article.full_text_retrieved.is_(False),
+    )
+    if body is not None and body.article_ids is not None:
+        query = query.where(Article.id.in_(body.article_ids))
+    article_ids = list(session.exec(query.order_by(Article.id)).all())
+    if not article_ids:
+        return {"message": "No eligible articles", "count": 0}
+
+    # Primitive ids only: the flow opens its own session.
+    background_tasks.add_task(
+        run_flow_in_background,
+        retrieve_fulltext_flow,
+        project_id,
+        article_ids,
+        access.user.id,
+    )
+    return {"message": "Full-text retrieval started", "count": len(article_ids)}
+
+
+@router.post("/{article_id}/retrieve-fulltext", response_model=FullTextRetrievalResult)
+async def retrieve_fulltext_single(
+    project_id: int,
+    article_id: int,
+    access: OwnerAccess,
+    session: SessionDep,
+    article_service: ArticleServiceDep,
+):
+    """Retrieve one article's full text now and report which sources were tried."""
+    article = article_service.get_article_by_id(article_id)
+    if article is None or article.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Article not found")
+    if not _eligible_for_retrieval(article):
+        raise HTTPException(
+            status_code=409,
+            detail="Article is not awaiting full text or already has one",
+        )
+    return await retrieve_full_text(session, article)
+
+
+@router.get("/{article_id}/fulltext/pdf")
+def get_fulltext_pdf(
+    project_id: int,
+    article_id: int,
+    access: ViewerAccess,
+    article_service: ArticleServiceDep,
+):
+    """Serve the stored full-text PDF inline."""
+    from app.core.config import get_settings
+
+    article = article_service.get_article_by_id(article_id)
+    if article is None or article.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Article not found")
+    if not article.full_text_path:
+        raise HTTPException(status_code=404, detail="No PDF stored for this article")
+
+    storage = os.path.realpath(get_settings().pdf_storage_path)
+    path = os.path.realpath(article.full_text_path)
+    if os.path.commonpath([storage, path]) != storage or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="No PDF stored for this article")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=f"article-{article.id}.pdf",
+        content_disposition_type="inline",
+    )
 
 
 @router.post("/{article_id}/fulltext/upload")
@@ -141,38 +252,29 @@ async def upload_fulltext(
     project_id: int,
     article_id: int,
     file: UploadFile,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     article_service: ArticleServiceDep,
 ):
     """Upload a full-text PDF for an article and extract text content."""
-    import os
-    import shutil
-    import uuid
     from app.core.config import get_settings
+    from app.core.uploads import remove_file, save_upload
     from .pdf_extraction import extract_text_from_pdf_safe
 
-    verify_project_ownership(project_id, current_user, ps)
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=400, detail="Invalid file type. Please upload a .pdf file."
-        )
-
-    settings = get_settings()
-    pdf_dir = getattr(settings, "pdf_storage_path", "/tmp/pdfs")
-    os.makedirs(pdf_dir, exist_ok=True)
-
-    safe_filename = f"{uuid.uuid4()}_{file.filename}"
-    file_path = os.path.join(pdf_dir, safe_filename)
-
+    file_path: str | None = None
     try:
-        # Save the PDF file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Validates extension, %PDF- magic bytes and size; stored as <uuid>.pdf
+        file_path = await save_upload(
+            file,
+            get_settings().pdf_storage_path,
+            {".pdf"},
+            magic=b"%PDF-",
+            invalid_type_detail="Invalid file type. Please upload a .pdf file.",
+            invalid_content_detail="Invalid PDF: file does not start with %PDF-.",
+        )
 
         # Extract text from the PDF
         extracted_text = extract_text_from_pdf_safe(file_path)
@@ -182,14 +284,15 @@ async def upload_fulltext(
 
         return {
             "message": "Full text uploaded successfully",
-            "path": file_path,
             "text_extracted": extracted_text is not None,
             "text_length": len(extracted_text) if extracted_text else 0,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         # Clean up the file if something went wrong
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        if file_path:
+            remove_file(file_path)
         raise HTTPException(status_code=500, detail="Failed to upload file") from e
     finally:
         await file.close()

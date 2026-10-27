@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { provide, ref, computed } from 'vue'
+import { provide, computed } from 'vue'
 
 interface Props {
   modelValue?: string

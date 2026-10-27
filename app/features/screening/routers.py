@@ -1,18 +1,33 @@
+import logging
 from typing import Annotated
-import json
 
 from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
 from fastapi_fsp import FSPManager
 from fastapi_fsp.models import PaginatedResponse
 
 from app.core.database import SessionDep
-from app.features.auth.services import get_current_user
-from app.features.users.models import User
-from app.features.projects.services import ProjectServiceDep
+from app.core.prefect_config import run_flow_in_background
+from app.features.audit import services as audit
+from app.features.projects.models import ProjectRole
+from app.features.projects.permissions import (
+    OwnerAccess,
+    ReviewerAccess,
+    ViewerAccess,
+)
 from app.features.research.services import ArticleServiceDep
-from app.features.research.agent import screen_article
+from app.features.research.agent import (
+    AIScreeningNotConfiguredError,
+    ensure_ai_configured,
+    screen_article,
+)
 from app.features.criteria.models import Criterion
-from app.features.websocket.manager import manager
+from app.features.criteria.services import CriterionServiceDep
+from .schemas import (
+    AIDisagreementRead,
+    AgreementRead,
+    ConflictRead,
+    ResolveRequest,
+)
 from .models import (
     ScreeningDecision,
     ScreeningDecisionCreate,
@@ -20,49 +35,58 @@ from .models import (
     ScreeningStats,
     DecisionSource,
 )
-from .services import ScreeningServiceDep
-from sqlmodel import select
+from .services import ScreeningError, ScreeningServiceDep, ScreeningService
+from .flows import batch_ai_screening_flow
+from sqlmodel import and_, or_, select
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Screening"], prefix="/projects/{project_id}/screening")
-
-
-def verify_project_ownership(
-    project_id: int, current_user: User, ps: ProjectServiceDep
-):
-    """Helper to verify project exists and user owns it."""
-    project = ps.get_project_by_id(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="You are not the owner of the project"
-        )
-    return project
 
 
 @router.get("/stats", response_model=ScreeningStats)
 def get_screening_stats(
     project_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: ViewerAccess,
     ss: ScreeningServiceDep,
 ):
     """Get screening statistics for a project."""
-    verify_project_ownership(project_id, current_user, ps)
     return ss.get_screening_stats(project_id)
+
+
+@router.get("/stale-ai-decisions")
+def get_stale_ai_decisions(
+    project_id: int,
+    access: ViewerAccess,
+    ss: ScreeningServiceDep,
+    cs: CriterionServiceDep,
+):
+    """List articles whose latest AI decision used outdated criteria.
+
+    An AI decision is stale when its criteria snapshot (``{code: version}``)
+    differs from the project's current active criteria.
+    """
+    ids = ss.get_stale_ai_article_ids(project_id, cs.get_active_snapshot(project_id))
+    return {"article_ids": ids, "count": len(ids)}
 
 
 @router.get("/next")
 def get_next_article(
     project_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: ReviewerAccess,
     ss: ScreeningServiceDep,
     stage: Annotated[ScreeningStage, Query()] = ScreeningStage.title_abstract,
 ):
-    """Get the next article to screen at the given stage."""
-    verify_project_ownership(project_id, current_user, ps)
-    article = ss.get_next_article_for_screening(project_id, stage)
+    """Get the next article this reviewer has not yet screened at the given stage.
+
+    The response never includes other reviewers' decisions (blind screening).
+    """
+    article = ss.get_next_article_for_screening(
+        project_id,
+        stage,
+        reviewer_id=access.user.id,
+        required_reviewers=access.project.required_reviewers,
+    )
     if article is None:
         return {"message": "No more articles to screen at this stage", "article": None}
     return {"article": article}
@@ -75,19 +99,24 @@ def get_next_article(
 def get_article_decisions(
     project_id: int,
     article_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
+    access: ViewerAccess,
     session: SessionDep,
-    ps: ProjectServiceDep,
     article_service: ArticleServiceDep,
     ss: ScreeningServiceDep,
     fsp: Annotated[FSPManager, Depends()],
 ):
     """Get all screening decisions for an article."""
-    verify_project_ownership(project_id, current_user, ps)
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
-    query = ss.get_decisions_for_article(article_id)
+    # With dual screening, non-owners must not see other reviewers' decisions
+    # while the article is still being screened at that stage.
+    blind = access.project.required_reviewers >= 2 and access.role != ProjectRole.owner
+    query = ss.get_decisions_for_article(
+        article_id,
+        blind_for_user_id=access.user.id if blind else None,
+        blind_stage=article.current_stage,
+    )
     return fsp.generate_response(query, session)
 
 
@@ -100,28 +129,130 @@ def create_decision(
     project_id: int,
     article_id: int,
     data: ScreeningDecisionCreate,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: ReviewerAccess,
+    session: SessionDep,
     article_service: ArticleServiceDep,
     ss: ScreeningServiceDep,
 ):
-    """Create a screening decision for an article."""
-    verify_project_ownership(project_id, current_user, ps)
+    """Create the caller's human screening decision for an article.
+
+    A reviewer has one effective decision per article and stage: posting again
+    supersedes the earlier one (the old row stays as history; only the latest counts).
+    The article advances only once the project's required
+    number of reviewers have decided and agree; otherwise it is left in conflict
+    for the owner to resolve. Decisions with ``source=ai_agent`` are owner-only,
+    are stored as-is and never affect article status.
+    """
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    # Set reviewer_id for human decisions
-    reviewer_id = current_user.id if data.source.value == "human" else None
+    if data.source != DecisionSource.human:
+        if access.role != ProjectRole.owner:
+            raise HTTPException(
+                status_code=403, detail="Only the owner can record AI decisions"
+            )
+        return ss.create_decision(article_id, data, None)
 
-    decision = ss.create_decision(article_id, data, reviewer_id)
-
-    # Update article status based on decision
-    article_service.update_article_status_from_decision(
-        article, data.stage, data.decision
+    try:
+        decision, replaced = ss.submit_human_decision(
+            access.project, article, data, access.user.id
+        )
+    except ScreeningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    audit.record_event(
+        session,
+        project_id,
+        audit.DECISION_UPDATED if replaced else audit.DECISION_CREATED,
+        "decision",
+        decision.id,
+        access.user.id,
+        {
+            "article_id": article_id,
+            "stage": data.stage.value,
+            "decision": data.decision.value,
+        },
     )
-
+    session.refresh(decision)  # the audit commit expired it
     return decision
+
+
+@router.post(
+    "/articles/{article_id}/resolve",
+    response_model=ScreeningDecision,
+)
+def resolve_conflict(
+    project_id: int,
+    article_id: int,
+    data: ResolveRequest,
+    access: OwnerAccess,
+    session: SessionDep,
+    article_service: ArticleServiceDep,
+    ss: ScreeningServiceDep,
+):
+    """Resolve a reviewer conflict with the owner's final decision (owner only)."""
+    article = article_service.get_article_by_id(article_id)
+    if article is None or article.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Article not found")
+    try:
+        decision = ss.resolve_conflict(
+            access.project,
+            article,
+            access.user.id,
+            data.decision,
+            data.reason,
+            data.primary_exclusion_reason,
+        )
+    except ScreeningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    audit.record_event(
+        session,
+        project_id,
+        audit.DECISION_RESOLVED,
+        "decision",
+        decision.id,
+        access.user.id,
+        {
+            "article_id": article_id,
+            "stage": decision.stage.value,
+            "decision": decision.decision.value,
+            "reason": data.reason,
+        },
+    )
+    session.refresh(decision)
+    return decision
+
+
+@router.get("/conflicts", response_model=list[ConflictRead])
+def get_conflicts(access: OwnerAccess, ss: ScreeningServiceDep):
+    """List articles whose reviewers disagree, with each reviewer's decision (owner only)."""
+    return ss.list_conflicts(access.project)
+
+
+@router.get("/ai-disagreements", response_model=list[AIDisagreementRead])
+def get_ai_disagreements(
+    access: OwnerAccess,
+    ss: ScreeningServiceDep,
+    stage: Annotated[ScreeningStage | None, Query()] = None,
+):
+    """Articles where the latest AI include/exclude differs from the human outcome."""
+    if stage == ScreeningStage.completed:
+        raise HTTPException(status_code=400, detail="Invalid stage")
+    return ss.list_ai_disagreements(access.project, stage)
+
+
+@router.get("/agreement", response_model=AgreementRead)
+def get_agreement(
+    access: OwnerAccess,
+    ss: ScreeningServiceDep,
+    stage: Annotated[ScreeningStage, Query()] = ScreeningStage.title_abstract,
+):
+    """Cohen's kappa / percent agreement between reviewers, and AI-vs-human metrics."""
+    if stage == ScreeningStage.completed:
+        raise HTTPException(
+            status_code=400, detail="Stage must be title_abstract or full_text"
+        )
+    return ss.get_agreement(access.project, stage)
 
 
 @router.post(
@@ -132,21 +263,19 @@ def create_decision(
 async def screen_article_with_ai(
     project_id: int,
     article_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
+    access: ReviewerAccess,
     session: SessionDep,
-    ps: ProjectServiceDep,
     article_service: ArticleServiceDep,
 ):
     """Screen a single article using the AI agent.
 
     This endpoint:
-    - Verifies project ownership
+    - Verifies the caller has the reviewer role
     - Fetches the article and active criteria
     - Runs the AI screening agent
     - Returns the screening decision
     """
-    # Verify project ownership
-    project = verify_project_ownership(project_id, current_user, ps)
+    project = access.project
 
     # Fetch article
     article = article_service.get_article_by_id(article_id)
@@ -156,7 +285,7 @@ async def screen_article_with_ai(
     # Fetch active criteria
     criteria = session.exec(
         select(Criterion).where(
-            Criterion.project_id == project_id, Criterion.is_active == True
+            Criterion.project_id == project_id, Criterion.is_active.is_(True)
         )
     ).all()
 
@@ -169,6 +298,11 @@ async def screen_article_with_ai(
     # Get review question
     review_question = project.review_question or "No specific review question provided"
 
+    try:
+        ensure_ai_configured()
+    except AIScreeningNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
     # Run AI screening
     try:
         decision = await screen_article(
@@ -180,8 +314,11 @@ async def screen_article_with_ai(
         )
         return decision
     except Exception as e:
+        logger.exception(
+            "AI screening failed for article %s in project %s", article_id, project_id
+        )
         raise HTTPException(
-            status_code=500, detail=f"AI screening failed: {str(e)}"
+            status_code=500, detail="AI screening failed. Please try again later."
         ) from e
 
 
@@ -192,9 +329,8 @@ async def screen_article_with_ai(
 def get_ai_decision(
     project_id: int,
     article_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
+    access: ViewerAccess,
     session: SessionDep,
-    ps: ProjectServiceDep,
     article_service: ArticleServiceDep,
 ):
     """Get the latest AI screening decision for an article.
@@ -203,7 +339,6 @@ def get_ai_decision(
         The most recent AI-generated screening decision, or 404 if none exists.
     """
     # Verify project ownership
-    verify_project_ownership(project_id, current_user, ps)
 
     # Verify article belongs to project
     article = article_service.get_article_by_id(article_id)
@@ -217,7 +352,7 @@ def get_ai_decision(
             ScreeningDecision.article_id == article_id,
             ScreeningDecision.source == DecisionSource.ai_agent,
         )
-        .order_by(ScreeningDecision.created_at.desc())
+        .order_by(ScreeningDecision.created_at.desc(), ScreeningDecision.id.desc())
     ).first()
 
     if ai_decision is None:
@@ -228,80 +363,15 @@ def get_ai_decision(
     return ai_decision
 
 
-async def _run_batch_ai_screening(
-    project_id: int,
-    article_ids: list[int],
-    criteria: list[Criterion],
-    review_question: str,
-    session: SessionDep,
-):
-    """Background task to run AI screening on multiple articles.
-
-    Args:
-        project_id: ID of the project
-        article_ids: List of article IDs to screen
-        criteria: List of active criteria
-        review_question: Project's review question
-        session: Database session
-    """
-    from app.features.research.models import Article
-
-    for article_id in article_ids:
-        try:
-            # Fetch article
-            article = session.exec(
-                select(Article).where(Article.id == article_id)
-            ).first()
-
-            if article is None:
-                continue
-
-            # Run AI screening
-            decision = await screen_article(
-                article=article,
-                criteria=criteria,
-                review_question=review_question,
-                session=session,
-                reviewer_id=None,
-            )
-
-            # Broadcast WebSocket notification
-            room_name = f"project_{project_id}"
-            message = json.dumps(
-                {
-                    "type": "ai_screening_complete",
-                    "article_id": article_id,
-                    "decision": decision.decision.value,
-                    "confidence": decision.confidence_score,
-                }
-            )
-            await manager.broadcast_to_room(message, room_name)
-
-        except Exception as e:
-            # Log error and continue with next article
-            print(f"Error screening article {article_id}: {str(e)}")
-            # Broadcast error notification
-            room_name = f"project_{project_id}"
-            message = json.dumps(
-                {
-                    "type": "ai_screening_error",
-                    "article_id": article_id,
-                    "error": str(e),
-                }
-            )
-            await manager.broadcast_to_room(message, room_name)
-            continue
-
-
 @router.post("/run-ai")
 async def run_batch_ai_screening(
     project_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
+    access: ReviewerAccess,
     session: SessionDep,
-    ps: ProjectServiceDep,
     background_tasks: BackgroundTasks,
     stage: Annotated[ScreeningStage | None, Query()] = None,
     limit: Annotated[int | None, Query(ge=1, le=1000)] = None,
+    rescreen_stale: Annotated[bool, Query()] = False,
 ):
     """Run AI screening on multiple articles in the background.
 
@@ -309,63 +379,82 @@ async def run_batch_ai_screening(
         project_id: ID of the project
         stage: Optional screening stage filter (title_abstract or full_text)
         limit: Optional maximum number of articles to screen
+        rescreen_stale: Also screen articles whose latest AI decision was made
+            against criteria that have since changed
 
     Returns:
         A message indicating screening has started and the number of articles queued
     """
     from app.features.research.models import Article, ArticleStatus
 
-    # Verify project ownership
-    project = verify_project_ownership(project_id, current_user, ps)
-
-    # Fetch active criteria
-    criteria = session.exec(
-        select(Criterion).where(
-            Criterion.project_id == project_id, Criterion.is_active == True
-        )
-    ).all()
-
-    if not criteria:
+    has_criteria = session.exec(
+        select(Criterion.id)
+        .where(Criterion.project_id == project_id, Criterion.is_active.is_(True))
+        .limit(1)
+    ).first()
+    if has_criteria is None:
         raise HTTPException(
             status_code=400,
             detail="No active criteria found for this project. Please add criteria before screening.",
         )
 
-    # Build query for eligible articles
-    # Eligible: status is 'screening' or 'full_text_retrieved'
-    # AND no existing AI decision for current stage
-    query = select(Article).where(
-        Article.project_id == project_id,
-        Article.status.in_([ArticleStatus.screening, ArticleStatus.full_text_retrieved]),
-    )
+    try:
+        ensure_ai_configured()
+    except AIScreeningNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
-    # Apply stage filter if provided
+    # Eligible: status is 'screening' or 'full_text_retrieved', no AI decision yet
+    # for the article's current stage (single NOT EXISTS query), and, for
+    # full_text-stage articles, extracted full text is available.
+    already_screened = (
+        select(ScreeningDecision.id)
+        .where(
+            ScreeningDecision.article_id == Article.id,
+            ScreeningDecision.source == DecisionSource.ai_agent,
+            ScreeningDecision.stage == Article.current_stage,
+        )
+        .exists()
+    )
+    eligible_unscreened = ~already_screened
+    if rescreen_stale:
+        stale_ids = ScreeningService(session).get_stale_ai_article_ids(
+            project_id,
+            {
+                c.code: c.version
+                for c in session.exec(
+                    select(Criterion).where(
+                        Criterion.project_id == project_id,
+                        Criterion.is_active.is_(True),
+                    )
+                )
+            },
+        )
+        if stale_ids:
+            eligible_unscreened = or_(eligible_unscreened, Article.id.in_(stale_ids))
+    query = (
+        select(Article.id)
+        .where(
+            Article.project_id == project_id,
+            Article.status.in_(
+                [ArticleStatus.screening, ArticleStatus.full_text_retrieved]
+            ),
+            eligible_unscreened,
+            or_(
+                Article.current_stage != ScreeningStage.full_text,
+                and_(
+                    Article.full_text_content.is_not(None),
+                    Article.full_text_content != "",
+                ),
+            ),
+        )
+        .order_by(Article.id)
+    )
     if stage:
         query = query.where(Article.current_stage == stage)
-
-    # Get articles that don't have AI decisions yet
-    all_articles = session.exec(query).all()
-
-    # Filter out articles that already have AI decisions at their current stage
-    eligible_articles = []
-    for article in all_articles:
-        existing_ai_decision = session.exec(
-            select(ScreeningDecision)
-            .where(
-                ScreeningDecision.article_id == article.id,
-                ScreeningDecision.source == DecisionSource.ai_agent,
-                ScreeningDecision.stage == article.current_stage,
-            )
-        ).first()
-
-        if existing_ai_decision is None:
-            eligible_articles.append(article)
-
-    # Apply limit if provided
     if limit:
-        eligible_articles = eligible_articles[:limit]
+        query = query.limit(limit)
 
-    article_ids = [article.id for article in eligible_articles]
+    article_ids = list(session.exec(query).all())
     article_count = len(article_ids)
 
     if article_count == 0:
@@ -374,17 +463,27 @@ async def run_batch_ai_screening(
             "article_count": 0,
         }
 
-    # Get review question
-    review_question = project.review_question or "No specific review question provided"
+    audit.record_event(
+        session,
+        project_id,
+        audit.AI_BATCH_STARTED,
+        "ai_batch",
+        None,
+        access.user.id,
+        {
+            "article_count": article_count,
+            "stage": stage.value if stage else None,
+            "rescreen_stale": rescreen_stale,
+        },
+    )
 
-    # Schedule background task
+    # Schedule the flow with primitive ids only: it opens its own session.
     background_tasks.add_task(
-        _run_batch_ai_screening,
+        run_flow_in_background,
+        batch_ai_screening_flow,
         project_id,
         article_ids,
-        criteria,
-        review_question,
-        session,
+        access.user.id,
     )
 
     return {

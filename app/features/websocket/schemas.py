@@ -29,7 +29,7 @@ class WebSocketMessage(BaseModel):
     """WebSocket message schema."""
 
     type: MessageType
-    data: Any
+    data: Any = None
     room: Optional[str] = None
 
 

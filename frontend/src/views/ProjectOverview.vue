@@ -8,10 +8,18 @@ import Label from '@/components/ui/Label.vue'
 import Textarea from '@/components/ui/Textarea.vue'
 import Card from '@/components/ui/Card.vue'
 import Dialog from '@/components/ui/Dialog.vue'
+import Badge from '@/components/ui/Badge.vue'
+import ImportCard from '@/components/projects/ImportCard.vue'
+import FullTextBatchCard from '@/components/articles/FullTextBatchCard.vue'
+import ReviewSettingsCard from '@/components/projects/ReviewSettingsCard.vue'
+import { useMembersStore } from '@/stores/members'
 
 const route = useRoute()
 const router = useRouter()
 const projectsStore = useProjectsStore()
+const membersStore = useMembersStore()
+
+const isOwner = computed(() => membersStore.isOwner)
 
 const project = computed(() => projectsStore.currentProject)
 const projectId = computed(() => Number(route.params.id))
@@ -20,10 +28,6 @@ const isEditing = ref(false)
 const editName = ref('')
 const editDescription = ref('')
 const editReviewQuestion = ref('')
-
-const showUploadDialog = ref(false)
-const uploadFile = ref<File | null>(null)
-const uploadProgress = ref(false)
 
 const showDeleteDialog = ref(false)
 
@@ -52,22 +56,9 @@ const cancelEdit = () => {
   isEditing.value = false
 }
 
-const handleFileSelect = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  if (target.files && target.files.length > 0) {
-    uploadFile.value = target.files[0]
-  }
-}
-
-const handleUpload = async () => {
-  if (!uploadFile.value) return
-
-  uploadProgress.value = true
-  await projectsStore.uploadFile(projectId.value, uploadFile.value)
-  uploadProgress.value = false
-
-  showUploadDialog.value = false
-  uploadFile.value = null
+// Refresh the project (article count) after an import
+const onImported = () => {
+  projectsStore.fetchProject(projectId.value)
 }
 
 const handleDelete = async () => {
@@ -89,9 +80,14 @@ const handleDelete = async () => {
               Created {{ project?.created_at ? new Date(project.created_at).toLocaleDateString() : '' }}
             </p>
           </div>
-          <div class="flex gap-2">
+          <div class="flex items-center gap-2">
+            <Badge v-if="membersStore.role" variant="secondary" class="capitalize" data-testid="role-badge">
+              {{ membersStore.role }}
+            </Badge>
+            <template v-if="isOwner">
             <Button variant="outline" @click="startEdit">Edit</Button>
             <Button variant="destructive" @click="showDeleteDialog = true">Delete</Button>
+            </template>
           </div>
         </div>
 
@@ -138,40 +134,11 @@ const handleDelete = async () => {
       </form>
     </Card>
 
-    <Card class="p-6">
-      <h3 class="font-semibold mb-4">Upload Articles</h3>
-      <p class="text-sm text-muted-foreground mb-4">
-        Upload a file containing articles for screening. Supported formats: RIS (.ris), PubMed CSV (.csv), or MEDLINE (.txt).
-      </p>
-      <Button @click="showUploadDialog = true">Upload File</Button>
-    </Card>
+    <ReviewSettingsCard v-if="project" :project="project" :can-edit="isOwner" />
 
-    <Dialog v-model:open="showUploadDialog" title="Upload Article File">
-      <div class="space-y-4">
-        <div class="space-y-2">
-          <Label for="article-file">Select File</Label>
-          <input
-            id="article-file"
-            type="file"
-            accept=".ris,.csv,.txt"
-            @change="handleFileSelect"
-            class="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
-          />
-          <p class="text-xs text-muted-foreground">
-            Accepted formats: .ris, .csv (PubMed), .txt (MEDLINE)
-          </p>
-        </div>
+    <ImportCard :project-id="projectId" :can-upload="isOwner" @imported="onImported" />
 
-        <div class="flex justify-end gap-3">
-          <Button type="button" variant="outline" @click="showUploadDialog = false">
-            Cancel
-          </Button>
-          <Button @click="handleUpload" :disabled="!uploadFile || uploadProgress">
-            {{ uploadProgress ? 'Uploading...' : 'Upload' }}
-          </Button>
-        </div>
-      </div>
-    </Dialog>
+    <FullTextBatchCard :project-id="projectId" :can-run="isOwner" />
 
     <Dialog v-model:open="showDeleteDialog" title="Delete Project">
       <div class="space-y-4">

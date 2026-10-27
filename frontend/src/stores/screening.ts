@@ -7,12 +7,15 @@ import type {
   ScreeningDecisionCreate,
   ScreeningStats,
   ScreeningStage,
+  NextArticleResponse,
+  PaginatedResponse,
   WebSocketResponse,
 } from '@/types'
 import { useWebSocketStore } from './websocket'
+import { getErrorMessage, getErrorStatus } from '@/utils/errors'
 
 export const useScreeningStore = defineStore('screening', () => {
-  const { get, post } = useApi()
+  const { get, getRaw, post } = useApi()
 
   const currentArticle = ref<Article | null>(null)
   const decisions = ref<ScreeningDecision[]>([])
@@ -58,16 +61,45 @@ export const useScreeningStore = defineStore('screening', () => {
     error.value = null
 
     try {
-      currentArticle.value = await get<Article>(
-        `/projects/${projectId}/screening/next?stage=${stage}`
-      )
+      // The envelope is `{ article: Article | null }`, so read it raw
+      const res = await getRaw<NextArticleResponse>(`/projects/${projectId}/screening/next`, {
+        params: { stage },
+      })
+      currentArticle.value = res.article
       return currentArticle.value
-    } catch (err: any) {
-      error.value = err.response?.data?.detail || 'No more articles to screen'
+    } catch (err: unknown) {
+      error.value = getErrorMessage(err, 'Failed to load the next article')
       currentArticle.value = null
       return null
     } finally {
       loading.value = false
+    }
+  }
+
+  /** Load a specific article into the screening view (used for previous/next navigation). */
+  const loadArticle = async (projectId: number, articleId: number) => {
+    loading.value = true
+    error.value = null
+    try {
+      currentArticle.value = await get<Article>(`/projects/${projectId}/articles/${articleId}`)
+      return currentArticle.value
+    } catch (err: unknown) {
+      error.value = getErrorMessage(err, 'Failed to load article')
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** Ids of articles at `stage` this reviewer still has to decide, ascending. */
+  const fetchQueueIds = async (projectId: number, stage: ScreeningStage) => {
+    try {
+      const res = await getRaw<PaginatedResponse<Article>>(`/projects/${projectId}/articles`, {
+        params: { pending_for_me: true, stage, per_page: 100 },
+      })
+      return res.data.map((a) => a.id).sort((x, y) => x - y)
+    } catch {
+      return []
     }
   }
 
@@ -81,13 +113,13 @@ export const useScreeningStore = defineStore('screening', () => {
 
     try {
       const newDecision = await post<ScreeningDecision>(
-        `/projects/${projectId}/articles/${articleId}/decisions`,
+        `/projects/${projectId}/screening/articles/${articleId}/decisions`,
         decision
       )
       decisions.value.push(newDecision)
       return newDecision
-    } catch (err: any) {
-      error.value = err.response?.data?.detail || 'Failed to submit decision'
+    } catch (err: unknown) {
+      error.value = getErrorMessage(err, 'Failed to submit decision')
       return null
     } finally {
       loading.value = false
@@ -99,11 +131,17 @@ export const useScreeningStore = defineStore('screening', () => {
     error.value = null
 
     try {
-      decisions.value = await get<ScreeningDecision[]>(
-        `/projects/${projectId}/articles/${articleId}/decisions`
+      // Paginated envelope; the backend hides other reviewers' decisions when blinded
+      const res = await getRaw<PaginatedResponse<ScreeningDecision>>(
+        `/projects/${projectId}/screening/articles/${articleId}/decisions`,
+        { params: { per_page: 100 } }
       )
-    } catch (err: any) {
-      error.value = err.response?.data?.detail || 'Failed to fetch decisions'
+      decisions.value = res.data
+      return res.data
+    } catch (err: unknown) {
+      error.value = getErrorMessage(err, 'Failed to fetch decisions')
+      decisions.value = []
+      return []
     } finally {
       loading.value = false
     }
@@ -115,8 +153,8 @@ export const useScreeningStore = defineStore('screening', () => {
 
     try {
       stats.value = await get<ScreeningStats>(`/projects/${projectId}/screening/stats`)
-    } catch (err: any) {
-      error.value = err.response?.data?.detail || 'Failed to fetch screening stats'
+    } catch (err: unknown) {
+      error.value = getErrorMessage(err, 'Failed to fetch screening stats')
     } finally {
       loading.value = false
     }
@@ -132,25 +170,8 @@ export const useScreeningStore = defineStore('screening', () => {
       )
       aiDecision.value = decision
       return decision
-    } catch (err: any) {
-      error.value = err.response?.data?.detail || 'Failed to trigger AI screening'
-      return null
-    } finally {
-      aiScreeningLoading.value = false
-    }
-  }
-
-  const triggerBatchAiScreening = async (projectId: number) => {
-    aiScreeningLoading.value = true
-    error.value = null
-
-    try {
-      const result = await post<{ message: string; article_count: number }>(
-        `/projects/${projectId}/screening/run-ai`
-      )
-      return result
-    } catch (err: any) {
-      error.value = err.response?.data?.detail || 'Failed to trigger batch AI screening'
+    } catch (err: unknown) {
+      error.value = getErrorMessage(err, 'Failed to trigger AI screening')
       return null
     } finally {
       aiScreeningLoading.value = false
@@ -167,12 +188,12 @@ export const useScreeningStore = defineStore('screening', () => {
       )
       aiDecision.value = decision
       return decision
-    } catch (err: any) {
+    } catch (err: unknown) {
       // 404 is expected when no AI decision exists
-      if (err.response?.status === 404) {
+      if (getErrorStatus(err) === 404) {
         aiDecision.value = null
       } else {
-        error.value = err.response?.data?.detail || 'Failed to fetch AI decision'
+        error.value = getErrorMessage(err, 'Failed to fetch AI decision')
       }
       return null
     } finally {
@@ -196,7 +217,8 @@ export const useScreeningStore = defineStore('screening', () => {
     fetchDecisions,
     fetchStats,
     triggerAiScreening,
-    triggerBatchAiScreening,
+    loadArticle,
+    fetchQueueIds,
     fetchAiDecision,
     setupWebSocketListeners,
     cleanupWebSocketListeners,

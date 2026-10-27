@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import type { Project, ProjectCreate, ProjectUpdate, WebSocketResponse } from '@/types'
 import { useWebSocketStore } from './websocket'
@@ -154,55 +154,6 @@ export const useProjectsStore = defineStore('projects', () => {
     }
   }
 
-  const uploadFile = async (projectId: number, file: File) => {
-    loading.value = true
-    error.value = null
-
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-
-      // Determine endpoint based on file extension
-      const fileExtension = file.name.split('.').pop()?.toLowerCase()
-      let endpoint: string
-
-      if (fileExtension === 'csv' || fileExtension === 'txt') {
-        endpoint = `/projects/${projectId}/upload/pubmed`
-      } else if (fileExtension === 'ris') {
-        endpoint = `/projects/${projectId}/upload/ris`
-      } else {
-        error.value = 'Unsupported file type. Please upload .ris, .txt, or .csv files.'
-        return null
-      }
-
-      const updatedProject = await post<Project>(endpoint, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      })
-
-      // Update the project in the list
-      const index = projects.value.findIndex((p) => p.id === projectId)
-      if (index !== -1) {
-        projects.value[index] = updatedProject
-      }
-
-      if (currentProject.value?.id === projectId) {
-        currentProject.value = updatedProject
-      }
-
-      return updatedProject
-    } catch (err: any) {
-      error.value = err.response?.data?.detail || 'Failed to upload file'
-      return null
-    } finally {
-      loading.value = false
-    }
-  }
-
-  // Keep backward compatibility
-  const uploadRisFile = uploadFile
-
   // Initialize WebSocket listeners
   setupWebSocketListeners()
 
@@ -216,8 +167,6 @@ export const useProjectsStore = defineStore('projects', () => {
     createProject,
     updateProject,
     deleteProject,
-    uploadFile,
-    uploadRisFile,
     setupWebSocketListeners,
     cleanupWebSocketListeners,
   }

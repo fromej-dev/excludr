@@ -2,6 +2,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from app.features.websocket.manager import manager
 from app.features.websocket.services import NotificationService
 from app.features.websocket.schemas import NotificationLevel, MessageType
 
@@ -98,22 +99,19 @@ async def test_notify_room(client: TestClient, a_user, token_for):
     token1 = token_for(user1)
     token2 = token_for(user2)
 
-    with client.websocket_connect(
-        f"/api/v1/ws?token={token1}"
-    ) as ws1, client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2:
+    with (
+        client.websocket_connect(f"/api/v1/ws?token={token1}") as ws1,
+        client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2,
+    ):
         # Skip welcome messages
         ws1.receive_text()
         ws2.receive_text()
 
-        # Both users join the same room
+        # Server-side code (trusted) adds both users to a shared room; clients
+        # cannot join arbitrary rooms themselves.
         room_name = "test_room"
-        join_message = {"type": "join_room", "room": room_name}
-
-        ws1.send_text(json.dumps(join_message))
-        ws1.receive_text()  # Skip confirmation
-
-        ws2.send_text(json.dumps(join_message))
-        ws2.receive_text()  # Skip confirmation
+        await manager.join_room(user1.id, room_name)
+        await manager.join_room(user2.id, room_name)
 
         # Send notification to the room
         count = await NotificationService.notify_room(
@@ -160,13 +158,11 @@ async def test_broadcast(client: TestClient, a_user, token_for):
     token2 = token_for(user2)
     token3 = token_for(user3)
 
-    with client.websocket_connect(
-        f"/api/v1/ws?token={token1}"
-    ) as ws1, client.websocket_connect(
-        f"/api/v1/ws?token={token2}"
-    ) as ws2, client.websocket_connect(
-        f"/api/v1/ws?token={token3}"
-    ) as ws3:
+    with (
+        client.websocket_connect(f"/api/v1/ws?token={token1}") as ws1,
+        client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2,
+        client.websocket_connect(f"/api/v1/ws?token={token3}") as ws3,
+    ):
         # Skip welcome messages
         ws1.receive_text()
         ws2.receive_text()
@@ -277,9 +273,10 @@ async def test_get_room_members(client: TestClient, a_user, token_for):
 
     room_name = "test_room"
 
-    with client.websocket_connect(
-        f"/api/v1/ws?token={token1}"
-    ) as ws1, client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2:
+    with (
+        client.websocket_connect(f"/api/v1/ws?token={token1}") as ws1,
+        client.websocket_connect(f"/api/v1/ws?token={token2}") as ws2,
+    ):
         # Skip welcome messages
         ws1.receive_text()
         ws2.receive_text()
@@ -288,18 +285,15 @@ async def test_get_room_members(client: TestClient, a_user, token_for):
         members = NotificationService.get_room_members(room_name)
         assert len(members) == 0
 
-        # User 1 joins room
-        join_message = {"type": "join_room", "room": room_name}
-        ws1.send_text(json.dumps(join_message))
-        ws1.receive_text()  # Skip confirmation
+        # User 1 joins room (server-side; clients can only join their own rooms)
+        await manager.join_room(user1.id, room_name)
 
         members = NotificationService.get_room_members(room_name)
         assert len(members) == 1
         assert user1.id in members
 
         # User 2 joins room
-        ws2.send_text(json.dumps(join_message))
-        ws2.receive_text()  # Skip confirmation
+        await manager.join_room(user2.id, room_name)
 
         members = NotificationService.get_room_members(room_name)
         assert len(members) == 2

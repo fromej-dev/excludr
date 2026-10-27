@@ -1,10 +1,16 @@
-def test_users(admin_client, a_user):
+def test_users(admin_client, a_user, session):
     user = a_user()
+    # Unique name so the contains-filter below cannot match random faker names
+    user.name = "Zyxwvut Qwerty"
+    session.add(user)
+    session.commit()
     res = admin_client.get("api/v1/users")
     assert res.status_code == 200
     assert res.json()
     assert len(res.json()["data"]) == 2
     assert res.json()["meta"]["pagination"]["total_items"] == 2
+    assert all("hashed_password" not in u for u in res.json()["data"])
+    assert all("id" in u for u in res.json()["data"])
 
     [a_user() for _ in range(10)]
 
@@ -16,7 +22,7 @@ def test_users(admin_client, a_user):
 
     # test filtering
     res = admin_client.get(
-        f"api/v1/users?field=name&operator=contains&value={user.name[2:5]}"
+        f"api/v1/users?field=name&operator=contains&value={user.name[2:6]}"
     )
     assert res.status_code == 200
     assert res.json()
@@ -45,6 +51,12 @@ def test_user_by_id(admin_client, a_user):
     assert res.status_code == 200
     assert res.json()
     assert res.json()["id"] == user.id
+    assert "hashed_password" not in res.json()
+
+
+def test_user_by_id_not_found(admin_client):
+    res = admin_client.get("api/v1/users/999999")
+    assert res.status_code == 404
 
 
 def test_get_user_me(auth_client):
@@ -57,3 +69,9 @@ def test_get_user_me_not_authenticated(client):
     res = client.get("api/v1/users/me")
     assert res.status_code == 401
     assert res.json()["detail"] == "Not authenticated"
+
+
+def test_register_and_me_do_not_leak_password_hash(client, auth_client):
+    res = auth_client.get("api/v1/users/me")
+    assert "hashed_password" not in res.json()
+    assert "id" in res.json()

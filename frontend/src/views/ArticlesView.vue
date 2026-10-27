@@ -87,7 +87,7 @@ const getStatusBadgeVariant = (status: ArticleStatus) => {
 }
 
 const getDecisionBadgeVariant = (decision: FinalDecision) => {
-  const variants: Record<FinalDecision, 'default' | 'secondary' | 'outline'> = {
+  const variants: Record<FinalDecision, 'default' | 'secondary' | 'destructive' | 'outline'> = {
     pending: 'outline',
     included: 'default',
     excluded: 'destructive',
@@ -102,13 +102,13 @@ const getDecisionBadgeVariant = (decision: FinalDecision) => {
     <Card class="p-4">
       <div class="grid gap-4 md:grid-cols-3">
         <div class="space-y-2">
-          <Label>Status</Label>
-          <Select v-model="statusFilter" :options="statusOptions" />
+          <Label for="status-filter">Status</Label>
+          <Select id="status-filter" v-model="statusFilter" :options="statusOptions" />
         </div>
 
         <div class="space-y-2">
-          <Label>Decision</Label>
-          <Select v-model="decisionFilter" :options="decisionOptions" />
+          <Label for="decision-filter">Decision</Label>
+          <Select id="decision-filter" v-model="decisionFilter" :options="decisionOptions" />
         </div>
 
         <div class="flex items-end">
@@ -136,16 +136,20 @@ const getDecisionBadgeVariant = (decision: FinalDecision) => {
         v-for="article in articlesStore.articles"
         :key="article.id"
         class="p-4 cursor-pointer hover:shadow-lg transition-shadow"
+        data-testid="article-card"
         @click="goToArticle(article.id)"
       >
         <div class="space-y-3">
           <div class="flex items-start justify-between gap-4">
-            <h3 class="text-lg font-semibold flex-1">
+            <h3 class="text-lg font-semibold flex-1" data-testid="article-card-title">
               {{ article.title || 'Untitled' }}
             </h3>
             <div class="flex gap-2 flex-shrink-0">
               <Badge :variant="getStatusBadgeVariant(article.status)">
                 {{ article.status }}
+              </Badge>
+              <Badge v-if="article.full_text_source" variant="secondary" data-testid="fulltext-source">
+                {{ article.full_text_source }}
               </Badge>
               <Badge :variant="getDecisionBadgeVariant(article.final_decision)">
                 {{ article.final_decision }}
@@ -164,6 +168,14 @@ const getDecisionBadgeVariant = (decision: FinalDecision) => {
               <span v-if="article.journal">{{ article.journal }}</span>
             </p>
           </div>
+
+          <p
+            v-if="article.full_text_retrieval_error && !article.full_text_retrieved"
+            class="text-xs text-destructive"
+            data-testid="fulltext-error"
+          >
+            Full text: {{ article.full_text_retrieval_error }}
+          </p>
 
           <p v-if="article.abstract" class="text-sm text-muted-foreground line-clamp-2">
             {{ article.abstract }}

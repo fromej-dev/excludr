@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useApi } from '@/composables/useApi'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -51,6 +52,26 @@ const routes: RouteRecordRaw[] = [
         name: 'project-screening',
         component: () => import('@/views/ScreeningView.vue'),
       },
+      {
+        path: 'members',
+        name: 'project-members',
+        component: () => import('@/views/MembersView.vue'),
+      },
+      {
+        path: 'conflicts',
+        name: 'project-conflicts',
+        component: () => import('@/views/ConflictsView.vue'),
+      },
+      {
+        path: 'reports',
+        name: 'project-reports',
+        component: () => import('@/views/ReportsView.vue'),
+      },
+      {
+        path: 'audit',
+        name: 'project-audit',
+        component: () => import('@/views/AuditView.vue'),
+      },
     ],
   },
 ]
@@ -61,11 +82,12 @@ const router = createRouter({
 })
 
 // Auth guard
-router.beforeEach(async (to, from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore()
+  const { getToken } = useApi()
 
   // Initialize auth state if not already done
-  if (!authStore.user && authStore.getToken?.()) {
+  if (!authStore.user && getToken()) {
     await authStore.initialize()
   }
 

@@ -1,14 +1,44 @@
 import json
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query, status
 
+from sqlmodel import Session
+
+from app.core.database import SessionDep
 from app.features.auth.services import verify_token_and_get_user
+from app.features.projects.models import Project
+from app.features.projects.permissions import get_user_role
+from app.features.users.models import User
 from app.features.users.services import UserServiceDep
 from .manager import manager
 from .schemas import MessageType, WebSocketMessage, WebSocketResponse
 
 router = APIRouter(tags=["WebSocket"], prefix="/ws")
+
+_PROJECT_ROOM = re.compile(r"^project_([1-9][0-9]{0,17})$")
+
+
+def can_join_room(user: User, room: str, session: Session) -> bool:
+    """Return True if ``user`` may join ``room``.
+
+    Allowed rooms: ``user_{own_id}`` and ``project_{id}`` for projects the user is a
+    member of (any role).
+    Everything else is refused.
+    """
+    if room == f"user_{user.id}":
+        return True
+    match = _PROJECT_ROOM.match(room)
+    if match is None:
+        return False
+    project = session.get(Project, int(match.group(1)))
+    return project is not None and get_user_role(session, project, user) is not None
+
+
+async def _send_error(user_id: int, text: str) -> None:
+    error = WebSocketResponse(type=MessageType.ERROR, message=text)
+    await manager.send_personal_message(error.model_dump_json(), user_id)
 
 
 @router.websocket("")
@@ -16,6 +46,7 @@ async def websocket_endpoint(
     websocket: WebSocket,
     token: Annotated[str, Query()],
     us: UserServiceDep,
+    session: SessionDep,
 ):
     """
     WebSocket endpoint with room management.
@@ -35,10 +66,11 @@ async def websocket_endpoint(
 
     Message types:
     - text: Send a personal message back to the user
-    - join_room: Join a specific room (requires "room" field)
+    - join_room: Join a room (requires "room" field). Only "user_{own_id}" and
+      "project_{id}" for projects you are a member of are allowed.
     - leave_room: Leave a specific room (requires "room" field)
-    - room_message: Send message to all users in a room (requires "room" field)
-    - broadcast: Send message to all connected users
+    - room_message: Send message to all users in a room you have joined
+    - broadcast: Send message to all connected users (superusers only)
     """
     # Authenticate user using shared validation logic
     user = verify_token_and_get_user(token, us)
@@ -80,6 +112,9 @@ async def websocket_endpoint(
                 elif message.type == MessageType.JOIN_ROOM:
                     if not message.room:
                         raise ValueError("Room name is required")
+                    if not can_join_room(user, message.room, session):
+                        await _send_error(user.id, "Not authorized to join this room")
+                        continue
                     await manager.join_room(user.id, message.room)
                     response = WebSocketResponse(
                         type=MessageType.INFO,
@@ -108,6 +143,9 @@ async def websocket_endpoint(
                 elif message.type == MessageType.ROOM_MESSAGE:
                     if not message.room:
                         raise ValueError("Room name is required")
+                    if message.room not in manager.get_user_rooms(user.id):
+                        await _send_error(user.id, "You are not a member of this room")
+                        continue
                     response = WebSocketResponse(
                         type=MessageType.ROOM_MESSAGE,
                         message=str(message.data),
@@ -119,6 +157,9 @@ async def websocket_endpoint(
                     )
 
                 elif message.type == MessageType.BROADCAST:
+                    if not user.is_superuser:
+                        await _send_error(user.id, "Broadcast requires superuser")
+                        continue
                     response = WebSocketResponse(
                         type=MessageType.BROADCAST,
                         message=str(message.data),

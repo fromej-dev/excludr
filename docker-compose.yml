@@ -14,6 +14,32 @@ services:
       - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U excludr-test -d excludr_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # FastAPI application (runs migrations on start)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: excludr-api
+    environment:
+      DATABASE_URL: postgresql+psycopg://excludr-test:excludr-test@postgres:5432/excludr_db
+      # Set SECRET_KEY in your shell or .env file; there is deliberately no default.
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY to a long random string}
+      PREFECT_API_URL: http://prefect-server:4200/api
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prefect-server:
+        condition: service_started
     restart: unless-stopped
 
   # Prefect Server
@@ -27,7 +53,8 @@ services:
     ports:
       - "4200:4200"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
 # Named volumes for data persistence

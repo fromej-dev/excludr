@@ -5,10 +5,10 @@ This feature provides real-time WebSocket communication with JWT authentication 
 ## Features
 
 - **JWT Authentication**: Secure WebSocket connections using existing JWT tokens
-- **Room Management**: Users can join/leave rooms for group messaging
+- **Room Management**: Users can join/leave rooms for group messaging, restricted to rooms they are authorized for (see [Room Authorization](#room-authorization))
 - **Personal Rooms**: Each user is automatically added to a personal room (`user_{user_id}`)
 - **Notification Service**: Easy-to-use service for sending notifications from anywhere in your backend
-- **Multiple Message Types**: Support for personal messages, room messages, and broadcasts
+- **Multiple Message Types**: Support for personal messages, room messages, and broadcasts (broadcasts are superuser-only)
 
 ## Quick Start
 
@@ -79,7 +79,7 @@ await NotificationService.notify_user(
     user_id=123,
     message="Your project upload is complete!",
     level=NotificationLevel.SUCCESS,
-    data={"project_id": 456}
+    data={"project_id": 456},
 )
 ```
 
@@ -99,7 +99,7 @@ result = await NotificationService.notify_user(
     user_id=user.id,
     message="Processing complete!",
     level=NotificationLevel.SUCCESS,
-    data={"custom_field": "value"}
+    data={"custom_field": "value"},
 )
 # Returns True if user is connected, False otherwise
 ```
@@ -110,7 +110,7 @@ result = await NotificationService.notify_user(
 count = await NotificationService.notify_room(
     room_name="project_123",
     message="New screening result available",
-    level=NotificationLevel.INFO
+    level=NotificationLevel.INFO,
 )
 # Returns the number of users notified
 ```
@@ -119,8 +119,7 @@ count = await NotificationService.notify_room(
 
 ```python
 count = await NotificationService.broadcast(
-    message="System maintenance in 5 minutes",
-    level=NotificationLevel.WARNING
+    message="System maintenance in 5 minutes", level=NotificationLevel.WARNING
 )
 # Returns the number of users notified
 ```
@@ -129,9 +128,7 @@ count = await NotificationService.broadcast(
 
 ```python
 result = await NotificationService.notify_user_in_room(
-    user_id=user.id,
-    message="You have a new message",
-    level=NotificationLevel.INFO
+    user_id=user.id, message="You have a new message", level=NotificationLevel.INFO
 )
 ```
 
@@ -157,11 +154,10 @@ from fastapi import APIRouter, UploadFile
 from app.features.websocket.services import NotificationService
 from app.features.websocket.schemas import NotificationLevel
 
+
 @router.post("/projects/{project_id}/upload")
 async def upload_file(
-    project_id: int,
-    file: UploadFile,
-    current_user: User = Depends(get_current_user)
+    project_id: int, file: UploadFile, current_user: User = Depends(get_current_user)
 ):
     # Process file upload...
     process_upload(file, project_id)
@@ -171,7 +167,7 @@ async def upload_file(
         user_id=current_user.id,
         message=f"File '{file.filename}' uploaded successfully!",
         level=NotificationLevel.SUCCESS,
-        data={"project_id": project_id, "filename": file.filename}
+        data={"project_id": project_id, "filename": file.filename},
     )
 
     return {"status": "success"}
@@ -188,7 +184,7 @@ async def notify_project_update(project_id: int, update_message: str):
         room_name=room_name,
         message=update_message,
         level=NotificationLevel.INFO,
-        data={"project_id": project_id, "action": "project_update"}
+        data={"project_id": project_id, "action": "project_update"},
     )
 
     print(f"Notified {count} users in project {project_id}")
@@ -202,26 +198,31 @@ from app.features.websocket.services import NotificationService
 from app.features.websocket.schemas import NotificationLevel
 import asyncio
 
+
 def process_data_task(user_id: int, data_id: int):
     try:
         # Process data...
         result = process_data(data_id)
 
         # Notify success
-        asyncio.run(NotificationService.notify_user(
-            user_id=user_id,
-            message="Data processing complete!",
-            level=NotificationLevel.SUCCESS,
-            data={"data_id": data_id, "result": result}
-        ))
+        asyncio.run(
+            NotificationService.notify_user(
+                user_id=user_id,
+                message="Data processing complete!",
+                level=NotificationLevel.SUCCESS,
+                data={"data_id": data_id, "result": result},
+            )
+        )
     except Exception as e:
         # Notify error
-        asyncio.run(NotificationService.notify_user(
-            user_id=user_id,
-            message=f"Processing failed: {str(e)}",
-            level=NotificationLevel.ERROR,
-            data={"data_id": data_id, "error": str(e)}
-        ))
+        asyncio.run(
+            NotificationService.notify_user(
+                user_id=user_id,
+                message=f"Processing failed: {str(e)}",
+                level=NotificationLevel.ERROR,
+                data={"data_id": data_id, "error": str(e)},
+            )
+        )
 ```
 
 ### Example 4: Conditional Notifications
@@ -231,9 +232,7 @@ async def notify_if_online(user_id: int, message: str):
     """Only notify if user is currently connected."""
     if NotificationService.is_user_connected(user_id):
         await NotificationService.notify_user(
-            user_id=user_id,
-            message=message,
-            level=NotificationLevel.INFO
+            user_id=user_id, message=message, level=NotificationLevel.INFO
         )
         return True
     else:
@@ -243,6 +242,17 @@ async def notify_if_online(user_id: int, message: str):
 ```
 
 ## Room Management
+
+### Room Authorization
+
+Clients cannot join arbitrary rooms. The server enforces:
+
+- `join_room` is only accepted for `user_{your_id}` and for `project_{id}` where you own the project (checked against the database). Any other room name, including other users' rooms, projects you do not own and non-existent projects, is refused with an `error` response.
+- `room_message` is only accepted for rooms you are currently a member of; otherwise an `error` response is returned.
+- `broadcast` (to all connected users) is restricted to superusers; other users receive an `error` response.
+- Only access tokens are accepted (`typ: access`). Refresh tokens and tokens of inactive users are rejected and the connection is closed.
+
+Backend code (`NotificationService`, `ConnectionManager.join_room`) is trusted and can still address any room, e.g. custom rooms for server-driven notifications.
 
 ### Joining a Room
 

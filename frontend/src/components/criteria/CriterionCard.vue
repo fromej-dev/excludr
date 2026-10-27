@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import type { Criterion } from '@/types'
 import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
@@ -18,11 +17,11 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <Card class="p-4">
+  <Card class="p-4" data-testid="criterion-card">
     <div class="space-y-3">
       <div class="flex items-start justify-between">
         <div class="flex items-center gap-2">
-          <Badge :variant="criterion.type === 'inclusion' ? 'default' : 'secondary'">
+          <Badge data-testid="criterion-code" :variant="criterion.type === 'inclusion' ? 'default' : 'secondary'">
             {{ criterion.code }}
           </Badge>
           <Badge v-if="!criterion.is_active" variant="outline">Inactive</Badge>

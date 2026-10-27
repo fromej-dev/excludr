@@ -14,6 +14,16 @@ from app.features.users.services import UserService
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def reset_login_rate_limiter():
+    """Keep the in-memory login rate limiter from leaking between tests."""
+    from app.core.rate_limit import login_rate_limiter
+
+    login_rate_limiter.reset()
+    yield
+    login_rate_limiter.reset()
+
+
 @pytest.fixture(name="faker", scope="session")
 def faker_fixture():
     return Faker()
@@ -159,3 +169,40 @@ def a_project_fixture(
         return project
 
     return _a_project
+
+
+@pytest.fixture(name="a_member")
+def a_member_fixture(session: Session, a_user):
+    """Factory: add a (new or given) user to a project with a role."""
+    from app.features.projects.models import ProjectMember, ProjectRole
+
+    def _a_member(project, role=ProjectRole.reviewer, user: User | None = None):
+        user = user or a_user()
+        session.add(ProjectMember(project_id=project.id, user_id=user.id, role=role))
+        session.commit()
+        return user
+
+    return _a_member
+
+
+@pytest.fixture(name="an_article_in")
+def an_article_in_fixture(session: Session):
+    """Factory: create an article in a project (screening/title_abstract by default)."""
+    from app.features.research.models import Article, ArticleStatus
+    from app.features.screening.models import ScreeningStage
+
+    def _an_article(project, **kwargs):
+        defaults = {
+            "title": "An article",
+            "abstract": "Abstract",
+            "status": ArticleStatus.screening,
+            "current_stage": ScreeningStage.title_abstract,
+        }
+        defaults.update(kwargs)
+        article = Article(project_id=project.id, **defaults)
+        session.add(article)
+        session.commit()
+        session.refresh(article)
+        return article
+
+    return _an_article

@@ -1,28 +1,38 @@
 """Tests for the AI screening agent."""
 
-from datetime import datetime
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic_ai.exceptions import UnexpectedModelBehavior
+from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.test import TestModel
 from sqlmodel import Session
 
 from app.features.criteria.models import Criterion, CriterionType
 from app.features.projects.models import Project
+from app.core.config import Settings
 from app.features.research.agent import (
+    PROMPT_VERSION,
     _build_article_text,
     _prepare_criteria_list,
+    get_screening_agent,
     screen_article,
 )
-from app.features.research.models import Article
+from app.features.research.models import Article, ArticleStatus, FinalDecision
 from app.features.research.schemas import CriterionEvaluation, ScreeningResult
 from app.features.screening.models import (
     DecisionSource,
-    ScreeningDecision,
     ScreeningDecisionType,
     ScreeningStage,
 )
-from app.features.users.models import User
+
+
+def _settings(**overrides) -> Settings:
+    """Build Settings without reading .env."""
+    return Settings(_env_file=None, secret_key="x", **overrides)
 
 
 @pytest.fixture
@@ -122,17 +132,13 @@ class TestBuildArticleText:
         assert "2023" in text
 
     def test_builds_text_with_full_text(
-        self, session: Session, sample_article: Article, tmp_path: Path
+        self, session: Session, sample_article: Article
     ):
-        """Test building article text when full text is available."""
-        # Create a temporary full text file
-        full_text_path = tmp_path / "article.txt"
+        """Full text comes from full_text_content (extracted from the PDF)."""
         full_text_content = "This is the full text content of the article."
-        full_text_path.write_text(full_text_content)
-
-        # Update article with full text path
         sample_article.full_text_retrieved = True
-        sample_article.full_text_path = str(full_text_path)
+        sample_article.current_stage = ScreeningStage.full_text
+        sample_article.full_text_content = full_text_content
         session.add(sample_article)
         session.commit()
 
@@ -142,19 +148,59 @@ class TestBuildArticleText:
         assert sample_article.abstract in text
         assert full_text_content in text
 
-    def test_handles_missing_full_text_gracefully(
-        self, session: Session, sample_article: Article
+    def test_does_not_read_pdf_at_full_text_path(
+        self, session: Session, sample_article: Article, tmp_path: Path
     ):
-        """Test that missing full text doesn't break text building."""
+        """full_text_path is a PDF; its raw bytes must never be read as text."""
+        pdf = tmp_path / "article.pdf"
+        pdf.write_bytes(b"%PDF-1.7 RAW-PDF-BYTES-MARKER")
         sample_article.full_text_retrieved = True
-        sample_article.full_text_path = "/nonexistent/path.txt"
+        sample_article.current_stage = ScreeningStage.full_text
+        sample_article.full_text_path = str(pdf)
+        sample_article.full_text_content = None
         session.add(sample_article)
         session.commit()
 
-        # Should not raise exception
         text = _build_article_text(sample_article)
-        assert sample_article.title in text
-        assert sample_article.abstract in text
+
+        assert "RAW-PDF-BYTES-MARKER" not in text
+        assert "## Full Text" not in text
+
+    def test_full_text_not_used_at_title_abstract_stage(
+        self, session: Session, sample_article: Article
+    ):
+        """Title/abstract screening must not see full text, even if stored."""
+        sample_article.full_text_content = "SECRET FULL TEXT"
+        sample_article.current_stage = ScreeningStage.title_abstract
+        assert "SECRET FULL TEXT" not in _build_article_text(sample_article)
+
+    def test_long_full_text_is_truncated_and_marked(
+        self, session: Session, sample_article: Article, monkeypatch
+    ):
+        """Full text beyond the character budget is cut with a clear marker."""
+        monkeypatch.setattr(
+            "app.features.research.agent.get_settings",
+            lambda: _settings(screening_max_fulltext_chars=100),
+        )
+        sample_article.current_stage = ScreeningStage.full_text
+        sample_article.full_text_content = "A" * 100 + "B" * 400
+
+        text = _build_article_text(sample_article)
+
+        assert "A" * 100 in text
+        assert "B" not in text.split("## Full Text")[1].split("[")[0]
+        assert "FULL TEXT TRUNCATED" in text
+        assert "100 of 500" in text
+
+    def test_short_full_text_has_no_truncation_marker(
+        self, session: Session, sample_article: Article
+    ):
+        sample_article.current_stage = ScreeningStage.full_text
+        sample_article.full_text_content = "short"
+        assert "TRUNCATED" not in _build_article_text(sample_article)
+
+    def test_max_fulltext_chars_setting_default(self):
+        assert _settings().screening_max_fulltext_chars == 150_000
 
 
 class TestPrepareCriteriaList:
@@ -170,7 +216,10 @@ class TestPrepareCriteriaList:
         # Check first criterion
         i1 = next(c for c in criteria_dicts if c["code"] == "I1")
         assert i1["type"] == "inclusion"
-        assert i1["description"] == "Study investigates the effects of exercise on mental health"
+        assert (
+            i1["description"]
+            == "Study investigates the effects of exercise on mental health"
+        )
         assert "directly relevant" in i1["rationale"]
 
     def test_filters_inactive_criteria(
@@ -239,7 +288,7 @@ class TestScreenArticle:
         )
 
         mock_run_result = MagicMock()
-        mock_run_result.data = mock_result
+        mock_run_result.output = mock_result
 
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -323,7 +372,7 @@ class TestScreenArticle:
         )
 
         mock_run_result = MagicMock()
-        mock_run_result.data = mock_result
+        mock_run_result.output = mock_result
 
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -394,7 +443,7 @@ class TestScreenArticle:
         )
 
         mock_run_result = MagicMock()
-        mock_run_result.data = mock_result
+        mock_run_result.output = mock_result
 
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -420,14 +469,11 @@ class TestScreenArticle:
         sample_article: Article,
         sample_criteria: list[Criterion],
         sample_project: Project,
-        tmp_path: Path,
     ):
         """Test screening with full text available uses full_text stage."""
-        # Set up full text
-        full_text_path = tmp_path / "article.txt"
-        full_text_path.write_text("Full text content")
         sample_article.full_text_retrieved = True
-        sample_article.full_text_path = str(full_text_path)
+        sample_article.current_stage = ScreeningStage.full_text
+        sample_article.full_text_content = "Full text content"
         session.add(sample_article)
         session.commit()
 
@@ -469,7 +515,7 @@ class TestScreenArticle:
         )
 
         mock_run_result = MagicMock()
-        mock_run_result.data = mock_result
+        mock_run_result.output = mock_result
 
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -514,7 +560,11 @@ class TestScreenArticle:
             session.refresh(sample_article)
             assert sample_article.ai_check_status == "error"
             assert sample_article.ai_check_result is not None
-            assert "API rate limit exceeded" in sample_article.ai_check_result["error"]
+            # Raw exception text must not be exposed through the article endpoints
+            error = sample_article.ai_check_result["error"]
+            assert "API rate limit exceeded" not in error
+            assert sample_article.ai_check_result["error_type"] == "Exception"
+            assert "API rate limit exceeded" not in str(sample_article.ai_check_result)
             assert sample_article.last_ai_check is not None
 
     @pytest.mark.asyncio
@@ -567,7 +617,7 @@ class TestScreenArticle:
         )
 
         mock_run_result = MagicMock()
-        mock_run_result.data = mock_result
+        mock_run_result.output = mock_result
 
         mock_agent = MagicMock()
         mock_agent.run = AsyncMock(return_value=mock_run_result)
@@ -584,3 +634,265 @@ class TestScreenArticle:
             )
 
             assert decision.reviewer_id == user.id
+
+
+def _eval(code: str, ctype: str, met: bool | None = True, **kw) -> dict:
+    return {
+        "criterion_code": code,
+        "criterion_type": ctype,
+        "met": met,
+        "confidence": kw.get("confidence", 0.9),
+        "reasoning": kw.get("reasoning", f"reasoning for {code}"),
+    }
+
+
+def _result_args(codes=("I1", "I2", "E1", "E2"), decision="include", **overrides):
+    evals = [_eval(c, "inclusion" if c.startswith("I") else "exclusion") for c in codes]
+    args = {
+        "decision": decision,
+        "confidence": 0.8,
+        "criteria_evaluations": evals,
+        "primary_exclusion_reason": None,
+        "summary_reasoning": "summary",
+    }
+    args.update(overrides)
+    return args
+
+
+def _function_model(responses: list[dict], seen: list):
+    """FunctionModel that replies with the given final_result args in order."""
+    calls = {"n": 0}
+
+    def fn(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.append(messages)
+        args = responses[min(calls["n"], len(responses) - 1)]
+        calls["n"] += 1
+        return ModelResponse(
+            parts=[ToolCallPart(info.output_tools[0].name, json.dumps(args))]
+        )
+
+    return FunctionModel(fn)
+
+
+class TestRealAgentEndToEnd:
+    """Exercise the real pydantic-ai Agent (no mocking of agent.run)."""
+
+    @pytest.mark.asyncio
+    async def test_function_model_happy_path_records_provenance(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        seen: list = []
+        model = _function_model([_result_args()], seen)
+        with get_screening_agent().override(model=model):
+            decision = await screen_article(
+                article=sample_article,
+                criteria=sample_criteria,
+                review_question=sample_project.review_question,
+                session=session,
+            )
+
+        assert decision.decision == ScreeningDecisionType.include
+        assert set(decision.criteria_evaluations) == {"I1", "I2", "E1", "E2"}
+        assert decision.prompt_version == PROMPT_VERSION
+        assert decision.model_name == "function:fn:"  # FunctionModel's model_name
+        assert decision.stage == ScreeningStage.title_abstract
+        # The article text reached the model
+        assert sample_article.title in str(seen[0])
+
+    @pytest.mark.asyncio
+    async def test_test_model_with_custom_output(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        model = TestModel(custom_output_args=_result_args())
+        with get_screening_agent().override(model=model):
+            decision = await screen_article(
+                article=sample_article,
+                criteria=sample_criteria,
+                review_question=sample_project.review_question,
+                session=session,
+            )
+        assert decision.decision == ScreeningDecisionType.include
+        assert decision.model_name == "test"
+
+    @pytest.mark.asyncio
+    async def test_validator_retries_when_criterion_missing(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        seen: list = []
+        model = _function_model(
+            [_result_args(codes=("I1", "I2", "E1")), _result_args()], seen
+        )
+        with get_screening_agent().override(model=model):
+            decision = await screen_article(
+                article=sample_article,
+                criteria=sample_criteria,
+                review_question=sample_project.review_question,
+                session=session,
+            )
+
+        assert len(seen) == 2  # one retry
+        assert "E2" in str(seen[1][-1])  # retry prompt names the missing code
+        assert set(decision.criteria_evaluations) == {"I1", "I2", "E1", "E2"}
+
+    @pytest.mark.asyncio
+    async def test_validator_retries_on_extra_and_duplicate_codes(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        seen: list = []
+        model = _function_model(
+            [
+                _result_args(codes=("I1", "I2", "E1", "E2", "X9")),
+                _result_args(codes=("I1", "I1", "I2", "E1", "E2")),
+                _result_args(),
+            ],
+            seen,
+        )
+        with get_screening_agent().override(model=model):
+            decision = await screen_article(
+                article=sample_article,
+                criteria=sample_criteria,
+                review_question=sample_project.review_question,
+                session=session,
+            )
+        assert len(seen) == 3
+        assert "X9" in str(seen[1][-1])
+        assert "I1" in str(seen[2][-1])
+        assert decision.id is not None
+
+    @pytest.mark.asyncio
+    async def test_validator_ignores_inactive_criteria(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        sample_criteria[3].is_active = False  # E2
+        session.add(sample_criteria[3])
+        session.commit()
+        seen: list = []
+        model = _function_model([_result_args(codes=("I1", "I2", "E1"))], seen)
+        with get_screening_agent().override(model=model):
+            decision = await screen_article(
+                article=sample_article,
+                criteria=sample_criteria,
+                review_question=sample_project.review_question,
+                session=session,
+            )
+        assert len(seen) == 1
+        assert set(decision.criteria_evaluations) == {"I1", "I2", "E1"}
+
+    @pytest.mark.asyncio
+    async def test_validator_exhausts_retries_marks_article_error(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        seen: list = []
+        model = _function_model([_result_args(codes=("I1",))], seen)
+        with get_screening_agent().override(model=model):
+            with pytest.raises(UnexpectedModelBehavior):
+                await screen_article(
+                    article=sample_article,
+                    criteria=sample_criteria,
+                    review_question=sample_project.review_question,
+                    session=session,
+                )
+        session.refresh(sample_article)
+        assert sample_article.ai_check_status == "error"
+
+    @pytest.mark.asyncio
+    async def test_uncertain_not_forced_to_match_criteria(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        """Model may say uncertain even when every criterion looks met."""
+        model = _function_model([_result_args(decision="uncertain")], [])
+        with get_screening_agent().override(model=model):
+            decision = await screen_article(
+                article=sample_article,
+                criteria=sample_criteria,
+                review_question=sample_project.review_question,
+                session=session,
+            )
+        assert decision.decision == ScreeningDecisionType.uncertain
+
+    @pytest.mark.asyncio
+    async def test_full_text_reaches_model_and_sets_stage(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        sample_article.current_stage = ScreeningStage.full_text
+        sample_article.full_text_retrieved = True
+        sample_article.full_text_content = "UNIQUE-METHODS-SECTION-TEXT"
+        session.add(sample_article)
+        session.commit()
+        seen: list = []
+        with get_screening_agent().override(
+            model=_function_model([_result_args()], seen)
+        ):
+            decision = await screen_article(
+                article=sample_article,
+                criteria=sample_criteria,
+                review_question=sample_project.review_question,
+                session=session,
+            )
+        assert "UNIQUE-METHODS-SECTION-TEXT" in str(seen[0])
+        assert decision.stage == ScreeningStage.full_text
+
+    @pytest.mark.asyncio
+    async def test_stage_is_title_abstract_when_no_full_text_available(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        """At full_text stage but nothing extracted: model only saw the abstract."""
+        sample_article.current_stage = ScreeningStage.full_text
+        sample_article.full_text_retrieved = True  # flag alone is not enough
+        sample_article.full_text_content = None
+        session.add(sample_article)
+        session.commit()
+        with get_screening_agent().override(
+            model=_function_model([_result_args()], [])
+        ):
+            decision = await screen_article(
+                article=sample_article,
+                criteria=sample_criteria,
+                review_question=sample_project.review_question,
+                session=session,
+            )
+        assert decision.stage == ScreeningStage.title_abstract
+
+    @pytest.mark.asyncio
+    async def test_ai_decision_does_not_change_article_final_status(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        sample_article.status = ArticleStatus.screening
+        session.add(sample_article)
+        session.commit()
+        with get_screening_agent().override(
+            model=_function_model(
+                [_result_args(decision="exclude", primary_exclusion_reason="E1")], []
+            )
+        ):
+            await screen_article(
+                article=sample_article,
+                criteria=sample_criteria,
+                review_question=sample_project.review_question,
+                session=session,
+            )
+        session.refresh(sample_article)
+        assert sample_article.status == ArticleStatus.screening
+        assert sample_article.current_stage == ScreeningStage.title_abstract
+        assert sample_article.final_decision == FinalDecision.pending
+
+
+class TestCriteriaSnapshot:
+    @pytest.mark.asyncio
+    async def test_snapshot_records_active_criteria_versions(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        sample_criteria[0].version = 3
+        session.add(sample_criteria[0])
+        session.commit()
+        active = {c.code: c.version for c in sample_criteria if c.is_active}
+        model = _function_model([_result_args()], [])
+        with get_screening_agent().override(model=model):
+            decision = await screen_article(
+                article=sample_article,
+                criteria=sample_criteria,
+                review_question=sample_project.review_question,
+                session=session,
+            )
+        assert decision.criteria_snapshot == active
+        assert decision.criteria_snapshot["I1"] == 3

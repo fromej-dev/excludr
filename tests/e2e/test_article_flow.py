@@ -93,7 +93,7 @@ def test_article_list_with_status_filter(auth_as, a_project, an_article):
     # Filter by imported status
     response = client.get(
         f"{API}/projects/{project.id}/articles",
-        params={"status": ArticleStatus.imported.value}
+        params={"status": ArticleStatus.imported.value},
     )
     assert response.status_code == 200
     data = response.json()
@@ -106,7 +106,7 @@ def test_article_list_with_status_filter(auth_as, a_project, an_article):
     # Filter by screening status
     response = client.get(
         f"{API}/projects/{project.id}/articles",
-        params={"status": ArticleStatus.screening.value}
+        params={"status": ArticleStatus.screening.value},
     )
     assert response.status_code == 200
     data = response.json()
@@ -117,7 +117,7 @@ def test_article_list_with_status_filter(auth_as, a_project, an_article):
     # Filter by included status
     response = client.get(
         f"{API}/projects/{project.id}/articles",
-        params={"status": ArticleStatus.included.value}
+        params={"status": ArticleStatus.included.value},
     )
     assert response.status_code == 200
     data = response.json()
@@ -143,26 +143,18 @@ def test_article_list_with_stage_filter(auth_as, a_project, an_article):
 
     # Create articles at different stages
     title_abstract_article1 = an_article(
-        project.id,
-        stage=ScreeningStage.title_abstract
+        project.id, stage=ScreeningStage.title_abstract
     )
     title_abstract_article2 = an_article(
-        project.id,
-        stage=ScreeningStage.title_abstract
+        project.id, stage=ScreeningStage.title_abstract
     )
-    full_text_article = an_article(
-        project.id,
-        stage=ScreeningStage.full_text
-    )
-    completed_article = an_article(
-        project.id,
-        stage=ScreeningStage.completed
-    )
+    full_text_article = an_article(project.id, stage=ScreeningStage.full_text)
+    completed_article = an_article(project.id, stage=ScreeningStage.completed)
 
     # Filter by title_abstract stage
     response = client.get(
         f"{API}/projects/{project.id}/articles",
-        params={"stage": ScreeningStage.title_abstract.value}
+        params={"stage": ScreeningStage.title_abstract.value},
     )
     assert response.status_code == 200
     data = response.json()
@@ -175,7 +167,7 @@ def test_article_list_with_stage_filter(auth_as, a_project, an_article):
     # Filter by full_text stage
     response = client.get(
         f"{API}/projects/{project.id}/articles",
-        params={"stage": ScreeningStage.full_text.value}
+        params={"stage": ScreeningStage.full_text.value},
     )
     assert response.status_code == 200
     data = response.json()
@@ -186,7 +178,7 @@ def test_article_list_with_stage_filter(auth_as, a_project, an_article):
     # Filter by completed stage
     response = client.get(
         f"{API}/projects/{project.id}/articles",
-        params={"stage": ScreeningStage.completed.value}
+        params={"stage": ScreeningStage.completed.value},
     )
     assert response.status_code == 200
     data = response.json()
@@ -212,13 +204,27 @@ def test_article_stats(auth_as, a_project, an_article):
     project = a_project(user)
 
     # Create articles with various statuses and stages
-    an_article(project.id, status=ArticleStatus.imported, stage=ScreeningStage.title_abstract)
-    an_article(project.id, status=ArticleStatus.imported, stage=ScreeningStage.title_abstract)
-    an_article(project.id, status=ArticleStatus.screening, stage=ScreeningStage.title_abstract)
-    an_article(project.id, status=ArticleStatus.screening, stage=ScreeningStage.full_text)
-    an_article(project.id, status=ArticleStatus.included, stage=ScreeningStage.completed)
-    an_article(project.id, status=ArticleStatus.excluded, stage=ScreeningStage.completed)
-    an_article(project.id, status=ArticleStatus.excluded, stage=ScreeningStage.completed)
+    an_article(
+        project.id, status=ArticleStatus.imported, stage=ScreeningStage.title_abstract
+    )
+    an_article(
+        project.id, status=ArticleStatus.imported, stage=ScreeningStage.title_abstract
+    )
+    an_article(
+        project.id, status=ArticleStatus.screening, stage=ScreeningStage.title_abstract
+    )
+    an_article(
+        project.id, status=ArticleStatus.screening, stage=ScreeningStage.full_text
+    )
+    an_article(
+        project.id, status=ArticleStatus.included, stage=ScreeningStage.completed
+    )
+    an_article(
+        project.id, status=ArticleStatus.excluded, stage=ScreeningStage.completed
+    )
+    an_article(
+        project.id, status=ArticleStatus.excluded, stage=ScreeningStage.completed
+    )
 
     # Get stats
     response = client.get(f"{API}/projects/{project.id}/articles/stats")
@@ -422,7 +428,9 @@ def test_article_wrong_project(auth_as, a_project, an_article):
     assert response.status_code == 404
 
     # Try to delete article via project B's URL
-    response = client.delete(f"{API}/projects/{project_b.id}/articles/{article_in_a.id}")
+    response = client.delete(
+        f"{API}/projects/{project_b.id}/articles/{article_in_a.id}"
+    )
     assert response.status_code == 404
 
     # Verify article is accessible via correct project URL

@@ -2,7 +2,6 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCriteriaStore } from '@/stores/criteria'
-import { useDraggable } from '@vueuse/core'
 import type { Criterion, CriterionType } from '@/types'
 import CriterionCard from '@/components/criteria/CriterionCard.vue'
 import CriterionForm from '@/components/criteria/CriterionForm.vue'
@@ -79,10 +78,10 @@ const handleConfirmDelete = async () => {
   <div class="space-y-6">
     <div class="grid gap-6 md:grid-cols-2">
       <!-- Inclusion Criteria -->
-      <div class="space-y-4">
+      <div class="space-y-4" data-testid="inclusion-column">
         <div class="flex items-center justify-between">
           <h2 class="text-xl font-bold text-green-600">Inclusion Criteria</h2>
-          <Button size="sm" @click="handleAddClick('inclusion')">
+          <Button size="sm" data-testid="add-inclusion" @click="handleAddClick('inclusion')">
             Add
           </Button>
         </div>
@@ -93,7 +92,7 @@ const handleConfirmDelete = async () => {
 
         <div v-else-if="criteriaStore.inclusionCriteria.length === 0" class="text-center py-8">
           <p class="text-muted-foreground mb-4">No inclusion criteria yet</p>
-          <Button size="sm" variant="outline" @click="handleAddClick('inclusion')">
+          <Button size="sm" variant="outline" data-testid="empty-add-inclusion" @click="handleAddClick('inclusion')">
             Add Inclusion Criterion
           </Button>
         </div>
@@ -110,10 +109,10 @@ const handleConfirmDelete = async () => {
       </div>
 
       <!-- Exclusion Criteria -->
-      <div class="space-y-4">
+      <div class="space-y-4" data-testid="exclusion-column">
         <div class="flex items-center justify-between">
           <h2 class="text-xl font-bold text-red-600">Exclusion Criteria</h2>
-          <Button size="sm" @click="handleAddClick('exclusion')">
+          <Button size="sm" data-testid="add-exclusion" @click="handleAddClick('exclusion')">
             Add
           </Button>
         </div>
@@ -124,7 +123,7 @@ const handleConfirmDelete = async () => {
 
         <div v-else-if="criteriaStore.exclusionCriteria.length === 0" class="text-center py-8">
           <p class="text-muted-foreground mb-4">No exclusion criteria yet</p>
-          <Button size="sm" variant="outline" @click="handleAddClick('exclusion')">
+          <Button size="sm" variant="outline" data-testid="empty-add-exclusion" @click="handleAddClick('exclusion')">
             Add Exclusion Criterion
           </Button>
         </div>

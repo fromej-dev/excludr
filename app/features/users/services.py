@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import Depends
-from passlib.context import CryptContext
+from app.core.security import hash_password
 from sqlmodel import select, Session
 
 from .models import User, UserCreate
@@ -76,8 +76,7 @@ class UserService:
         Returns:
             str: Hashed password
         """
-        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        return pwd_context.hash(password)
+        return hash_password(password)
 
 
 def get_user_service(session: SessionDep):

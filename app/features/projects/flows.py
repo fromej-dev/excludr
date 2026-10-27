@@ -1,5 +1,6 @@
 """Prefect flows for project-related background tasks."""
 
+import logging
 import os
 from typing import Any
 
@@ -8,9 +9,52 @@ from prefect import flow, task
 from sqlmodel import select
 
 from app.core.prefect_config import get_prefect_session
+from app.features.projects.dedup import ProjectArticleIndex
+from app.features.projects.models import ImportBatch
 from app.features.research.models import Article
 from app.features.projects.parsers import parse_pubmed_txt, parse_pubmed_csv
 from app.features.research.pubmed_service import PubMedService
+
+logger = logging.getLogger(__name__)
+
+
+def record_import_batch(
+    project_id: int,
+    filename: str,
+    file_format: str,
+    result: dict[str, Any],
+    user_id: int | None,
+) -> None:
+    """Persist an :class:`ImportBatch` (and its audit event) for a finished import."""
+    from app.features.audit import services as audit
+
+    with get_prefect_session() as session:
+        batch = ImportBatch(
+            project_id=project_id,
+            filename=filename[:500],
+            format=file_format,
+            records_found=result["records_found"],
+            imported=result["articles_created"],
+            duplicates=result["duplicates"],
+            created_by=user_id,
+        )
+        session.add(batch)
+        session.flush()
+        audit.record_event(
+            session,
+            project_id,
+            audit.IMPORT_COMPLETED,
+            "import_batch",
+            batch.id,
+            user_id,
+            {
+                "filename": batch.filename,
+                "format": file_format,
+                "records_found": batch.records_found,
+                "imported": batch.imported,
+                "duplicates": batch.duplicates,
+            },
+        )
 
 
 @task(name="parse_ris_entries")
@@ -21,24 +65,25 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
     """
     articles_created = 0
     articles_updated = 0
+    duplicates = 0
+    duplicates_by_title_year = 0
 
     with open(file_path, "r", encoding="utf-8") as file:
         entries = rispy.load(file)
+        records_found = len(entries)
 
         with get_prefect_session() as session:
+            index = ProjectArticleIndex(session, project_id)
             for entry in entries:
                 doi = entry.get("doi")
+                title = entry.get("title") or entry.get("primary_title")
 
-                # A DOI and title are essential for a meaningful record.
-                if not doi or not (entry.get("title") or entry.get("primary_title")):
-                    print(
-                        f"Skipping entry due to missing DOI or title: {entry.get('id', 'N/A')}"
+                # A title is essential for a meaningful record.
+                if not title:
+                    logger.info(
+                        f"Skipping entry due to missing title: {entry.get('id', 'N/A')}"
                     )
                     continue
-
-                # Check if an article with this DOI already exists in the database.
-                statement = select(Article).where(Article.doi == doi)
-                existing_article = session.exec(statement).first()
 
                 # --- Map all available RIS tags to the Article model fields ---
 
@@ -50,7 +95,17 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                         # Take the first part of a date string and convert to int
                         year = int(float(str(year_str).split("/")[0]))
                 except (ValueError, TypeError):
-                    print(f"Could not parse year for article with DOI {doi}")
+                    logger.info(f"Could not parse year for article '{title}'")
+
+                # Look for a duplicate within this project only: DOI/PMID first,
+                # then normalized title + year when the entry has no identifiers.
+                pmid = entry.get("accession_number")
+                existing_article, match_kind = index.find(doi, pmid, title, year)
+                if existing_article is not None:
+                    duplicates += 1
+                    if match_kind == "title_year":
+                        duplicates_by_title_year += 1
+                        continue
 
                 # Construct a page range string if start and end pages are available.
                 start_page = entry.get("start_page", "")
@@ -69,7 +124,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                 # Prepare a dictionary with all the data to be saved.
                 article_data = {
                     "project_id": project_id,
-                    "title": entry.get("title") or entry.get("primary_title"),
+                    "title": title,
                     "authors": entry.get("authors", []),
                     "abstract": entry.get("abstract"),
                     "publication_date": entry.get("date"),
@@ -81,9 +136,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                     "pages": pages,
                     "publication_type": entry.get("type_of_reference"),
                     "doi": doi,
-                    "pmid": entry.get(
-                        "accession_number"
-                    ),  # This tag is often used for PMID.
+                    "pmid": pmid,  # accession_number is often used for PMID.
                     "issn": entry.get("issn"),
                     "keywords": entry.get("keywords", []),
                     "mesh_terms": entry.get("mesh_terms", []),
@@ -104,57 +157,68 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                     # Or, create a new article instance.
                     new_article = Article(**article_data)
                     session.add(new_article)
+                    index.add(new_article)
                     articles_created += 1
 
     return {
+        "records_found": records_found,
         "articles_created": articles_created,
         "articles_updated": articles_updated,
+        "duplicates": duplicates,
+        "duplicates_by_title_year": duplicates_by_title_year,
     }
 
 
 @flow(name="parse_ris_file", log_prints=True)
-def parse_ris_file_flow(file_path: str, project_id: int) -> dict:
+def parse_ris_file_flow(
+    file_path: str,
+    project_id: int,
+    original_filename: str | None = None,
+    user_id: int | None = None,
+) -> dict:
     """Prefect flow to parse a RIS file and save/update entries in the database.
 
     Args:
         file_path: Path to the RIS file to parse.
         project_id: ID of the project to associate articles with.
+        original_filename: Client-supplied display name (metadata only, never a path).
+        user_id: User who uploaded the file (recorded on the import batch).
 
     Returns:
         Dictionary with status, articles_created, and articles_updated counts.
     """
-    # Extract original filename from the temp path
-    try:
-        original_filename = "_".join(os.path.basename(file_path).split("_")[1:])
-    except IndexError:
-        original_filename = os.path.basename(file_path)
+    original_filename = original_filename or os.path.basename(file_path)
 
-    print(f"Starting to parse file: {file_path} (from {original_filename})")
+    logger.info(f"Starting to parse file: {file_path} (from {original_filename})")
 
     try:
         result = parse_ris_entries(file_path, project_id, original_filename)
+        record_import_batch(project_id, original_filename, "ris", result, user_id)
 
-        print(
+        logger.info(
             f"Processing complete for {original_filename}. "
-            f"Created: {result['articles_created']}, Updated: {result['articles_updated']}"
+            f"Created: {result['articles_created']}, Updated: {result['articles_updated']}, "
+            f"Duplicates: {result['duplicates']}"
         )
 
         return {
             "status": "Success",
             "articles_created": result["articles_created"],
             "articles_updated": result["articles_updated"],
+            "duplicates": result["duplicates"],
+            "duplicates_by_title_year": result["duplicates_by_title_year"],
         }
 
     except FileNotFoundError:
         return {"status": "Error", "message": "File not found."}
-    except Exception as e:
-        print(f"An error occurred while parsing {file_path}: {e}")
+    except Exception:
+        logger.exception("An error occurred while parsing %s", file_path)
         raise
     finally:
         # Ensure the temporary file is always cleaned up.
         if os.path.exists(file_path):
             os.remove(file_path)
-            print(f"Cleaned up temporary file: {file_path}")
+            logger.info(f"Cleaned up temporary file: {file_path}")
 
 
 @task(name="parse_pubmed_entries")
@@ -176,6 +240,7 @@ def parse_pubmed_entries(
     """
     articles_created = 0
     articles_updated = 0
+    duplicates = 0
     pmids_needing_abstracts: list[str] = []
 
     # Parse the file based on format
@@ -185,28 +250,25 @@ def parse_pubmed_entries(
         entries = parse_pubmed_csv(file_path)
 
     with get_prefect_session() as session:
+        index = ProjectArticleIndex(session, project_id)
         for entry in entries:
             pmid = entry.get("pmid")
             title = entry.get("title")
 
             # A PMID and title are essential for a meaningful record
             if not pmid or not title:
-                print(f"Skipping entry due to missing PMID or title: {entry}")
+                logger.info(
+                    f"Skipping entry due to missing PMID or title: {entry.get('pmid', 'N/A')}"
+                )
                 continue
 
-            # Check for existing article by PMID first
-            existing_article = None
-            statement = select(Article).where(
-                Article.pmid == pmid, Article.project_id == project_id
+            # Per-project duplicate lookup: PMID, then DOI (then title + year, which
+            # only applies to entries without identifiers).
+            existing_article, _ = index.find(
+                entry.get("doi"), pmid, title, entry.get("year")
             )
-            existing_article = session.exec(statement).first()
-
-            # Fall back to DOI check if PMID not found
-            if not existing_article and entry.get("doi"):
-                statement = select(Article).where(
-                    Article.doi == entry.get("doi"), Article.project_id == project_id
-                )
-                existing_article = session.exec(statement).first()
+            if existing_article is not None:
+                duplicates += 1
 
             # Prepare article data
             article_data = {
@@ -252,6 +314,7 @@ def parse_pubmed_entries(
                 # Create new article
                 new_article = Article(**article_data)
                 session.add(new_article)
+                index.add(new_article)
                 articles_created += 1
 
                 # Track if we need to fetch abstract
@@ -259,8 +322,10 @@ def parse_pubmed_entries(
                     pmids_needing_abstracts.append(pmid)
 
     return {
+        "records_found": len(entries),
         "articles_created": articles_created,
         "articles_updated": articles_updated,
+        "duplicates": duplicates,
         "pmids_needing_abstracts": pmids_needing_abstracts,
     }
 
@@ -300,7 +365,12 @@ def fetch_pubmed_abstracts(pmids: list[str], project_id: int) -> dict[str, Any]:
 
 
 @flow(name="parse_pubmed_file", log_prints=True)
-def parse_pubmed_file_flow(file_path: str, project_id: int) -> dict[str, Any]:
+def parse_pubmed_file_flow(
+    file_path: str,
+    project_id: int,
+    original_filename: str | None = None,
+    user_id: int | None = None,
+) -> dict[str, Any]:
     """Prefect flow to parse a PubMed export file and save entries to the database.
 
     Supports both MEDLINE (.txt) and CSV formats. For CSV files, abstracts will
@@ -309,15 +379,13 @@ def parse_pubmed_file_flow(file_path: str, project_id: int) -> dict[str, Any]:
     Args:
         file_path: Path to the PubMed export file.
         project_id: ID of the project to associate articles with.
+        original_filename: Client-supplied display name (metadata only, never a path).
+        user_id: User who uploaded the file (recorded on the import batch).
 
     Returns:
         Dictionary with status and article counts.
     """
-    # Extract original filename and determine format
-    try:
-        original_filename = "_".join(os.path.basename(file_path).split("_")[1:])
-    except IndexError:
-        original_filename = os.path.basename(file_path)
+    original_filename = original_filename or os.path.basename(file_path)
 
     # Determine file format from extension
     file_ext = os.path.splitext(file_path)[1].lower()
@@ -326,48 +394,55 @@ def parse_pubmed_file_flow(file_path: str, project_id: int) -> dict[str, Any]:
     elif file_ext == ".csv":
         file_format = "csv"
     else:
+        if os.path.exists(file_path):
+            os.remove(file_path)
         return {"status": "Error", "message": f"Unsupported file format: {file_ext}"}
 
-    print(f"Starting to parse PubMed {file_format.upper()} file: {file_path}")
-    print(f"Original filename: {original_filename}")
+    logger.info(f"Starting to parse PubMed {file_format.upper()} file: {file_path}")
+    logger.info(f"Original filename: {original_filename}")
 
     try:
         # Parse entries and save to database
         result = parse_pubmed_entries(
             file_path, project_id, original_filename, file_format
         )
+        record_import_batch(
+            project_id, original_filename, f"pubmed_{file_format}", result, user_id
+        )
 
-        print(
+        logger.info(
             f"Initial processing complete. "
-            f"Created: {result['articles_created']}, Updated: {result['articles_updated']}"
+            f"Created: {result['articles_created']}, Updated: {result['articles_updated']}, "
+            f"Duplicates: {result['duplicates']}"
         )
 
         # Fetch abstracts for CSV imports that need them
         abstracts_fetched = 0
         if result["pmids_needing_abstracts"]:
-            print(
+            logger.info(
                 f"Fetching abstracts for {len(result['pmids_needing_abstracts'])} articles..."
             )
             fetch_result = fetch_pubmed_abstracts(
                 result["pmids_needing_abstracts"], project_id
             )
             abstracts_fetched = fetch_result["abstracts_fetched"]
-            print(f"Fetched {abstracts_fetched} abstracts from PubMed")
+            logger.info(f"Fetched {abstracts_fetched} abstracts from PubMed")
 
         return {
             "status": "Success",
             "articles_created": result["articles_created"],
             "articles_updated": result["articles_updated"],
+            "duplicates": result["duplicates"],
             "abstracts_fetched": abstracts_fetched,
         }
 
     except FileNotFoundError:
         return {"status": "Error", "message": "File not found."}
-    except Exception as e:
-        print(f"An error occurred while parsing {file_path}: {e}")
+    except Exception:
+        logger.exception("An error occurred while parsing %s", file_path)
         raise
     finally:
         # Ensure the temporary file is always cleaned up
         if os.path.exists(file_path):
             os.remove(file_path)
-            print(f"Cleaned up temporary file: {file_path}")
+            logger.info(f"Cleaned up temporary file: {file_path}")

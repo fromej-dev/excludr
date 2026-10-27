@@ -8,6 +8,7 @@ from .models import (
     ArticleStatus,
     ScreeningStage,
     FinalDecision,
+    FullTextSource,
 )
 from ...core.database import SessionDep
 
@@ -100,15 +101,20 @@ class ArticleService:
         return article
 
     def set_full_text_retrieved(
-        self, article: Article, full_text_path: str, full_text_content: str | None = None
+        self,
+        article: Article,
+        full_text_path: str | None,
+        full_text_content: str | None = None,
+        source: str = FullTextSource.manual.value,
     ) -> Article:
         """
         Mark an article as having its full text retrieved.
 
         Args:
             article: The article to update.
-            full_text_path: Path to the stored PDF file.
+            full_text_path: Path to the stored PDF file (None for text-only retrieval).
             full_text_content: Extracted text content from the PDF (optional).
+            source: Where the full text came from (``FullTextSource`` value).
 
         Returns:
             The updated article.
@@ -116,6 +122,8 @@ class ArticleService:
         article.full_text_retrieved = True
         article.full_text_path = full_text_path
         article.full_text_content = full_text_content
+        article.full_text_source = source
+        article.full_text_retrieval_error = None
         article.status = ArticleStatus.full_text_retrieved
         self.session.add(article)
         self.session.commit()
