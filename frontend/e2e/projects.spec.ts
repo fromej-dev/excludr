@@ -128,8 +128,8 @@ test.describe('Project Management Flow', () => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(project.id, 'overview')
 
-    // Click Upload File button
-    await page.getByRole('button', { name: /upload file/i }).click()
+    // The import card is always visible for the owner
+    await expect(page.getByRole('button', { name: /upload ris/i })).toBeVisible()
 
     // Generate RIS content and create a file
     const risContent = generateRisContent(3)
@@ -141,7 +141,7 @@ test.describe('Project Management Flow', () => {
     `)
 
     // Set file input
-    const fileInput = page.locator('#article-file, input[type="file"]').first()
+    const fileInput = page.getByTestId('ris-input')
 
     // Create a DataTransfer with the file
     await fileInput.setInputFiles({
@@ -150,12 +150,10 @@ test.describe('Project Management Flow', () => {
       buffer: Buffer.from(risContent),
     })
 
-    // Submit upload
-    await page.getByRole('button', { name: /^upload$/i }).click()
-
+    // Upload starts as soon as a file is chosen
     // Wait for success message or processing indicator
     await expect(
-      page.getByText(/upload.*success|processing|imported/i)
+      page.getByTestId('import-result')
     ).toBeVisible({ timeout: 15000 })
   })
 

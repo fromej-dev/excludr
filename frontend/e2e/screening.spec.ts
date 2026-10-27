@@ -41,10 +41,10 @@ test.describe('Screening Workflow', () => {
     await pageHelper.goToProjectTab(projectId, 'screening')
 
     // Wait for article to load
-    await page.waitForSelector('h1', { timeout: 10000 })
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
 
     // Assert article title visible
-    const title = page.locator('h1').first()
+    const title = page.getByTestId('article-title').first()
     await expect(title).toBeVisible()
     const titleText = await title.textContent()
     expect(titleText).toContain('E2E Test Article')
@@ -67,14 +67,14 @@ test.describe('Screening Workflow', () => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(projectId, 'screening')
 
-    await page.waitForSelector('h1', { timeout: 10000 })
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
 
     // Check for inclusion criteria section
     const inclusionHeading = page.getByText('Inclusion Criteria')
     await expect(inclusionHeading).toBeVisible()
 
     // Check for specific inclusion criterion code and description
-    const i1Code = page.getByText('I1')
+    const i1Code = page.getByText('I1', { exact: true })
     await expect(i1Code).toBeVisible()
 
     const i1Description = page.getByText('Studies must be randomized controlled trials')
@@ -85,7 +85,7 @@ test.describe('Screening Workflow', () => {
     await expect(exclusionHeading).toBeVisible()
 
     // Check for specific exclusion criterion code and description
-    const e1Code = page.getByText('E1')
+    const e1Code = page.getByText('E1', { exact: true })
     await expect(e1Code).toBeVisible()
 
     const e1Description = page.getByText('Studies must not be animal studies')
@@ -96,31 +96,30 @@ test.describe('Screening Workflow', () => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(projectId, 'screening')
 
-    await page.waitForSelector('h1', { timeout: 10000 })
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
 
     // Assert stats card shows total articles count
     const totalLabel = page.getByText('Total', { exact: true })
     await expect(totalLabel).toBeVisible()
 
     // Check that we have the expected number of articles (5)
-    const statsCard = page.locator('h2:has-text("Screening Progress")').locator('..')
-    const totalCount = statsCard.locator('p:has-text("5")')
+    const totalCount = page.locator('p.text-2xl', { hasText: /^5$/ })
     await expect(totalCount.first()).toBeVisible()
 
     // Assert other stat labels are visible
-    await expect(page.getByText('Screened')).toBeVisible()
-    await expect(page.getByText('Included')).toBeVisible()
-    await expect(page.getByText('Excluded')).toBeVisible()
+    await expect(page.getByText('Screened', { exact: true })).toBeVisible()
+    await expect(page.getByText('Included', { exact: true })).toBeVisible()
+    await expect(page.getByText('Excluded', { exact: true })).toBeVisible()
   })
 
   test('should submit include decision and load next article', async ({ page, pageHelper, testUser }) => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(projectId, 'screening')
 
-    await page.waitForSelector('h1', { timeout: 10000 })
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
 
     // Get the first article title
-    const firstTitle = await page.locator('h1').first().textContent()
+    const firstTitle = await page.getByTestId('article-title').first().textContent()
 
     // Enter reasoning in textarea
     const reasoning = page.locator('#reasoning')
@@ -134,7 +133,7 @@ test.describe('Screening Workflow', () => {
     await page.waitForTimeout(1000)
 
     // Assert next article loaded (different title)
-    const secondTitle = await page.locator('h1').first().textContent()
+    const secondTitle = await page.getByTestId('article-title').first().textContent()
     expect(secondTitle).not.toBe(firstTitle)
     expect(secondTitle).toContain('E2E Test Article')
 
@@ -147,9 +146,9 @@ test.describe('Screening Workflow', () => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(projectId, 'screening')
 
-    await page.waitForSelector('h1', { timeout: 10000 })
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
 
-    const firstTitle = await page.locator('h1').first().textContent()
+    const firstTitle = await page.getByTestId('article-title').first().textContent()
 
     // Enter reasoning
     const reasoning = page.locator('#reasoning')
@@ -163,7 +162,7 @@ test.describe('Screening Workflow', () => {
     await page.waitForTimeout(1000)
 
     // Assert next article loaded
-    const secondTitle = await page.locator('h1').first().textContent()
+    const secondTitle = await page.getByTestId('article-title').first().textContent()
     expect(secondTitle).not.toBe(firstTitle)
   })
 
@@ -171,9 +170,9 @@ test.describe('Screening Workflow', () => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(projectId, 'screening')
 
-    await page.waitForSelector('h1', { timeout: 10000 })
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
 
-    const firstTitle = await page.locator('h1').first().textContent()
+    const firstTitle = await page.getByTestId('article-title').first().textContent()
 
     // Enter reasoning
     const reasoning = page.locator('#reasoning')
@@ -187,7 +186,7 @@ test.describe('Screening Workflow', () => {
     await page.waitForTimeout(1000)
 
     // Assert next article loaded
-    const secondTitle = await page.locator('h1').first().textContent()
+    const secondTitle = await page.getByTestId('article-title').first().textContent()
     expect(secondTitle).not.toBe(firstTitle)
   })
 
@@ -195,9 +194,9 @@ test.describe('Screening Workflow', () => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(projectId, 'screening')
 
-    await page.waitForSelector('h1', { timeout: 10000 })
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
 
-    const firstTitle = await page.locator('h1').first().textContent()
+    const firstTitle = await page.getByTestId('article-title').first().textContent()
 
     // Press 'i' key for include
     await page.keyboard.press('i')
@@ -206,11 +205,11 @@ test.describe('Screening Workflow', () => {
     await page.waitForTimeout(1000)
 
     // Assert next article loaded
-    const secondTitle = await page.locator('h1').first().textContent()
+    const secondTitle = await page.getByTestId('article-title').first().textContent()
     expect(secondTitle).not.toBe(firstTitle)
 
     // Verify keyboard shortcut hint is visible
-    const shortcutHint = page.getByText(/use keyboard shortcuts/i)
+    const shortcutHint = page.getByTestId('shortcut-legend').getByText(/use keyboard shortcuts/i)
     await expect(shortcutHint).toBeVisible()
   })
 
@@ -218,7 +217,7 @@ test.describe('Screening Workflow', () => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(projectId, 'screening')
 
-    await page.waitForSelector('h1', { timeout: 10000 })
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
 
     // Screen all 5 articles using keyboard shortcut
     for (let i = 0; i < 5; i++) {

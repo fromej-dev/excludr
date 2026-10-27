@@ -18,6 +18,9 @@ export const useWebSocketStore = defineStore('websocket', () => {
   const connectionError = ref<string | null>(null)
   const notifications = ref<ToastNotification[]>([])
   const userRooms = ref<string[]>([])
+  // Rooms the UI wants to be in; (re)joined whenever the socket opens
+  const desiredRooms = new Set<string>()
+  const recentToasts = new Map<string, number>()
   const messageHandlers = ref<Map<string, Set<(data: any) => void>>>(new Map())
 
   // Auto-reconnect settings
@@ -47,6 +50,13 @@ export const useWebSocketStore = defineStore('websocket', () => {
     level: NotificationLevel = 'info',
     duration: number = 5000
   ) => {
+    // Drop identical toasts fired within 2s (e.g. same message via project and user rooms)
+    const key = `${level}:${message}`
+    const now = Date.now()
+    const last = recentToasts.get(key)
+    if (last !== undefined && now - last < 2000) return ''
+    recentToasts.set(key, now)
+
     const notification: ToastNotification = {
       id: generateId(),
       message,
@@ -119,7 +129,8 @@ export const useWebSocketStore = defineStore('websocket', () => {
       const response: WebSocketResponse = JSON.parse(event.data)
 
       // Handle notifications
-      if (response.data?.notification) {
+      // Per-article AI progress is rendered as a progress bar, not as a toast each
+      if (response.data?.notification && response.data.type !== 'ai_screening_progress') {
         const level = (response.data.level as NotificationLevel) || 'info'
         addNotification(response.message, level)
       }
@@ -164,6 +175,7 @@ export const useWebSocketStore = defineStore('websocket', () => {
         isConnecting.value = false
         reconnectAttempts.value = 0
         connectionError.value = null
+        desiredRooms.forEach((room) => joinRoom(room))
 
         // Clear any pending reconnect timer
         if (reconnectTimer.value) {
@@ -301,12 +313,17 @@ export const useWebSocketStore = defineStore('websocket', () => {
 
   // Join project room (convenience method)
   const joinProjectRoom = (projectId: number) => {
-    return joinRoom(`project_${projectId}`)
+    const room = `project_${projectId}`
+    desiredRooms.add(room)
+    // If the socket is not open yet the room is joined on connect
+    return isConnected.value ? joinRoom(room) : true
   }
 
   // Leave project room (convenience method)
   const leaveProjectRoom = (projectId: number) => {
-    return leaveRoom(`project_${projectId}`)
+    const room = `project_${projectId}`
+    desiredRooms.delete(room)
+    return isConnected.value ? leaveRoom(room) : true
   }
 
   return {

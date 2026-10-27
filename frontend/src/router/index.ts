@@ -52,6 +52,26 @@ const routes: RouteRecordRaw[] = [
         name: 'project-screening',
         component: () => import('@/views/ScreeningView.vue'),
       },
+      {
+        path: 'members',
+        name: 'project-members',
+        component: () => import('@/views/MembersView.vue'),
+      },
+      {
+        path: 'conflicts',
+        name: 'project-conflicts',
+        component: () => import('@/views/ConflictsView.vue'),
+      },
+      {
+        path: 'reports',
+        name: 'project-reports',
+        component: () => import('@/views/ReportsView.vue'),
+      },
+      {
+        path: 'audit',
+        name: 'project-audit',
+        component: () => import('@/views/AuditView.vue'),
+      },
     ],
   },
 ]

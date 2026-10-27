@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useProjectsStore } from '@/stores/projects'
+import { useMembersStore } from '@/stores/members'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Tabs from '@/components/ui/Tabs.vue'
 import TabsList from '@/components/ui/TabsList.vue'
@@ -11,6 +12,7 @@ import TabsContent from '@/components/ui/TabsContent.vue'
 const route = useRoute()
 const router = useRouter()
 const projectsStore = useProjectsStore()
+const membersStore = useMembersStore()
 
 const projectId = computed(() => Number(route.params.id))
 const currentTab = computed(() => {
@@ -19,12 +21,25 @@ const currentTab = computed(() => {
   if (name === 'project-articles') return 'articles'
   if (name === 'article-detail') return 'articles'
   if (name === 'project-screening') return 'screening'
+  if (name === 'project-members') return 'members'
+  if (name === 'project-conflicts') return 'conflicts'
+  if (name === 'project-reports') return 'reports'
+  if (name === 'project-audit') return 'audit'
   return 'overview'
 })
 
-onMounted(() => {
-  projectsStore.fetchProject(projectId.value)
-})
+// Load the project and the signed-in user's role in it (drives which tabs/actions show)
+watch(
+  projectId,
+  (id) => {
+    membersStore.reset()
+    projectsStore.fetchProject(id)
+    membersStore.fetchMembers(id)
+  },
+  { immediate: true }
+)
+
+const isOwner = computed(() => membersStore.isOwner)
 
 const navigateToTab = (tab: string) => {
   const routes: Record<string, string> = {
@@ -32,6 +47,10 @@ const navigateToTab = (tab: string) => {
     criteria: 'project-criteria',
     articles: 'project-articles',
     screening: 'project-screening',
+    members: 'project-members',
+    conflicts: 'project-conflicts',
+    reports: 'project-reports',
+    audit: 'project-audit',
   }
   router.push({ name: routes[tab], params: { id: projectId.value } })
 }
@@ -50,6 +69,10 @@ const navigateToTab = (tab: string) => {
           <TabsTrigger value="criteria">Criteria</TabsTrigger>
           <TabsTrigger value="articles">Articles</TabsTrigger>
           <TabsTrigger value="screening">Screening</TabsTrigger>
+          <TabsTrigger value="members">Members</TabsTrigger>
+          <TabsTrigger v-if="isOwner" value="conflicts">Conflicts</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
+          <TabsTrigger v-if="isOwner" value="audit">Audit</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -62,6 +85,18 @@ const navigateToTab = (tab: string) => {
           <router-view />
         </TabsContent>
         <TabsContent value="screening">
+          <router-view />
+        </TabsContent>
+        <TabsContent value="members">
+          <router-view />
+        </TabsContent>
+        <TabsContent value="conflicts">
+          <router-view />
+        </TabsContent>
+        <TabsContent value="reports">
+          <router-view />
+        </TabsContent>
+        <TabsContent value="audit">
           <router-view />
         </TabsContent>
       </Tabs>
