@@ -3,7 +3,6 @@ import { ref, computed } from 'vue'
 import type {
   WebSocketMessage,
   WebSocketResponse,
-  MessageType,
   NotificationLevel,
   ToastNotification,
 } from '@/types'

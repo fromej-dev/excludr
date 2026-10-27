@@ -39,8 +39,16 @@ export function useApi() {
     }
   )
 
+  // Backend may wrap payloads as { data: T }; unwrap when present
+  const unwrap = <T>(body: unknown): T => {
+    if (body && typeof body === 'object' && 'data' in body && (body as { data: unknown }).data) {
+      return (body as { data: T }).data
+    }
+    return body as T
+  }
+
   const get = <T>(url: string, config?: AxiosRequestConfig) => {
-    return api.get<T>(url, config).then((res) => res.data?.data || res.data)
+    return api.get<T>(url, config).then((res) => unwrap<T>(res.data))
   }
 
   const getRaw = <T>(url: string, config?: AxiosRequestConfig) => {
@@ -48,15 +56,15 @@ export function useApi() {
   }
 
   const post = <T>(url: string, data?: any, config?: AxiosRequestConfig) => {
-    return api.post<T>(url, data, config).then((res) => res.data?.data || res.data)
+    return api.post<T>(url, data, config).then((res) => unwrap<T>(res.data))
   }
 
   const patch = <T>(url: string, data?: any, config?: AxiosRequestConfig) => {
-    return api.patch<T>(url, data, config).then((res) => res.data?.data || res.data)
+    return api.patch<T>(url, data, config).then((res) => unwrap<T>(res.data))
   }
 
   const del = <T>(url: string, config?: AxiosRequestConfig) => {
-    return api.delete<T>(url, config).then((res) => res.data?.data || res.data)
+    return api.delete<T>(url, config).then((res) => unwrap<T>(res.data))
   }
 
   const setToken = (token: string) => {

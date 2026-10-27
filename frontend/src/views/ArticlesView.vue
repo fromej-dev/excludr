@@ -87,7 +87,7 @@ const getStatusBadgeVariant = (status: ArticleStatus) => {
 }
 
 const getDecisionBadgeVariant = (decision: FinalDecision) => {
-  const variants: Record<FinalDecision, 'default' | 'secondary' | 'outline'> = {
+  const variants: Record<FinalDecision, 'default' | 'secondary' | 'destructive' | 'outline'> = {
     pending: 'outline',
     included: 'default',
     excluded: 'destructive',

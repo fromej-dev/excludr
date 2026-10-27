@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useApi } from '@/composables/useApi'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -61,11 +62,12 @@ const router = createRouter({
 })
 
 // Auth guard
-router.beforeEach(async (to, from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore()
+  const { getToken } = useApi()
 
   // Initialize auth state if not already done
-  if (!authStore.user && authStore.getToken?.()) {
+  if (!authStore.user && getToken()) {
     await authStore.initialize()
   }
 

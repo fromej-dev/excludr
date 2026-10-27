@@ -2,7 +2,6 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCriteriaStore } from '@/stores/criteria'
-import { useDraggable } from '@vueuse/core'
 import type { Criterion, CriterionType } from '@/types'
 import CriterionCard from '@/components/criteria/CriterionCard.vue'
 import CriterionForm from '@/components/criteria/CriterionForm.vue'

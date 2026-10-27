@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useApi } from '@/composables/useApi'
-import type { Criterion, CriterionCreate, CriterionUpdate, CriteriaReorder } from '@/types'
+import type { Criterion, CriterionCreate, CriterionUpdate } from '@/types'
 
 export const useCriteriaStore = defineStore('criteria', () => {
   const { get, post, patch, delete: del } = useApi()

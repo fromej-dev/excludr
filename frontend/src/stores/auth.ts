@@ -44,7 +44,7 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      const newUser = await post<User>('/auth/register', data)
+      await post<User>('/auth/register', data)
       // After registration, automatically log in
       await login({ username: data.email, password: data.password })
       return true

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import type { Project, ProjectCreate, ProjectUpdate, WebSocketResponse } from '@/types'
 import { useWebSocketStore } from './websocket'
