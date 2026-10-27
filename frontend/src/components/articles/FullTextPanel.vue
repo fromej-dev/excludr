@@ -183,7 +183,7 @@ const onFile = async (event: Event) => {
     </div>
 
     <Progress v-if="uploading" :value="percent" />
-    <p v-if="message" class="text-sm text-green-600" role="status">{{ message }}</p>
+    <p v-if="message" class="text-sm text-include-soft-foreground" role="status">{{ message }}</p>
     <p v-if="error" class="text-sm text-destructive" role="alert">{{ error }}</p>
 
     <p

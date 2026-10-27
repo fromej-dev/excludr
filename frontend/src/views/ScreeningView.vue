@@ -17,7 +17,7 @@ import AiVerdict from '@/components/screening/AiVerdict.vue'
 import CriteriaEvaluationList from '@/components/screening/CriteriaEvaluationList.vue'
 import ShortcutLegend from '@/components/screening/ShortcutLegend.vue'
 import FullTextPanel from '@/components/articles/FullTextPanel.vue'
-import { normalizeEvaluations } from '@/utils/criteriaEvaluations'
+import { decisionVariant, normalizeEvaluations } from '@/utils/criteriaEvaluations'
 
 const route = useRoute()
 const screeningStore = useScreeningStore()
@@ -363,7 +363,7 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
             @screen="triggerAiScreening"
           />
           <div v-if="myDecision" class="flex items-center gap-2 text-sm">
-            <Badge variant="secondary" data-testid="my-decision">
+            <Badge :variant="decisionVariant(myDecision)" data-testid="my-decision">
               Your decision: {{ decisionLabel(myDecision) }}
             </Badge>
           </div>
@@ -386,15 +386,25 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
           <div class="grid grid-cols-3 gap-2">
             <Button
               :disabled="submitting"
-              class="bg-green-600 px-2 text-white hover:bg-green-700"
+              variant="include"
+              class="gap-1 whitespace-nowrap px-1"
               @click="submitDecision('include')"
             >
+              <span aria-hidden="true" class="font-bold">✓</span>
               Include (I)
             </Button>
-            <Button :disabled="submitting" variant="outline" class="px-2" @click="submitDecision('uncertain')">
+            <Button :disabled="submitting" variant="uncertain"
+              class="gap-1 whitespace-nowrap px-1"
+              @click="submitDecision('uncertain')"
+            >
+              <span aria-hidden="true" class="font-bold">?</span>
               Uncertain (U)
             </Button>
-            <Button :disabled="submitting" variant="destructive" class="px-2" @click="submitDecision('exclude')">
+            <Button :disabled="submitting" variant="exclude"
+              class="gap-1 whitespace-nowrap px-1"
+              @click="submitDecision('exclude')"
+            >
+              <span aria-hidden="true" class="font-bold">✕</span>
               Exclude (E)
             </Button>
           </div>

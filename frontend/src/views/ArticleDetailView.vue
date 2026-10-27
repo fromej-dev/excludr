@@ -67,7 +67,7 @@ const goBack = () => {
             <h1 class="text-2xl font-bold flex-1" data-testid="article-detail-title">{{ article.title || 'Untitled' }}</h1>
             <div class="flex gap-2 flex-shrink-0">
               <Badge>{{ article.status }}</Badge>
-              <Badge>{{ article.final_decision }}</Badge>
+              <Badge :variant="article.final_decision === 'included' ? 'include' : article.final_decision === 'excluded' ? 'exclude' : 'outline'">{{ article.final_decision }}</Badge>
             </div>
           </div>
 
@@ -121,7 +121,7 @@ const goBack = () => {
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
                   <Badge>{{ decision.stage }}</Badge>
-                  <Badge :variant="decision.decision === 'include' ? 'default' : decision.decision === 'exclude' ? 'destructive' : 'outline'">
+                  <Badge :variant="decision.decision === 'include' ? 'include' : decision.decision === 'exclude' ? 'exclude' : 'uncertain'">
                     {{ decision.decision }}
                   </Badge>
                 </div>

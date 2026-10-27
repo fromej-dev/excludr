@@ -75,22 +75,22 @@ const previousPage = () => {
 }
 
 const getStatusBadgeVariant = (status: ArticleStatus) => {
-  const variants: Record<ArticleStatus, 'default' | 'secondary' | 'outline'> = {
+  const variants: Record<ArticleStatus, 'default' | 'secondary' | 'outline' | 'include' | 'exclude'> = {
     imported: 'outline',
     screening: 'default',
     awaiting_full_text: 'secondary',
     full_text_retrieved: 'default',
-    included: 'default',
-    excluded: 'secondary',
+    included: 'include',
+    excluded: 'exclude',
   }
   return variants[status] || 'outline'
 }
 
 const getDecisionBadgeVariant = (decision: FinalDecision) => {
-  const variants: Record<FinalDecision, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+  const variants: Record<FinalDecision, 'include' | 'exclude' | 'outline'> = {
     pending: 'outline',
-    included: 'default',
-    excluded: 'destructive',
+    included: 'include',
+    excluded: 'exclude',
   }
   return variants[decision] || 'outline'
 }

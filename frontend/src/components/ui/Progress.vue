@@ -24,9 +24,9 @@ const heightClass = computed(() => {
 const colorClass = computed(() => {
   const variants = {
     default: 'bg-primary',
-    success: 'bg-green-600',
-    warning: 'bg-yellow-600',
-    destructive: 'bg-red-600',
+    success: 'bg-include',
+    warning: 'bg-uncertain',
+    destructive: 'bg-exclude',
   }
   return variants[props.variant]
 })

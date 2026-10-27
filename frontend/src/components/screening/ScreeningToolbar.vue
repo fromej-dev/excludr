@@ -85,11 +85,11 @@ const percent = computed(() =>
 
     <dl v-if="stats" class="flex items-center gap-4 text-sm">
       <div class="flex items-baseline gap-1.5">
-        <dd class="font-semibold text-green-600" data-testid="included-count">{{ stats.included }}</dd>
+        <dd class="font-semibold text-include-soft-foreground" data-testid="included-count">{{ stats.included }}</dd>
         <dt class="text-muted-foreground">Included</dt>
       </div>
       <div class="flex items-baseline gap-1.5">
-        <dd class="font-semibold text-red-600" data-testid="excluded-count">{{ stats.excluded }}</dd>
+        <dd class="font-semibold text-exclude-soft-foreground" data-testid="excluded-count">{{ stats.excluded }}</dd>
         <dt class="text-muted-foreground">Excluded</dt>
       </div>
     </dl>

@@ -18,27 +18,32 @@ export const normalizeEvaluations = (
   }))
 }
 
+export type DecisionVariant = 'include' | 'exclude' | 'uncertain' | 'outline'
+
 export interface MetStatus {
   text: string
-  class: string
+  variant: DecisionVariant
 }
 
 export const getMetStatus = (met: boolean | null): MetStatus => {
-  if (met === null) return { text: 'Uncertain', class: 'bg-yellow-600 text-white' }
-  if (met) return { text: 'Met', class: 'bg-green-600 text-white' }
-  return { text: 'Not Met', class: 'bg-red-600 text-white' }
+  if (met === null) return { text: 'Uncertain', variant: 'uncertain' }
+  if (met) return { text: 'Met', variant: 'include' }
+  return { text: 'Not Met', variant: 'exclude' }
 }
 
-export const decisionBadgeClass = (decision: string): string => {
+/** Badge variant for a screening decision (`include` | `exclude` | `uncertain`). */
+export const decisionVariant = (decision: string): DecisionVariant => {
   switch (decision) {
     case 'include':
-      return 'bg-green-600 text-white'
+    case 'included':
+      return 'include'
     case 'exclude':
-      return 'bg-red-600 text-white'
+    case 'excluded':
+      return 'exclude'
     case 'uncertain':
-      return 'bg-yellow-600 text-white'
+      return 'uncertain'
     default:
-      return ''
+      return 'outline'
   }
 }
 

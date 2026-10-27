@@ -30,8 +30,8 @@ const toggle = (code: string) => {
 }
 
 const groups = computed(() => [
-  { key: 'inclusion', title: 'Inclusion Criteria', titleClass: 'text-green-600', items: props.inclusion },
-  { key: 'exclusion', title: 'Exclusion Criteria', titleClass: 'text-red-600', items: props.exclusion },
+  { key: 'inclusion', title: 'Inclusion Criteria', titleClass: 'text-include-soft-foreground', items: props.inclusion },
+  { key: 'exclusion', title: 'Exclusion Criteria', titleClass: 'text-exclude-soft-foreground', items: props.exclusion },
 ])
 </script>
 
@@ -51,7 +51,7 @@ const groups = computed(() => [
             <Badge variant="outline" class="mt-0.5 shrink-0 font-mono">{{ c.code }}</Badge>
             <span class="min-w-0 flex-1 break-words">{{ c.description }}</span>
             <div v-if="byCode.get(c.code)" class="flex shrink-0 items-center gap-1.5">
-              <Badge :class="getMetStatus(byCode.get(c.code)!.met).class" class="text-[11px]">
+              <Badge :variant="getMetStatus(byCode.get(c.code)!.met).variant" class="text-[11px]">
                 {{ getMetStatus(byCode.get(c.code)!.met).text }}
               </Badge>
               <span class="text-xs text-muted-foreground">
@@ -82,7 +82,7 @@ const groups = computed(() => [
         <li v-for="e in orphaned" :key="e.criterion_code" class="rounded-md border p-2 text-sm">
           <div class="flex items-center gap-2">
             <Badge variant="outline" class="font-mono">{{ e.criterion_code }}</Badge>
-            <Badge :class="getMetStatus(e.met).class" class="text-[11px]">{{ getMetStatus(e.met).text }}</Badge>
+            <Badge :variant="getMetStatus(e.met).variant" class="text-[11px]">{{ getMetStatus(e.met).text }}</Badge>
             <span class="text-xs text-muted-foreground">{{ Math.round(e.confidence * 100) }}%</span>
           </div>
           <p v-if="e.reasoning" class="mt-1 text-xs text-muted-foreground">{{ e.reasoning }}</p>

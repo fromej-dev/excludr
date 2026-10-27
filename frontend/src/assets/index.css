@@ -23,6 +23,23 @@
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
 
+  --color-include: hsl(var(--include));
+  --color-include-foreground: hsl(var(--include-foreground));
+  --color-include-soft: hsl(var(--include-soft));
+  --color-include-soft-foreground: hsl(var(--include-soft-foreground));
+  --color-exclude: hsl(var(--exclude));
+  --color-exclude-foreground: hsl(var(--exclude-foreground));
+  --color-exclude-soft: hsl(var(--exclude-soft));
+  --color-exclude-soft-foreground: hsl(var(--exclude-soft-foreground));
+  --color-uncertain: hsl(var(--uncertain));
+  --color-uncertain-foreground: hsl(var(--uncertain-foreground));
+  --color-uncertain-soft: hsl(var(--uncertain-soft));
+  --color-uncertain-soft-foreground: hsl(var(--uncertain-soft-foreground));
+  --color-ai: hsl(var(--ai));
+  --color-ai-foreground: hsl(var(--ai-foreground));
+  --color-ai-soft: hsl(var(--ai-soft));
+  --color-ai-soft-foreground: hsl(var(--ai-soft-foreground));
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
@@ -30,48 +47,85 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    color-scheme: light;
+    --background: 40 25% 97%;
+    --foreground: 230 25% 12%;
+    --card: 40 30% 99%;
+    --card-foreground: 230 25% 12%;
+    --popover: 40 30% 99%;
+    --popover-foreground: 230 25% 12%;
+    --primary: 236 45% 40%;
+    --primary-foreground: 40 30% 98%;
+    --secondary: 38 18% 93%;
+    --secondary-foreground: 230 25% 15%;
+    --muted: 38 18% 93%;
+    --muted-foreground: 230 10% 36%;
+    --accent: 38 18% 92%;
+    --accent-foreground: 230 25% 15%;
+    --destructive: 8 72% 40%;
+    --destructive-foreground: 40 30% 98%;
+    --border: 35 15% 86%;
+    --input: 35 12% 80%;
+    --ring: 236 55% 50%;
     --radius: 0.5rem;
+
+    /* Decision semantics. Text on plain surfaces should use the *-soft-foreground tokens. */
+    --include: 174 85% 20%;
+    --include-foreground: 0 0% 100%;
+    --include-soft: 168 45% 89%;
+    --include-soft-foreground: 174 90% 15%;
+    --exclude: 10 85% 62%;
+    --exclude-foreground: 10 80% 9%;
+    --exclude-soft: 10 85% 94%;
+    --exclude-soft-foreground: 10 80% 28%;
+    --uncertain: 40 95% 50%;
+    --uncertain-foreground: 30 80% 9%;
+    --uncertain-soft: 44 90% 89%;
+    --uncertain-soft-foreground: 30 90% 19%;
+    --ai: 262 55% 46%;
+    --ai-foreground: 0 0% 100%;
+    --ai-soft: 262 70% 95%;
+    --ai-soft-foreground: 262 60% 33%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    color-scheme: dark;
+    --background: 232 18% 12%;
+    --foreground: 40 20% 92%;
+    --card: 232 18% 15%;
+    --card-foreground: 40 20% 92%;
+    --popover: 232 18% 15%;
+    --popover-foreground: 40 20% 92%;
+    --primary: 234 85% 80%;
+    --primary-foreground: 232 40% 10%;
+    --secondary: 232 14% 22%;
+    --secondary-foreground: 40 20% 92%;
+    --muted: 232 14% 22%;
+    --muted-foreground: 232 12% 70%;
+    --accent: 232 14% 24%;
+    --accent-foreground: 40 20% 92%;
+    --destructive: 8 70% 55%;
+    --destructive-foreground: 232 40% 8%;
+    --border: 232 12% 26%;
+    --input: 232 12% 30%;
+    --ring: 234 85% 75%;
+
+    --include: 174 75% 27%;
+    --include-foreground: 170 40% 97%;
+    --include-soft: 174 50% 16%;
+    --include-soft-foreground: 170 55% 80%;
+    --exclude: 10 85% 68%;
+    --exclude-foreground: 10 70% 8%;
+    --exclude-soft: 10 45% 18%;
+    --exclude-soft-foreground: 10 85% 85%;
+    --uncertain: 42 95% 56%;
+    --uncertain-foreground: 35 80% 8%;
+    --uncertain-soft: 40 55% 16%;
+    --uncertain-soft-foreground: 42 90% 76%;
+    --ai: 262 85% 80%;
+    --ai-foreground: 262 60% 9%;
+    --ai-soft: 262 40% 20%;
+    --ai-soft-foreground: 262 90% 87%;
   }
 }
 

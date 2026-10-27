@@ -7,7 +7,7 @@ import Progress from '@/components/ui/Progress.vue'
 import {
   normalizeEvaluations,
   getMetStatus as getMetStatusBadge,
-  decisionBadgeClass as badgeClassFor,
+  decisionVariant,
   confidenceVariant as confidenceVariantFor,
 } from '@/utils/criteriaEvaluations'
 
@@ -20,8 +20,8 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
 })
 
-const decisionBadgeClass = computed(() =>
-  props.decision ? badgeClassFor(props.decision.decision) : ''
+const decisionBadgeVariant = computed(() =>
+  props.decision ? decisionVariant(props.decision.decision) : 'outline'
 )
 
 const confidencePercent = computed(() => {
@@ -47,7 +47,7 @@ const exclusionEvaluations = computed(() =>
     <div class="space-y-4">
       <div class="flex items-center gap-2">
         <h3 class="text-lg font-semibold">AI Screening Result</h3>
-        <Badge variant="outline" class="text-xs">AI-Generated</Badge>
+        <Badge variant="ai" class="text-xs">AI-Generated</Badge>
       </div>
 
       <!-- Loading State -->
@@ -64,7 +64,7 @@ const exclusionEvaluations = computed(() =>
       <div v-else class="space-y-4">
         <!-- Decision Badge and Confidence -->
         <div class="flex items-center justify-between">
-          <Badge :class="decisionBadgeClass" class="text-sm px-3 py-1 capitalize">
+          <Badge :variant="decisionBadgeVariant" class="text-sm px-3 py-1 capitalize">
             {{ decision.decision }}
           </Badge>
 
@@ -85,7 +85,7 @@ const exclusionEvaluations = computed(() =>
 
         <!-- Primary Exclusion Reason -->
         <div v-if="decision.primary_exclusion_reason && decision.decision === 'exclude'" class="space-y-2">
-          <h4 class="text-sm font-semibold text-red-600">Primary Exclusion Reason</h4>
+          <h4 class="text-sm font-semibold text-exclude-soft-foreground">Primary Exclusion Reason</h4>
           <p class="text-sm text-muted-foreground">{{ decision.primary_exclusion_reason }}</p>
         </div>
 
@@ -95,7 +95,7 @@ const exclusionEvaluations = computed(() =>
 
           <!-- Inclusion Criteria -->
           <div v-if="inclusionEvaluations.length > 0" class="space-y-2">
-            <h5 class="text-xs font-semibold text-green-600 uppercase tracking-wide">
+            <h5 class="text-xs font-semibold text-include-soft-foreground uppercase tracking-wide">
               Inclusion Criteria
             </h5>
             <div class="space-y-2">
@@ -110,7 +110,7 @@ const exclusionEvaluations = computed(() =>
                   </Badge>
 
                   <div class="flex items-center gap-2">
-                    <Badge :class="getMetStatusBadge(evaluation.met).class" class="text-xs">
+                    <Badge :variant="getMetStatusBadge(evaluation.met).variant" class="text-xs">
                       {{ getMetStatusBadge(evaluation.met).text }}
                     </Badge>
                     <span class="text-xs text-muted-foreground">
@@ -128,7 +128,7 @@ const exclusionEvaluations = computed(() =>
 
           <!-- Exclusion Criteria -->
           <div v-if="exclusionEvaluations.length > 0" class="space-y-2">
-            <h5 class="text-xs font-semibold text-red-600 uppercase tracking-wide">
+            <h5 class="text-xs font-semibold text-exclude-soft-foreground uppercase tracking-wide">
               Exclusion Criteria
             </h5>
             <div class="space-y-2">
@@ -143,7 +143,7 @@ const exclusionEvaluations = computed(() =>
                   </Badge>
 
                   <div class="flex items-center gap-2">
-                    <Badge :class="getMetStatusBadge(evaluation.met).class" class="text-xs">
+                    <Badge :variant="getMetStatusBadge(evaluation.met).variant" class="text-xs">
                       {{ getMetStatusBadge(evaluation.met).text }}
                     </Badge>
                     <span class="text-xs text-muted-foreground">

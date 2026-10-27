@@ -65,7 +65,7 @@ const submit = async () => {
 }
 
 const variant = (d: ScreeningDecisionType) =>
-  d === 'include' ? 'default' : d === 'exclude' ? 'destructive' : 'outline'
+  d === 'include' ? 'include' : d === 'exclude' ? 'exclude' : 'uncertain'
 </script>
 
 <template>
@@ -138,18 +138,20 @@ const variant = (d: ScreeningDecisionType) =>
               type="button"
               role="radio"
               :aria-checked="choice === 'include'"
-              :variant="choice === 'include' ? 'default' : 'outline'"
+              :variant="choice === 'include' ? 'include' : 'outline'"
               @click="choice = 'include'"
             >
+              <span aria-hidden="true" class="mr-1.5 font-bold">✓</span>
               Include
             </Button>
             <Button
               type="button"
               role="radio"
               :aria-checked="choice === 'exclude'"
-              :variant="choice === 'exclude' ? 'destructive' : 'outline'"
+              :variant="choice === 'exclude' ? 'exclude' : 'outline'"
               @click="choice = 'exclude'"
             >
+              <span aria-hidden="true" class="mr-1.5 font-bold">✕</span>
               Exclude
             </Button>
           </div>

@@ -48,7 +48,7 @@ const onExport = async (format: ExportFormat) => {
 }
 
 const variant = (d: ScreeningDecisionType) =>
-  d === 'include' ? 'default' : d === 'exclude' ? 'destructive' : 'outline'
+  d === 'include' ? 'include' : d === 'exclude' ? 'exclude' : 'uncertain'
 </script>
 
 <template>

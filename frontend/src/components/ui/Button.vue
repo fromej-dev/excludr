@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 interface Props {
-  variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
+  variant?: 'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link' | 'include' | 'exclude' | 'uncertain'
   size?: 'default' | 'sm' | 'lg' | 'icon'
   disabled?: boolean
   type?: 'button' | 'submit' | 'reset'
@@ -24,6 +24,9 @@ const classes = computed(() => {
     secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
     ghost: 'hover:bg-accent hover:text-accent-foreground',
     link: 'text-primary underline-offset-4 hover:underline',
+    include: 'bg-include text-include-foreground hover:bg-include/90',
+    exclude: 'bg-exclude text-exclude-foreground hover:bg-exclude/90',
+    uncertain: 'border border-uncertain bg-uncertain-soft text-uncertain-soft-foreground hover:bg-uncertain-soft/70',
   }
 
   const sizes = {
