@@ -13,6 +13,7 @@ import Badge from '@/components/ui/Badge.vue'
 import ImportCard from '@/components/projects/ImportCard.vue'
 import FullTextBatchCard from '@/components/articles/FullTextBatchCard.vue'
 import ReviewSettingsCard from '@/components/projects/ReviewSettingsCard.vue'
+import PlanCard from '@/components/billing/PlanCard.vue'
 import { useMembersStore } from '@/stores/members'
 import { useProjectStatsStore } from '@/stores/projectStats'
 import { useProjectNavStore } from '@/stores/projectNav'
@@ -240,6 +241,9 @@ const handleDelete = async () => {
 
     <section class="space-y-4" aria-labelledby="manage-heading">
       <h2 id="manage-heading" class="text-lg font-semibold">Manage</h2>
+      <div id="plan" tabindex="-1" class="scroll-mt-24 focus:outline-none">
+        <PlanCard :project-id="projectId" :can-buy="isOwner" />
+      </div>
       <div id="settings" tabindex="-1" class="scroll-mt-24 focus:outline-none">
         <ReviewSettingsCard v-if="project" :project="project" :can-edit="isOwner" />
       </div>

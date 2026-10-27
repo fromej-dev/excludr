@@ -281,7 +281,7 @@ def get_status(session: Session, project: Project) -> dict[str, Any]:
     plan = get_plan(session, project.id)
     tier = plans.TIERS.get(plan.tier) if plan else None
     if plan is None:
-        label = "Free"
+        label = "No review pass yet"
     elif tier is not None:
         label = tier.label
     else:

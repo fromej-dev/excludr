@@ -15,12 +15,13 @@ export const useAiBatchStore = defineStore('aiBatch', () => {
   const starting = ref(false)
   const screened = ref(0)
   const errors = ref(0)
+  const skipped = ref(0) // refused by the plan's AI allowance
   const total = ref(0)
   const staleCount = ref(0)
   const error = ref<string | null>(null)
   const completedAt = ref<number | null>(null)
 
-  const done = computed(() => screened.value + errors.value)
+  const done = computed(() => screened.value + errors.value + skipped.value)
   const percent = computed(() => (total.value ? Math.round((done.value / total.value) * 100) : 0))
 
   let unsubscribe: (() => void) | null = null
@@ -38,14 +39,20 @@ export const useAiBatchStore = defineStore('aiBatch', () => {
     // Small lookahead batches of the screening view are not "the" project batch
     if (data.targeted === true) return
     const kind = data.type
-    if (kind === 'ai_screening_progress' || kind === 'ai_screening_error') {
+    if (
+      kind === 'ai_screening_progress' ||
+      kind === 'ai_screening_error' ||
+      kind === 'ai_screening_skipped'
+    ) {
       running.value = true
       screened.value = num(data.screened)
       errors.value = num(data.errors)
+      skipped.value = num(data.skipped)
       total.value = num(data.total)
     } else if (kind === 'ai_screening_complete') {
       screened.value = num(data.screened)
       errors.value = num(data.errors)
+      skipped.value = num(data.skipped)
       total.value = num(data.total)
       running.value = false
       completedAt.value = Date.now()
@@ -90,6 +97,7 @@ export const useAiBatchStore = defineStore('aiBatch', () => {
         running.value = true
         screened.value = 0
         errors.value = 0
+        skipped.value = 0
         total.value = res.article_count
       }
       return res
@@ -106,6 +114,7 @@ export const useAiBatchStore = defineStore('aiBatch', () => {
     starting,
     screened,
     errors,
+    skipped,
     total,
     staleCount,
     error,

@@ -328,6 +328,8 @@ export interface RunAiResponse {
   article_count: number
   /** Ids actually queued (ineligible, already screened or already queued ids are skipped). */
   article_ids?: number[]
+  /** Eligible articles left out because the plan's AI allowance is used up */
+  skipped_over_allowance: number
 }
 
 export interface AiBatchProgress {
@@ -517,4 +519,42 @@ export interface MyProjectRole {
   project_id: number
   user_id: number
   role: ProjectRole
+}
+
+// Billing types
+export interface BillingUsage {
+  used: number
+  limit: number
+  /** 'account': free allowance shared by the owner's projects without a pass */
+  scope: 'project' | 'account'
+}
+
+export interface PassOption {
+  tier: string
+  label: string
+  fulltext_limit: number
+  amount_cents: number
+  kind: 'new' | 'renewal' | 'upgrade'
+}
+
+export interface BillingStatus {
+  billing_enabled: boolean
+  plan: string
+  plan_label: string
+  active: boolean
+  read_only: boolean
+  expires_at: string | null
+  full_text: BillingUsage
+  title_abstract: BillingUsage
+  dual_screening_allowed: boolean
+  currency: string
+  options: PassOption[]
+}
+
+export interface PublicPlans {
+  billing_enabled: boolean
+  currency: string
+  pass_duration_days: number
+  free: { fulltext_limit: number }
+  tiers: { tier: string; label: string; fulltext_limit: number; price_cents: number }[]
 }

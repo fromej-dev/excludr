@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
+import { formatPrice } from '@/stores/billing'
+import type { PublicPlans } from '@/types'
 
 const authStore = useAuthStore()
 
@@ -62,53 +66,91 @@ interface Plan {
   items: string[]
   cta: string
   highlighted: boolean
+  /** Sold by contact rather than self-service sign-up */
+  contactOnly?: boolean
 }
 
+// Same values the API enforces; refreshed from /billing/plans when it loads
+const pricing = ref<PublicPlans>({
+  billing_enabled: true,
+  currency: 'eur',
+  pass_duration_days: 365,
+  free: { fulltext_limit: 50 },
+  tiers: [
+    { tier: 'pass_250', label: '', fulltext_limit: 250, price_cents: 4900 },
+    { tier: 'pass_1000', label: '', fulltext_limit: 1000, price_cents: 12900 },
+  ],
+})
+
+onMounted(async () => {
+  try {
+    const res = await axios.get<PublicPlans>('/api/v1/billing/plans')
+    if (res.data?.tiers?.length) pricing.value = res.data
+  } catch {
+    // Keep the built-in prices
+  }
+})
+
+const count = (n: number) => n.toLocaleString('en')
+
 // Review passes are priced by full-text count, the driver of AI cost
-const plans: Plan[] = [
-  {
-    name: 'Free',
-    price: '€0',
-    tagline: 'Try Excludr on a real review.',
-    items: ['1 review', 'Up to 50 full texts', 'AI screening included', '1 reviewer'],
-    cta: 'Start for free',
-    highlighted: false,
-  },
-  {
-    name: 'Review pass',
-    prefix: 'from',
-    price: '€49',
-    period: 'per review',
-    tagline: 'One-off payment for a single systematic review.',
-    tiers: [
-      { label: 'Up to 250 full texts', price: '€49' },
-      { label: 'Up to 1,000 full texts', price: '€129' },
-      { label: 'Over 1,000 full texts', price: 'Contact us' },
-    ],
-    items: [
-      'Active for 12 months, no subscription',
-      'Dual screening with a co-reviewer',
-      'PRISMA, exports & audit log',
-      'Read-only access and exports forever',
-    ],
-    cta: 'Start a review',
-    highlighted: true,
-  },
-  {
-    name: 'Team',
-    price: '€990',
-    period: 'per year',
-    tagline: 'For groups that run reviews all year.',
-    items: [
-      'Unlimited reviews',
-      'Up to 10 members',
-      '5,000 AI-screened full texts / year',
-      'Annual invoice & priority support',
-    ],
-    cta: 'Get started',
-    highlighted: false,
-  },
-]
+const plans = computed<Plan[]>(() => {
+  const { currency, free, tiers } = pricing.value
+  const cheapest = Math.min(...tiers.map((t) => t.price_cents))
+  const largest = Math.max(...tiers.map((t) => t.fulltext_limit))
+  return [
+    {
+      name: 'Free',
+      price: formatPrice(0, currency),
+      tagline: 'Try Excludr on a real review.',
+      items: [
+        `AI screening of ${count(free.fulltext_limit)} full texts`,
+        'Title/abstract AI screening included',
+        'Single screening',
+        'PRISMA & exports',
+      ],
+      cta: 'Start for free',
+      highlighted: false,
+    },
+    {
+      name: 'Review pass',
+      prefix: 'from',
+      price: formatPrice(cheapest, currency),
+      period: 'per review',
+      tagline: 'One-off payment for a single systematic review.',
+      tiers: [
+        ...tiers.map((t) => ({
+          label: `Up to ${count(t.fulltext_limit)} full texts`,
+          price: formatPrice(t.price_cents, currency),
+        })),
+        { label: `Over ${count(largest)} full texts`, price: 'Contact us' },
+      ],
+      items: [
+        'Active for 12 months, no subscription',
+        'Dual screening with a co-reviewer',
+        'PRISMA, exports & audit log',
+        'Read-only access and exports forever',
+      ],
+      cta: 'Start a review',
+      highlighted: true,
+    },
+    {
+      name: 'Team',
+      price: '€990',
+      period: 'per year',
+      tagline: 'For groups that run reviews all year.',
+      items: [
+        'Unlimited reviews',
+        'Up to 10 members',
+        '5,000 AI-screened full texts / year',
+        'Annual invoice & priority support',
+      ],
+      cta: 'Talk to us',
+      highlighted: false,
+      contactOnly: true,
+    },
+  ]
+})
 </script>
 
 <template>
@@ -265,7 +307,21 @@ const plans: Plan[] = [
                   <span>{{ item }}</span>
                 </li>
               </ul>
+              <p
+                v-if="plan.contactOnly && !contactEmail"
+                class="mt-8 flex h-10 items-center justify-center text-sm text-muted-foreground"
+              >
+                Available on request
+              </p>
+              <a
+                v-else-if="plan.contactOnly"
+                :href="`mailto:${contactEmail}?subject=Excludr%20${plan.name}%20plan`"
+                class="mt-8 inline-flex h-10 items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent"
+              >
+                {{ plan.cta }}
+              </a>
               <router-link
+                v-else
                 to="/register"
                 class="mt-8 inline-flex h-10 items-center justify-center rounded-md px-4 text-sm font-medium"
                 :class="plan.highlighted
@@ -277,7 +333,6 @@ const plans: Plan[] = [
             </div>
           </div>
           <p class="mt-8 text-center text-sm text-muted-foreground">
-            Updating a review later? Updates cost less than a new pass.
             Need more seats, single sign-on or an institutional licence?
             <a v-if="contactEmail" :href="`mailto:${contactEmail}`" class="font-medium text-primary hover:underline">Talk to us.</a>
             <span v-else>Institutional plans are available on request.</span>

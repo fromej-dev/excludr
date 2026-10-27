@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue'
 import { useProjectsStore } from '@/stores/projects'
 import { useWebSocketStore } from '@/stores/websocket'
+import { useBillingStore } from '@/stores/billing'
 import type { Project } from '@/types'
 import Card from '@/components/ui/Card.vue'
 import Label from '@/components/ui/Label.vue'
@@ -15,6 +16,7 @@ interface Props {
 const props = defineProps<Props>()
 const projectsStore = useProjectsStore()
 const wsStore = useWebSocketStore()
+const billingStore = useBillingStore()
 
 const value = ref<string>(String(props.project.required_reviewers))
 const saving = ref(false)
@@ -66,6 +68,13 @@ const onChange = async (v: string | number) => {
         @update:model-value="onChange"
       />
       <p v-if="!canEdit" class="text-xs text-muted-foreground">Only the owner can change this.</p>
+      <p
+        v-else-if="billingStore.status?.billing_enabled && !billingStore.status.dual_screening_allowed"
+        class="text-xs text-muted-foreground"
+        data-testid="dual-needs-pass"
+      >
+        Dual screening is included with a review pass.
+      </p>
     </div>
   </Card>
 </template>
