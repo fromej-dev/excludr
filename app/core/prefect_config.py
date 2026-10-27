@@ -10,10 +10,7 @@ from app.core.config import get_settings
 def get_prefect_engine():
     """Get a database engine for Prefect workers."""
     settings = get_settings()
-    # Use DATABASE_URL for Prefect workers (PostgreSQL)
-    # Fall back to database_url (SQLite) for development
-    db_url = settings.DATABASE_URL or settings.database_url
-    return create_engine(db_url)
+    return create_engine(settings.database_url)
 
 
 @contextmanager

@@ -8,6 +8,7 @@ from prefect import flow, task
 from sqlmodel import select
 
 from app.core.prefect_config import get_prefect_session
+from app.features.projects.dedup import ProjectArticleIndex
 from app.features.research.models import Article
 from app.features.projects.parsers import parse_pubmed_txt, parse_pubmed_csv
 from app.features.research.pubmed_service import PubMedService
@@ -21,24 +22,24 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
     """
     articles_created = 0
     articles_updated = 0
+    duplicates = 0
+    duplicates_by_title_year = 0
 
     with open(file_path, "r", encoding="utf-8") as file:
         entries = rispy.load(file)
 
         with get_prefect_session() as session:
+            index = ProjectArticleIndex(session, project_id)
             for entry in entries:
                 doi = entry.get("doi")
+                title = entry.get("title") or entry.get("primary_title")
 
-                # A DOI and title are essential for a meaningful record.
-                if not doi or not (entry.get("title") or entry.get("primary_title")):
+                # A title is essential for a meaningful record.
+                if not title:
                     print(
-                        f"Skipping entry due to missing DOI or title: {entry.get('id', 'N/A')}"
+                        f"Skipping entry due to missing title: {entry.get('id', 'N/A')}"
                     )
                     continue
-
-                # Check if an article with this DOI already exists in the database.
-                statement = select(Article).where(Article.doi == doi)
-                existing_article = session.exec(statement).first()
 
                 # --- Map all available RIS tags to the Article model fields ---
 
@@ -50,7 +51,17 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                         # Take the first part of a date string and convert to int
                         year = int(float(str(year_str).split("/")[0]))
                 except (ValueError, TypeError):
-                    print(f"Could not parse year for article with DOI {doi}")
+                    print(f"Could not parse year for article '{title}'")
+
+                # Look for a duplicate within this project only: DOI/PMID first,
+                # then normalized title + year when the entry has no identifiers.
+                pmid = entry.get("accession_number")
+                existing_article, match_kind = index.find(doi, pmid, title, year)
+                if existing_article is not None:
+                    duplicates += 1
+                    if match_kind == "title_year":
+                        duplicates_by_title_year += 1
+                        continue
 
                 # Construct a page range string if start and end pages are available.
                 start_page = entry.get("start_page", "")
@@ -69,7 +80,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                 # Prepare a dictionary with all the data to be saved.
                 article_data = {
                     "project_id": project_id,
-                    "title": entry.get("title") or entry.get("primary_title"),
+                    "title": title,
                     "authors": entry.get("authors", []),
                     "abstract": entry.get("abstract"),
                     "publication_date": entry.get("date"),
@@ -81,9 +92,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                     "pages": pages,
                     "publication_type": entry.get("type_of_reference"),
                     "doi": doi,
-                    "pmid": entry.get(
-                        "accession_number"
-                    ),  # This tag is often used for PMID.
+                    "pmid": pmid,  # accession_number is often used for PMID.
                     "issn": entry.get("issn"),
                     "keywords": entry.get("keywords", []),
                     "mesh_terms": entry.get("mesh_terms", []),
@@ -104,11 +113,14 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                     # Or, create a new article instance.
                     new_article = Article(**article_data)
                     session.add(new_article)
+                    index.add(new_article)
                     articles_created += 1
 
     return {
         "articles_created": articles_created,
         "articles_updated": articles_updated,
+        "duplicates": duplicates,
+        "duplicates_by_title_year": duplicates_by_title_year,
     }
 
 
@@ -136,13 +148,16 @@ def parse_ris_file_flow(file_path: str, project_id: int) -> dict:
 
         print(
             f"Processing complete for {original_filename}. "
-            f"Created: {result['articles_created']}, Updated: {result['articles_updated']}"
+            f"Created: {result['articles_created']}, Updated: {result['articles_updated']}, "
+            f"Duplicates: {result['duplicates']}"
         )
 
         return {
             "status": "Success",
             "articles_created": result["articles_created"],
             "articles_updated": result["articles_updated"],
+            "duplicates": result["duplicates"],
+            "duplicates_by_title_year": result["duplicates_by_title_year"],
         }
 
     except FileNotFoundError:
@@ -176,6 +191,7 @@ def parse_pubmed_entries(
     """
     articles_created = 0
     articles_updated = 0
+    duplicates = 0
     pmids_needing_abstracts: list[str] = []
 
     # Parse the file based on format
@@ -185,6 +201,7 @@ def parse_pubmed_entries(
         entries = parse_pubmed_csv(file_path)
 
     with get_prefect_session() as session:
+        index = ProjectArticleIndex(session, project_id)
         for entry in entries:
             pmid = entry.get("pmid")
             title = entry.get("title")
@@ -194,19 +211,13 @@ def parse_pubmed_entries(
                 print(f"Skipping entry due to missing PMID or title: {entry}")
                 continue
 
-            # Check for existing article by PMID first
-            existing_article = None
-            statement = select(Article).where(
-                Article.pmid == pmid, Article.project_id == project_id
+            # Per-project duplicate lookup: PMID, then DOI (then title + year, which
+            # only applies to entries without identifiers).
+            existing_article, _ = index.find(
+                entry.get("doi"), pmid, title, entry.get("year")
             )
-            existing_article = session.exec(statement).first()
-
-            # Fall back to DOI check if PMID not found
-            if not existing_article and entry.get("doi"):
-                statement = select(Article).where(
-                    Article.doi == entry.get("doi"), Article.project_id == project_id
-                )
-                existing_article = session.exec(statement).first()
+            if existing_article is not None:
+                duplicates += 1
 
             # Prepare article data
             article_data = {
@@ -252,6 +263,7 @@ def parse_pubmed_entries(
                 # Create new article
                 new_article = Article(**article_data)
                 session.add(new_article)
+                index.add(new_article)
                 articles_created += 1
 
                 # Track if we need to fetch abstract
@@ -261,6 +273,7 @@ def parse_pubmed_entries(
     return {
         "articles_created": articles_created,
         "articles_updated": articles_updated,
+        "duplicates": duplicates,
         "pmids_needing_abstracts": pmids_needing_abstracts,
     }
 
@@ -339,7 +352,8 @@ def parse_pubmed_file_flow(file_path: str, project_id: int) -> dict[str, Any]:
 
         print(
             f"Initial processing complete. "
-            f"Created: {result['articles_created']}, Updated: {result['articles_updated']}"
+            f"Created: {result['articles_created']}, Updated: {result['articles_updated']}, "
+            f"Duplicates: {result['duplicates']}"
         )
 
         # Fetch abstracts for CSV imports that need them
@@ -358,6 +372,7 @@ def parse_pubmed_file_flow(file_path: str, project_id: int) -> dict[str, Any]:
             "status": "Success",
             "articles_created": result["articles_created"],
             "articles_updated": result["articles_updated"],
+            "duplicates": result["duplicates"],
             "abstracts_fetched": abstracts_fetched,
         }
 

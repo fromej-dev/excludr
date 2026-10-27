@@ -16,6 +16,7 @@ from app.features.research.agent import (
     screen_article,
 )
 from app.features.criteria.models import Criterion
+from app.features.criteria.services import CriterionServiceDep
 from .models import (
     ScreeningDecision,
     ScreeningDecisionCreate,
@@ -23,7 +24,7 @@ from .models import (
     ScreeningStats,
     DecisionSource,
 )
-from .services import ScreeningServiceDep
+from .services import ScreeningServiceDep, ScreeningService
 from .flows import batch_ai_screening_flow
 from sqlmodel import and_, or_, select
 
@@ -56,6 +57,24 @@ def get_screening_stats(
     """Get screening statistics for a project."""
     verify_project_ownership(project_id, current_user, ps)
     return ss.get_screening_stats(project_id)
+
+
+@router.get("/stale-ai-decisions")
+def get_stale_ai_decisions(
+    project_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    ps: ProjectServiceDep,
+    ss: ScreeningServiceDep,
+    cs: CriterionServiceDep,
+):
+    """List articles whose latest AI decision used outdated criteria.
+
+    An AI decision is stale when its criteria snapshot (``{code: version}``)
+    differs from the project's current active criteria.
+    """
+    verify_project_ownership(project_id, current_user, ps)
+    ids = ss.get_stale_ai_article_ids(project_id, cs.get_active_snapshot(project_id))
+    return {"article_ids": ids, "count": len(ids)}
 
 
 @router.get("/next")
@@ -231,7 +250,7 @@ def get_ai_decision(
             ScreeningDecision.article_id == article_id,
             ScreeningDecision.source == DecisionSource.ai_agent,
         )
-        .order_by(ScreeningDecision.created_at.desc())
+        .order_by(ScreeningDecision.created_at.desc(), ScreeningDecision.id.desc())
     ).first()
 
     if ai_decision is None:
@@ -251,6 +270,7 @@ async def run_batch_ai_screening(
     background_tasks: BackgroundTasks,
     stage: Annotated[ScreeningStage | None, Query()] = None,
     limit: Annotated[int | None, Query(ge=1, le=1000)] = None,
+    rescreen_stale: Annotated[bool, Query()] = False,
 ):
     """Run AI screening on multiple articles in the background.
 
@@ -258,6 +278,8 @@ async def run_batch_ai_screening(
         project_id: ID of the project
         stage: Optional screening stage filter (title_abstract or full_text)
         limit: Optional maximum number of articles to screen
+        rescreen_stale: Also screen articles whose latest AI decision was made
+            against criteria that have since changed
 
     Returns:
         A message indicating screening has started and the number of articles queued
@@ -294,6 +316,22 @@ async def run_batch_ai_screening(
         )
         .exists()
     )
+    eligible_unscreened = ~already_screened
+    if rescreen_stale:
+        stale_ids = ScreeningService(session).get_stale_ai_article_ids(
+            project_id,
+            {
+                c.code: c.version
+                for c in session.exec(
+                    select(Criterion).where(
+                        Criterion.project_id == project_id,
+                        Criterion.is_active.is_(True),
+                    )
+                )
+            },
+        )
+        if stale_ids:
+            eligible_unscreened = or_(eligible_unscreened, Article.id.in_(stale_ids))
     query = (
         select(Article.id)
         .where(
@@ -301,7 +339,7 @@ async def run_batch_ai_screening(
             Article.status.in_(
                 [ArticleStatus.screening, ArticleStatus.full_text_retrieved]
             ),
-            ~already_screened,
+            eligible_unscreened,
             or_(
                 Article.current_stage != ScreeningStage.full_text,
                 and_(

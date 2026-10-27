@@ -36,9 +36,6 @@ class Settings(BaseSettings):
     pubmed_email: Optional[str] = None  # Required by NCBI for API usage
     pubmed_api_key: Optional[str] = None  # Optional, for higher rate limits
 
-    # Database URL for PostgreSQL (used by Prefect workers)
-    DATABASE_URL: str = "postgresql://user:password@localhost:5432/appdb"
-
 
 @lru_cache
 def get_settings() -> Settings:

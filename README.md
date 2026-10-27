@@ -33,9 +33,8 @@ Each screening decision records:
 | Backend | FastAPI |
 | ORM | SQLModel (SQLAlchemy + Pydantic) |
 | AI Agent | pydantic-ai |
-| Background Tasks | Celery + Redis |
 | Migrations | Alembic |
-| Workflows | Prefect |
+| Background work / workflows | Prefect |
 | Frontend | Vue 3 (in progress) |
 | Database | PostgreSQL |
 
@@ -43,29 +42,30 @@ Each screening decision records:
 
 ### Prerequisites
 
-- Python 3.11+
-- Docker and Docker Compose (for PostgreSQL, Redis, Flower)
+- Python 3.12+ and [uv](https://docs.astral.sh/uv/)
+- Docker and Docker Compose (for PostgreSQL and the Prefect server)
 
 ### Setup
 
 ```bash
-# Start database and services
-docker-compose up -d
+# Start database and services (add --build to also run the API container;
+# it needs SECRET_KEY set in your environment)
+docker-compose up -d postgres prefect-server
 
 # Install dependencies
-pip install -e ".[dev]"
+uv sync
 
 # Run migrations
-alembic upgrade head
+uv run alembic upgrade head
 
 # Start the dev server
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload
 ```
 
 ### Running Tests
 
 ```bash
-pytest
+uv run pytest
 ```
 
 ### Linting
@@ -79,7 +79,7 @@ ruff format .
 
 ```
 app/
-  core/           # Config, database, API router, Celery
+  core/           # Config, database, API router, Prefect config
   features/
     auth/         # JWT authentication
     users/        # User management
@@ -89,4 +89,4 @@ app/
     screening/    # Screening decisions (AI + human)
 ```
 
-Each feature module follows a consistent pattern: `models.py`, `routers.py`, `services.py`, and optionally `schemas.py` and `tasks.py`.
+Each feature module follows a consistent pattern: `models.py`, `routers.py`, `services.py`, and optionally `schemas.py` and `flows.py` (Prefect).

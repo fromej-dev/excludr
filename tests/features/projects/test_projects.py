@@ -4,9 +4,13 @@ BASE_API = "api/v1/projects"
 
 
 # get list of projects
-def test_get_projects(auth_as, a_project):
+def test_get_projects(auth_as, a_project, session):
     client, user = auth_as()
     project = a_project(user)
+    # Unique name so the substring filter below can't match other faker names
+    project.name = "Zqxjv Unique Project"
+    session.add(project)
+    session.commit()
     res = client.get(BASE_API)
     assert res.status_code == 200
     assert len(res.json()["data"]) == 1

@@ -48,9 +48,8 @@ Excludr is a **systematic review screening tool** for researchers. In a systemat
 - **FastAPI** — web framework
 - **SQLModel** — ORM (SQLAlchemy + Pydantic)
 - **pydantic-ai** — AI screening agent
-- **Celery + Redis** — background tasks
 - **Alembic** — database migrations
-- **Prefect** — workflow orchestration for file parsing
+- **Prefect** — workflow orchestration (file parsing, batch AI screening)
 - **Vue 3** — frontend (in progress)
 
 ## Common Commands
@@ -90,14 +89,15 @@ alembic revision --autogenerate -m "description"
 alembic upgrade head
 ```
 
-### Celery Worker
+### Prefect
 ```bash
-celery -A app.core.celery.celery worker --loglevel=info
+# Flows run in-process by default; start a Prefect server (UI on :4200) if wanted
+prefect server start
 ```
 
 ### Docker Services
 ```bash
-# Start PostgreSQL, Redis, and Flower (Celery monitoring)
+# Start PostgreSQL, Prefect server and the API (needs SECRET_KEY set)
 docker-compose up -d
 ```
 
@@ -105,7 +105,7 @@ docker-compose up -d
 
 ### Application Structure
 - `app/main.py` - FastAPI app entry point
-- `app/core/` - Core infrastructure (config, database, API router, Celery)
+- `app/core/` - Core infrastructure (config, database, API router, Prefect config)
 - `app/features/` - Feature modules (auth, users, projects, research, criteria, screening)
 
 ### Feature Module Pattern
@@ -113,7 +113,7 @@ Each feature in `app/features/` follows this structure:
 - `models.py` - SQLModel database models
 - `routers.py` - FastAPI route handlers
 - `services.py` - Business logic
-- `tasks.py` - Celery background tasks (if applicable)
+- `flows.py` - Prefect flows/tasks for background work (if applicable)
 - `schemas.py` - Pydantic schemas for request/response (if applicable)
 
 ### Database
@@ -122,10 +122,9 @@ Each feature in `app/features/` follows this structure:
 - Use `SessionDep` type annotation for dependency injection in routes
 
 ### Background Tasks
-- Celery with Redis broker
-- Tasks defined in feature `tasks.py` files
-- `get_celery_session()` context manager for database access in workers
-- Task modules registered in `app/core/celery.py`
+- Prefect flows and tasks, defined in feature `flows.py` files
+- `get_prefect_session()` (`app/core/prefect_config.py`) gives tasks a database session
+- Flows that run inside the API process (e.g. batch AI screening) open their own `Session(engine)`; pass only primitive ids into flows
 
 ### Configuration
 - Environment variables via `.env` file
@@ -135,7 +134,7 @@ Each feature in `app/features/` follows this structure:
 ### Testing
 - pytest with fixtures in `tests/conftest.py`
 - In-memory SQLite database with transaction rollback per test
-- Celery runs in eager mode during tests (synchronous execution)
+- Prefect flows run synchronously in tests; tests monkeypatch `get_prefect_session` to reuse the test session
 - Key fixtures: `client`, `session`, `auth_client`, `admin_client`, `a_user`, `a_project`, `auth_as`
 
 ### API Routes

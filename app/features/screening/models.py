@@ -67,6 +67,10 @@ class ScreeningDecision(ScreeningDecisionBase, table=True):
     model_name: Optional[str] = Field(default=None, max_length=200)
     prompt_version: Optional[str] = Field(default=None, max_length=50)
 
+    # {criterion code: criterion version} of the active criteria an AI decision
+    # was made against (null for human decisions / decisions predating versioning)
+    criteria_snapshot: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+
     created_at: Optional[datetime] = Field(
         default=None, sa_column_kwargs={"server_default": func.now()}
     )

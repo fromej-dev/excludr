@@ -7,6 +7,10 @@ from .models import Criterion, CriterionCreate, CriterionUpdate, CriterionType
 from ...core.database import SessionDep
 
 
+# Fields whose change alters what the AI is asked to judge against.
+VERSIONED_FIELDS = ("type", "code", "description", "rationale", "is_active")
+
+
 class CriterionService:
     """Service class for managing Criterion-related operations."""
 
@@ -31,6 +35,13 @@ class CriterionService:
             )
             .order_by(Criterion.type, Criterion.order)
         )
+
+    def get_active_snapshot(self, project_id: int) -> dict[str, int]:
+        """Return ``{code: version}`` for the project's active criteria."""
+        return {
+            c.code: c.version
+            for c in self.session.exec(self.get_active_criteria_for_project(project_id))
+        }
 
     def get_criterion_by_id(self, criterion_id: int) -> Criterion | None:
         """Get a criterion by its ID."""
@@ -64,12 +75,21 @@ class CriterionService:
     def update_criterion(
         self, criterion: Criterion, data: CriterionUpdate
     ) -> Criterion:
-        """Update an existing criterion."""
-        criterion.sqlmodel_update(
-            data.model_dump(
-                exclude_unset=True, exclude_defaults=True, exclude_none=True
-            )
+        """Update an existing criterion.
+
+        Bumps ``version`` when a field that affects screening (type, code,
+        description, rationale, is_active) actually changes. Changing ``order``
+        alone does not.
+        """
+        changes = data.model_dump(
+            exclude_unset=True, exclude_defaults=True, exclude_none=True
         )
+        if any(
+            field in changes and changes[field] != getattr(criterion, field)
+            for field in VERSIONED_FIELDS
+        ):
+            criterion.version += 1
+        criterion.sqlmodel_update(changes)
         self.session.add(criterion)
         self.session.commit()
         self.session.refresh(criterion)

@@ -871,3 +871,24 @@ class TestRealAgentEndToEnd:
         assert sample_article.status == ArticleStatus.screening
         assert sample_article.current_stage == ScreeningStage.title_abstract
         assert sample_article.final_decision == FinalDecision.pending
+
+
+class TestCriteriaSnapshot:
+    @pytest.mark.asyncio
+    async def test_snapshot_records_active_criteria_versions(
+        self, session, sample_article, sample_criteria, sample_project
+    ):
+        sample_criteria[0].version = 3
+        session.add(sample_criteria[0])
+        session.commit()
+        active = {c.code: c.version for c in sample_criteria if c.is_active}
+        model = _function_model([_result_args()], [])
+        with get_screening_agent().override(model=model):
+            decision = await screen_article(
+                article=sample_article,
+                criteria=sample_criteria,
+                review_question=sample_project.review_question,
+                session=session,
+            )
+        assert decision.criteria_snapshot == active
+        assert decision.criteria_snapshot["I1"] == 3

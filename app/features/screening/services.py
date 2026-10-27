@@ -4,6 +4,7 @@ from fastapi import Depends
 from sqlmodel import Session, select, func
 
 from .models import (
+    DecisionSource,
     ScreeningDecision,
     ScreeningDecisionCreate,
     ScreeningStage,
@@ -24,7 +25,7 @@ class ScreeningService:
         return (
             select(ScreeningDecision)
             .where(ScreeningDecision.article_id == article_id)
-            .order_by(ScreeningDecision.created_at.desc())
+            .order_by(ScreeningDecision.created_at.desc(), ScreeningDecision.id.desc())
         )
 
     def get_decision_by_id(self, decision_id: int) -> ScreeningDecision | None:
@@ -43,8 +44,60 @@ class ScreeningService:
                 ScreeningDecision.article_id == article_id,
                 ScreeningDecision.stage == stage,
             )
-            .order_by(ScreeningDecision.created_at.desc())
+            .order_by(ScreeningDecision.created_at.desc(), ScreeningDecision.id.desc())
         ).first()
+
+    def get_latest_ai_decisions(self, project_id: int) -> list[ScreeningDecision]:
+        """Latest AI decision per article in a project.
+
+        "Latest" is by ``created_at`` then ``id`` (ties broken by higher id).
+        """
+        rank = (
+            func.row_number()
+            .over(
+                partition_by=ScreeningDecision.article_id,
+                order_by=(
+                    ScreeningDecision.created_at.desc(),
+                    ScreeningDecision.id.desc(),
+                ),
+            )
+            .label("rank")
+        )
+        ranked = (
+            select(ScreeningDecision.id.label("decision_id"), rank)
+            .join(Article, ScreeningDecision.article_id == Article.id)
+            .where(
+                Article.project_id == project_id,
+                ScreeningDecision.source == DecisionSource.ai_agent,
+            )
+            .subquery()
+        )
+        return list(
+            self.session.exec(
+                select(ScreeningDecision)
+                .join(ranked, ScreeningDecision.id == ranked.c.decision_id)
+                .where(ranked.c.rank == 1)
+                .order_by(ScreeningDecision.article_id)
+            ).all()
+        )
+
+    def get_stale_ai_article_ids(
+        self, project_id: int, current_snapshot: dict[str, int]
+    ) -> list[int]:
+        """Article ids whose latest AI decision used different criteria.
+
+        Args:
+            project_id: Project to inspect.
+            current_snapshot: ``{code: version}`` of the project's active criteria.
+
+        A decision with no snapshot (made before versioning) cannot be verified
+        and is reported as stale.
+        """
+        return [
+            d.article_id
+            for d in self.get_latest_ai_decisions(project_id)
+            if d.criteria_snapshot != current_snapshot
+        ]
 
     def create_decision(
         self,

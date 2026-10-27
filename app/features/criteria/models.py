@@ -51,6 +51,11 @@ class Criterion(CriterionBase, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     project_id: int = Field(foreign_key="project.id", index=True)
+    version: int = Field(
+        default=1,
+        sa_column_kwargs={"server_default": "1", "nullable": False},
+        description="Incremented when text, type, code or active state changes",
+    )
     created_at: Optional[datetime] = Field(
         default=None, sa_column_kwargs={"server_default": func.now()}
     )

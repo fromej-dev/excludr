@@ -389,6 +389,7 @@ async def screen_article(
             criteria_evaluations=criteria_evaluations,
             model_name=_model_name_from_result(result),
             prompt_version=PROMPT_VERSION,
+            criteria_snapshot={c.code: c.version for c in criteria if c.is_active},
         )
 
         session.add(screening_decision)
