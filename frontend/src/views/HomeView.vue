@@ -52,30 +52,59 @@ const features = [
   },
 ]
 
-const plans = [
+interface Plan {
+  name: string
+  price: string
+  prefix?: string
+  period?: string
+  tagline: string
+  tiers?: { label: string; price: string }[]
+  items: string[]
+  cta: string
+  highlighted: boolean
+}
+
+// Review passes are priced by full-text count, the driver of AI cost
+const plans: Plan[] = [
   {
-    name: 'Starter',
-    price: 'Free',
-    tagline: 'Try Excludr on a small review.',
-    items: ['1 project', 'Up to 200 articles', 'AI screening included', '1 reviewer'],
+    name: 'Free',
+    price: '€0',
+    tagline: 'Try Excludr on a real review.',
+    items: ['1 review', 'Up to 50 full texts', 'AI screening included', '1 reviewer'],
     cta: 'Start for free',
     highlighted: false,
   },
   {
-    name: 'Researcher',
-    price: '€29',
-    period: '/ month',
-    tagline: 'For PhD students and individual reviews.',
-    items: ['Unlimited projects', 'Up to 2,000 AI-screened articles / month', 'Dual screening with a co-reviewer', 'PRISMA & exports'],
-    cta: 'Get started',
+    name: 'Review pass',
+    prefix: 'from',
+    price: '€49',
+    period: 'per review',
+    tagline: 'One-off payment for a single systematic review.',
+    tiers: [
+      { label: 'Up to 250 full texts', price: '€49' },
+      { label: 'Up to 1,000 full texts', price: '€129' },
+      { label: 'Over 1,000 full texts', price: 'Contact us' },
+    ],
+    items: [
+      'Active for 12 months, no subscription',
+      'Dual screening with a co-reviewer',
+      'PRISMA, exports & audit log',
+      'Read-only access and exports forever',
+    ],
+    cta: 'Start a review',
     highlighted: true,
   },
   {
     name: 'Team',
-    price: '€99',
-    period: '/ month',
-    tagline: 'For research groups and review teams.',
-    items: ['Up to 10 members', 'Up to 10,000 AI-screened articles / month', 'Audit log & agreement statistics', 'Priority support'],
+    price: '€990',
+    period: 'per year',
+    tagline: 'For groups that run reviews all year.',
+    items: [
+      'Unlimited reviews',
+      'Up to 10 members',
+      '5,000 AI-screened full texts / year',
+      'Annual invoice & priority support',
+    ],
     cta: 'Get started',
     highlighted: false,
   },
@@ -205,9 +234,10 @@ const plans = [
       <!-- Pricing -->
       <section id="pricing" class="border-t bg-muted/40 py-20">
         <div class="mx-auto max-w-6xl px-4">
-          <h2 class="text-center text-3xl font-bold">Simple pricing</h2>
+          <h2 class="text-center text-3xl font-bold">Pay per review</h2>
           <p class="mx-auto mt-4 max-w-2xl text-center text-muted-foreground">
-            Start free. Upgrade when your review grows.
+            No subscription to cancel between reviews. Pay once for the review you are running,
+            or take an annual plan if your group reviews all year.
           </p>
           <div class="mt-12 grid gap-6 lg:grid-cols-3">
             <div
@@ -219,9 +249,16 @@ const plans = [
               <h3 class="font-semibold">{{ plan.name }}</h3>
               <p class="mt-1 text-sm text-muted-foreground">{{ plan.tagline }}</p>
               <p class="mt-6">
+                <span v-if="plan.prefix" class="mr-1 text-sm text-muted-foreground">{{ plan.prefix }}</span>
                 <span class="text-4xl font-bold">{{ plan.price }}</span>
-                <span v-if="plan.period" class="text-sm text-muted-foreground"> {{ plan.period }}</span>
+                <span v-if="plan.period" class="ml-1 text-sm text-muted-foreground">{{ plan.period }}</span>
               </p>
+              <dl v-if="plan.tiers" class="mt-6 divide-y rounded-md border text-sm">
+                <div v-for="tier in plan.tiers" :key="tier.label" class="flex justify-between gap-4 px-3 py-2">
+                  <dt class="text-muted-foreground">{{ tier.label }}</dt>
+                  <dd class="font-medium">{{ tier.price }}</dd>
+                </div>
+              </dl>
               <ul class="mt-6 flex-1 space-y-2 text-sm">
                 <li v-for="item in plan.items" :key="item" class="flex gap-2">
                   <span class="text-primary" aria-hidden="true">✓</span>
@@ -240,6 +277,7 @@ const plans = [
             </div>
           </div>
           <p class="mt-8 text-center text-sm text-muted-foreground">
+            Updating a review later? Updates cost less than a new pass.
             Need more seats, single sign-on or an institutional licence?
             <a v-if="contactEmail" :href="`mailto:${contactEmail}`" class="font-medium text-primary hover:underline">Talk to us.</a>
             <span v-else>Institutional plans are available on request.</span>
