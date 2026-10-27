@@ -159,7 +159,7 @@ const runCommand = async (id: NextStepCommand) => {
 const handleDelete = async () => {
   const success = await projectsStore.deleteProject(projectId.value)
   if (success) {
-    router.push('/')
+    router.push('/dashboard')
   }
 }
 </script>

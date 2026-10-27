@@ -19,7 +19,7 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     await page.locator('button[type="submit"]').click()
 
     // Assert redirect to dashboard
-    await page.waitForURL('/', { timeout: 10_000 })
+    await page.waitForURL('/dashboard', { timeout: 10_000 })
     await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
 
     // ========================================

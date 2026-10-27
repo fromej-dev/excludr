@@ -2,10 +2,10 @@ import { test, expect } from './fixtures'
 
 test.describe('Authentication Flow', () => {
   test('should redirect to login when not authenticated', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/dashboard')
     // The router keeps the target in ?redirect=
     await page.waitForURL(/\/login(\?|$)/)
-    expect(new URL(page.url()).searchParams.get('redirect')).toBe('/')
+    expect(new URL(page.url()).searchParams.get('redirect')).toBe('/dashboard')
   })
 
   test('should register a new user and redirect to dashboard', async ({ page, api }) => {
@@ -26,7 +26,7 @@ test.describe('Authentication Flow', () => {
     await expect(submitButton).toHaveText(/Creating account.../, { timeout: 5000 })
 
     // Should redirect to dashboard
-    await page.waitForURL('/', { timeout: 10000 })
+    await page.waitForURL('/dashboard', { timeout: 10000 })
     await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
   })
 
@@ -60,7 +60,7 @@ test.describe('Authentication Flow', () => {
     await expect(submitButton).toHaveText(/Signing in.../, { timeout: 5000 })
 
     // Should redirect to dashboard
-    await page.waitForURL('/', { timeout: 10000 })
+    await page.waitForURL('/dashboard', { timeout: 10000 })
     await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
   })
 
@@ -102,7 +102,7 @@ test.describe('Authentication Flow', () => {
     await page.reload()
 
     // Should still be authenticated and at dashboard
-    await expect(page).toHaveURL('/')
+    await expect(page).toHaveURL('/dashboard')
     await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
 
     // Verify token exists in localStorage
@@ -121,7 +121,7 @@ test.describe('Authentication Flow', () => {
     await page.evaluate(() => localStorage.clear())
 
     // Navigate to dashboard
-    await page.goto('/')
+    await page.goto('/dashboard')
 
     // Should redirect to login
     await page.waitForURL(/\/login(\?|$)/, { timeout: 10000 })

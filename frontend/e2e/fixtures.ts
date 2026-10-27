@@ -145,7 +145,7 @@ export class PageHelper {
     await this.page.locator('#password').fill(password)
     await this.page.locator('button[type="submit"]').click()
     // Wait for redirect to dashboard
-    await this.page.waitForURL('/', { timeout: 10_000 })
+    await this.page.waitForURL('/dashboard', { timeout: 10_000 })
   }
 
   /** Set token directly in localStorage and navigate (faster than UI login). */
@@ -154,8 +154,8 @@ export class PageHelper {
     await this.page.evaluate((t) => {
       localStorage.setItem('excludr_token', t)
     }, token)
-    await this.page.goto('/')
-    await this.page.waitForURL('/')
+    await this.page.goto('/dashboard')
+    await this.page.waitForURL('/dashboard')
   }
 
   /** Navigate to a project's tab. */
