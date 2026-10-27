@@ -26,6 +26,12 @@ class UserRead(UserBase):
     )
 
 
+class UserPublic(UserRead):
+    """Public representation of a user: never includes the password hash."""
+
+    id: int
+
+
 class User(UserRead, table=True):
     id: int = Field(primary_key=True)
     hashed_password: str = Field(max_length=1024)

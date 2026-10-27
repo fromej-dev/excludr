@@ -6,12 +6,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "Excludr"
-    admin_email: str = "ej@fromejdevelopment.nl"
     database_url: str = "sqlite:///database.db"
     api_prefix: str = "/api/v1"
     secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
+
+    # Login rate limiting (in-memory sliding window per client IP + email)
+    login_rate_limit_attempts: int = 10
+    login_rate_limit_window_seconds: int = 300
+
+    # CORS: browser origins allowed to call the API
+    cors_origins: list[str] = ["http://localhost:5173"]
+
+    # Maximum accepted size for uploaded files (RIS, PubMed, PDF), in megabytes
+    max_upload_mb: int = 50
     google_api_key: Optional[str] = None
 
     upload_directory: str = "/tmp/ris_uploads"

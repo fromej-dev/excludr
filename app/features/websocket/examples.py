@@ -5,6 +5,7 @@ This file demonstrates how to use the NotificationService from different parts
 of your application to send real-time notifications to users via WebSocket.
 """
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -13,6 +14,8 @@ from app.features.auth.services import get_current_user
 from app.features.users.models import User
 from .services import NotificationService
 from .schemas import NotificationLevel
+
+logger = logging.getLogger(__name__)
 
 # Example router to demonstrate notification usage
 example_router = APIRouter(tags=["Notifications"], prefix="/notifications")
@@ -105,7 +108,7 @@ async def notify_if_online(user_id: int, message: str):
         return True
     else:
         # User is offline, maybe save to database for later display
-        print(f"User {user_id} is offline, notification not sent")
+        logger.info("User %s is offline, notification not sent", user_id)
         return False
 
 

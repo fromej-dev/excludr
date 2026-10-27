@@ -1,6 +1,7 @@
 """PubMed E-utilities service for fetching article abstracts."""
 
 import asyncio
+import logging
 import time
 import xml.etree.ElementTree as ET
 from typing import Optional
@@ -8,6 +9,8 @@ from typing import Optional
 import httpx
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class PubMedService:
@@ -100,7 +103,7 @@ class PubMedService:
                     abstracts[pmid] = " ".join(abstract_parts)
 
         except ET.ParseError as e:
-            print(f"Error parsing PubMed XML: {e}")
+            logger.warning("Error parsing PubMed XML: %s", e)
 
         return abstracts
 
@@ -137,7 +140,7 @@ class PubMedService:
                     all_abstracts.update(abstracts)
 
                 except httpx.HTTPError as e:
-                    print(f"Error fetching abstracts from PubMed: {e}")
+                    logger.warning("Error fetching abstracts from PubMed: %s", e)
                     continue
 
         return all_abstracts
@@ -179,7 +182,7 @@ class PubMedService:
                     all_abstracts.update(abstracts)
 
                 except httpx.HTTPError as e:
-                    print(f"Error fetching abstracts from PubMed: {e}")
+                    logger.warning("Error fetching abstracts from PubMed: %s", e)
                     continue
 
         return all_abstracts

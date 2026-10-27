@@ -28,7 +28,7 @@ export const useAuthStore = defineStore('auth', () => {
         },
       })
 
-      setToken(response.access_token)
+      setToken(response.access_token, response.refresh_token)
       await fetchCurrentUser()
       return true
     } catch (err: any) {

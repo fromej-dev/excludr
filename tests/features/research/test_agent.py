@@ -560,7 +560,11 @@ class TestScreenArticle:
             session.refresh(sample_article)
             assert sample_article.ai_check_status == "error"
             assert sample_article.ai_check_result is not None
-            assert "API rate limit exceeded" in sample_article.ai_check_result["error"]
+            # Raw exception text must not be exposed through the article endpoints
+            error = sample_article.ai_check_result["error"]
+            assert "API rate limit exceeded" not in error
+            assert sample_article.ai_check_result["error_type"] == "Exception"
+            assert "API rate limit exceeded" not in str(sample_article.ai_check_result)
             assert sample_article.last_ai_check is not None
 
     @pytest.mark.asyncio

@@ -5,10 +5,10 @@ This feature provides real-time WebSocket communication with JWT authentication 
 ## Features
 
 - **JWT Authentication**: Secure WebSocket connections using existing JWT tokens
-- **Room Management**: Users can join/leave rooms for group messaging
+- **Room Management**: Users can join/leave rooms for group messaging, restricted to rooms they are authorized for (see [Room Authorization](#room-authorization))
 - **Personal Rooms**: Each user is automatically added to a personal room (`user_{user_id}`)
 - **Notification Service**: Easy-to-use service for sending notifications from anywhere in your backend
-- **Multiple Message Types**: Support for personal messages, room messages, and broadcasts
+- **Multiple Message Types**: Support for personal messages, room messages, and broadcasts (broadcasts are superuser-only)
 
 ## Quick Start
 
@@ -242,6 +242,17 @@ async def notify_if_online(user_id: int, message: str):
 ```
 
 ## Room Management
+
+### Room Authorization
+
+Clients cannot join arbitrary rooms. The server enforces:
+
+- `join_room` is only accepted for `user_{your_id}` and for `project_{id}` where you own the project (checked against the database). Any other room name, including other users' rooms, projects you do not own and non-existent projects, is refused with an `error` response.
+- `room_message` is only accepted for rooms you are currently a member of; otherwise an `error` response is returned.
+- `broadcast` (to all connected users) is restricted to superusers; other users receive an `error` response.
+- Only access tokens are accepted (`typ: access`). Refresh tokens and tokens of inactive users are rejected and the connection is closed.
+
+Backend code (`NotificationService`, `ConnectionManager.join_room`) is trusted and can still address any room, e.g. custom rooms for server-driven notifications.
 
 ### Joining a Room
 

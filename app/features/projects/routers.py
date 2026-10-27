@@ -1,6 +1,4 @@
-import os
-import shutil
-import uuid
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, UploadFile, Path
@@ -11,11 +9,14 @@ from starlette.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.core.database import SessionDep
+from app.core.uploads import display_filename, remove_file, save_upload
 from app.features.auth.services import get_current_user
 from app.features.users.models import User
 from .models import Project, ProjectCreate, ProjectUpdate
 from .services import ProjectService, ProjectServiceDep
 from .flows import parse_ris_file_flow, parse_pubmed_file_flow
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Projects"], prefix="/projects")
 
@@ -77,30 +78,18 @@ async def upload_ris_file(
             status_code=403, detail="You are not the owner of the project"
         )
 
-    # Ensure the uploaded file is a RIS file
-    if not file.filename.lower().endswith(".ris"):
-        raise HTTPException(
-            status_code=400, detail="Invalid file type. Please upload a .ris file."
+    temp_file_path: str | None = None
+    try:
+        # Validates extension and size; stored under a server-generated name
+        temp_file_path = await save_upload(
+            file,
+            get_settings().upload_directory,
+            {".ris"},
+            invalid_type_detail="Invalid file type. Please upload a .ris file.",
         )
 
-    try:
-        # Create a unique filename to avoid collisions
-        safe_filename = f"{uuid.uuid4()}_{file.filename}"
-        temp_file_path = os.path.join(get_settings().upload_directory, safe_filename)
-
-        # Ensure upload directory exists
-        os.makedirs(get_settings().upload_directory, exist_ok=True)
-
-        # Save the uploaded file to the temporary directory
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        # Run the Prefect flow (can be run async with .submit() if Prefect server is configured)
-        # For now, we'll run it synchronously or use run_deployment for async
-
-        # Run the flow - this will execute synchronously
-        # For production, use deployments for true async execution
-        result = parse_ris_file_flow(temp_file_path, project_id)
+        # The flow removes the temporary file when it finishes
+        result = parse_ris_file_flow(temp_file_path, project_id, display_filename(file))
 
         return JSONResponse(
             content={
@@ -108,9 +97,12 @@ async def upload_ris_file(
                 "result": result,
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        # Log the error for debugging
-        print(f"Error during file upload: {e}")
+        logger.exception("Error during file upload")
+        if temp_file_path:
+            remove_file(temp_file_path)
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred during file processing.",
@@ -144,28 +136,21 @@ async def upload_pubmed_file(
             status_code=403, detail="You are not the owner of the project"
         )
 
-    # Ensure the uploaded file is a valid PubMed format
-    filename_lower = file.filename.lower() if file.filename else ""
-    if not (filename_lower.endswith(".txt") or filename_lower.endswith(".csv")):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid file type. Please upload a .txt (MEDLINE) or .csv file.",
+    temp_file_path: str | None = None
+    try:
+        temp_file_path = await save_upload(
+            file,
+            get_settings().upload_directory,
+            {".txt", ".csv"},
+            invalid_type_detail=(
+                "Invalid file type. Please upload a .txt (MEDLINE) or .csv file."
+            ),
         )
 
-    try:
-        # Create a unique filename to avoid collisions
-        safe_filename = f"{uuid.uuid4()}_{file.filename}"
-        temp_file_path = os.path.join(get_settings().upload_directory, safe_filename)
-
-        # Ensure upload directory exists
-        os.makedirs(get_settings().upload_directory, exist_ok=True)
-
-        # Save the uploaded file to the temporary directory
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        # Run the Prefect flow
-        result = parse_pubmed_file_flow(temp_file_path, project_id)
+        # The flow removes the temporary file when it finishes
+        result = parse_pubmed_file_flow(
+            temp_file_path, project_id, display_filename(file)
+        )
 
         return JSONResponse(
             content={
@@ -173,9 +158,12 @@ async def upload_pubmed_file(
                 "result": result,
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        # Log the error for debugging
-        print(f"Error during file upload: {e}")
+        logger.exception("Error during file upload")
+        if temp_file_path:
+            remove_file(temp_file_path)
         raise HTTPException(
             status_code=500,
             detail="An unexpected error occurred during file processing.",

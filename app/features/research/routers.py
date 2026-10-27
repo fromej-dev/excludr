@@ -146,10 +146,8 @@ async def upload_fulltext(
     article_service: ArticleServiceDep,
 ):
     """Upload a full-text PDF for an article and extract text content."""
-    import os
-    import shutil
-    import uuid
     from app.core.config import get_settings
+    from app.core.uploads import remove_file, save_upload
     from .pdf_extraction import extract_text_from_pdf_safe
 
     verify_project_ownership(project_id, current_user, ps)
@@ -157,22 +155,17 @@ async def upload_fulltext(
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=400, detail="Invalid file type. Please upload a .pdf file."
-        )
-
-    settings = get_settings()
-    pdf_dir = getattr(settings, "pdf_storage_path", "/tmp/pdfs")
-    os.makedirs(pdf_dir, exist_ok=True)
-
-    safe_filename = f"{uuid.uuid4()}_{file.filename}"
-    file_path = os.path.join(pdf_dir, safe_filename)
-
+    file_path: str | None = None
     try:
-        # Save the PDF file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Validates extension, %PDF- magic bytes and size; stored as <uuid>.pdf
+        file_path = await save_upload(
+            file,
+            get_settings().pdf_storage_path,
+            {".pdf"},
+            magic=b"%PDF-",
+            invalid_type_detail="Invalid file type. Please upload a .pdf file.",
+            invalid_content_detail="Invalid PDF: file does not start with %PDF-.",
+        )
 
         # Extract text from the PDF
         extracted_text = extract_text_from_pdf_safe(file_path)
@@ -182,14 +175,15 @@ async def upload_fulltext(
 
         return {
             "message": "Full text uploaded successfully",
-            "path": file_path,
             "text_extracted": extracted_text is not None,
             "text_length": len(extracted_text) if extracted_text else 0,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         # Clean up the file if something went wrong
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        if file_path:
+            remove_file(file_path)
         raise HTTPException(status_code=500, detail="Failed to upload file") from e
     finally:
         await file.close()

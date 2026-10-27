@@ -1,5 +1,6 @@
 """Prefect flows for project-related background tasks."""
 
+import logging
 import os
 from typing import Any
 
@@ -12,6 +13,8 @@ from app.features.projects.dedup import ProjectArticleIndex
 from app.features.research.models import Article
 from app.features.projects.parsers import parse_pubmed_txt, parse_pubmed_csv
 from app.features.research.pubmed_service import PubMedService
+
+logger = logging.getLogger(__name__)
 
 
 @task(name="parse_ris_entries")
@@ -36,7 +39,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
 
                 # A title is essential for a meaningful record.
                 if not title:
-                    print(
+                    logger.info(
                         f"Skipping entry due to missing title: {entry.get('id', 'N/A')}"
                     )
                     continue
@@ -51,7 +54,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                         # Take the first part of a date string and convert to int
                         year = int(float(str(year_str).split("/")[0]))
                 except (ValueError, TypeError):
-                    print(f"Could not parse year for article '{title}'")
+                    logger.info(f"Could not parse year for article '{title}'")
 
                 # Look for a duplicate within this project only: DOI/PMID first,
                 # then normalized title + year when the entry has no identifiers.
@@ -125,28 +128,27 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
 
 
 @flow(name="parse_ris_file", log_prints=True)
-def parse_ris_file_flow(file_path: str, project_id: int) -> dict:
+def parse_ris_file_flow(
+    file_path: str, project_id: int, original_filename: str | None = None
+) -> dict:
     """Prefect flow to parse a RIS file and save/update entries in the database.
 
     Args:
         file_path: Path to the RIS file to parse.
         project_id: ID of the project to associate articles with.
+        original_filename: Client-supplied display name (metadata only, never a path).
 
     Returns:
         Dictionary with status, articles_created, and articles_updated counts.
     """
-    # Extract original filename from the temp path
-    try:
-        original_filename = "_".join(os.path.basename(file_path).split("_")[1:])
-    except IndexError:
-        original_filename = os.path.basename(file_path)
+    original_filename = original_filename or os.path.basename(file_path)
 
-    print(f"Starting to parse file: {file_path} (from {original_filename})")
+    logger.info(f"Starting to parse file: {file_path} (from {original_filename})")
 
     try:
         result = parse_ris_entries(file_path, project_id, original_filename)
 
-        print(
+        logger.info(
             f"Processing complete for {original_filename}. "
             f"Created: {result['articles_created']}, Updated: {result['articles_updated']}, "
             f"Duplicates: {result['duplicates']}"
@@ -162,14 +164,14 @@ def parse_ris_file_flow(file_path: str, project_id: int) -> dict:
 
     except FileNotFoundError:
         return {"status": "Error", "message": "File not found."}
-    except Exception as e:
-        print(f"An error occurred while parsing {file_path}: {e}")
+    except Exception:
+        logger.exception("An error occurred while parsing %s", file_path)
         raise
     finally:
         # Ensure the temporary file is always cleaned up.
         if os.path.exists(file_path):
             os.remove(file_path)
-            print(f"Cleaned up temporary file: {file_path}")
+            logger.info(f"Cleaned up temporary file: {file_path}")
 
 
 @task(name="parse_pubmed_entries")
@@ -208,7 +210,9 @@ def parse_pubmed_entries(
 
             # A PMID and title are essential for a meaningful record
             if not pmid or not title:
-                print(f"Skipping entry due to missing PMID or title: {entry}")
+                logger.info(
+                    f"Skipping entry due to missing PMID or title: {entry.get('pmid', 'N/A')}"
+                )
                 continue
 
             # Per-project duplicate lookup: PMID, then DOI (then title + year, which
@@ -313,7 +317,9 @@ def fetch_pubmed_abstracts(pmids: list[str], project_id: int) -> dict[str, Any]:
 
 
 @flow(name="parse_pubmed_file", log_prints=True)
-def parse_pubmed_file_flow(file_path: str, project_id: int) -> dict[str, Any]:
+def parse_pubmed_file_flow(
+    file_path: str, project_id: int, original_filename: str | None = None
+) -> dict[str, Any]:
     """Prefect flow to parse a PubMed export file and save entries to the database.
 
     Supports both MEDLINE (.txt) and CSV formats. For CSV files, abstracts will
@@ -322,15 +328,12 @@ def parse_pubmed_file_flow(file_path: str, project_id: int) -> dict[str, Any]:
     Args:
         file_path: Path to the PubMed export file.
         project_id: ID of the project to associate articles with.
+        original_filename: Client-supplied display name (metadata only, never a path).
 
     Returns:
         Dictionary with status and article counts.
     """
-    # Extract original filename and determine format
-    try:
-        original_filename = "_".join(os.path.basename(file_path).split("_")[1:])
-    except IndexError:
-        original_filename = os.path.basename(file_path)
+    original_filename = original_filename or os.path.basename(file_path)
 
     # Determine file format from extension
     file_ext = os.path.splitext(file_path)[1].lower()
@@ -339,10 +342,12 @@ def parse_pubmed_file_flow(file_path: str, project_id: int) -> dict[str, Any]:
     elif file_ext == ".csv":
         file_format = "csv"
     else:
+        if os.path.exists(file_path):
+            os.remove(file_path)
         return {"status": "Error", "message": f"Unsupported file format: {file_ext}"}
 
-    print(f"Starting to parse PubMed {file_format.upper()} file: {file_path}")
-    print(f"Original filename: {original_filename}")
+    logger.info(f"Starting to parse PubMed {file_format.upper()} file: {file_path}")
+    logger.info(f"Original filename: {original_filename}")
 
     try:
         # Parse entries and save to database
@@ -350,7 +355,7 @@ def parse_pubmed_file_flow(file_path: str, project_id: int) -> dict[str, Any]:
             file_path, project_id, original_filename, file_format
         )
 
-        print(
+        logger.info(
             f"Initial processing complete. "
             f"Created: {result['articles_created']}, Updated: {result['articles_updated']}, "
             f"Duplicates: {result['duplicates']}"
@@ -359,14 +364,14 @@ def parse_pubmed_file_flow(file_path: str, project_id: int) -> dict[str, Any]:
         # Fetch abstracts for CSV imports that need them
         abstracts_fetched = 0
         if result["pmids_needing_abstracts"]:
-            print(
+            logger.info(
                 f"Fetching abstracts for {len(result['pmids_needing_abstracts'])} articles..."
             )
             fetch_result = fetch_pubmed_abstracts(
                 result["pmids_needing_abstracts"], project_id
             )
             abstracts_fetched = fetch_result["abstracts_fetched"]
-            print(f"Fetched {abstracts_fetched} abstracts from PubMed")
+            logger.info(f"Fetched {abstracts_fetched} abstracts from PubMed")
 
         return {
             "status": "Success",
@@ -378,11 +383,11 @@ def parse_pubmed_file_flow(file_path: str, project_id: int) -> dict[str, Any]:
 
     except FileNotFoundError:
         return {"status": "Error", "message": "File not found."}
-    except Exception as e:
-        print(f"An error occurred while parsing {file_path}: {e}")
+    except Exception:
+        logger.exception("An error occurred while parsing %s", file_path)
         raise
     finally:
         # Ensure the temporary file is always cleaned up
         if os.path.exists(file_path):
             os.remove(file_path)
-            print(f"Cleaned up temporary file: {file_path}")
+            logger.info(f"Cleaned up temporary file: {file_path}")

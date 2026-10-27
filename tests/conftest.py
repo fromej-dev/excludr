@@ -14,6 +14,16 @@ from app.features.users.services import UserService
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def reset_login_rate_limiter():
+    """Keep the in-memory login rate limiter from leaking between tests."""
+    from app.core.rate_limit import login_rate_limiter
+
+    login_rate_limiter.reset()
+    yield
+    login_rate_limiter.reset()
+
+
 @pytest.fixture(name="faker", scope="session")
 def faker_fixture():
     return Faker()

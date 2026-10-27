@@ -414,10 +414,15 @@ async def screen_article(
     except Exception as e:
         if isinstance(e, SQLAlchemyError):
             session.rollback()  # session unusable until rolled back
-        logger.warning("AI screening failed for article %s: %s", article.id, e)
-        # Update article with error status
+        logger.exception("AI screening failed for article %s", article.id)
+        # Update article with error status. Only a generic message and the exception
+        # class name are stored: this field is returned by the article endpoints and
+        # raw exception text can leak internals (URLs, keys, prompts).
         article.ai_check_status = "error"
-        article.ai_check_result = {"error": str(e)}
+        article.ai_check_result = {
+            "error": "AI screening failed. See server logs for details.",
+            "error_type": type(e).__name__,
+        }
         article.last_ai_check = datetime.now(timezone.utc)
         session.add(article)
         session.commit()
