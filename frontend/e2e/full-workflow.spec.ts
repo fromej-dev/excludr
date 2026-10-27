@@ -53,8 +53,8 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     const projectId = Number(match![1])
 
     // Verify project overview loaded
-    for (const name of ['Overview', 'Criteria', 'Articles', 'Screening']) {
-      await expect(page.getByRole('tab', { name, exact: true })).toBeVisible()
+    for (const name of ['Overview', 'Criteria', 'Articles', 'Title/abstract']) {
+      await expect(page.getByRole('link', { name: new RegExp(`^${name.replace('/', '\\/')}`) })).toBeVisible()
     }
 
     // ========================================
@@ -76,7 +76,7 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     // ========================================
     // 5. DEFINE CRITERIA
     // ========================================
-    await page.getByRole('tab', { name: 'Criteria', exact: true }).click()
+    await page.getByRole('link', { name: /^Criteria/ }).click()
     await page.waitForLoadState('networkidle')
 
     // Add inclusion criterion
@@ -105,7 +105,7 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     // ========================================
     // 6. VIEW ARTICLES
     // ========================================
-    await page.getByRole('tab', { name: 'Articles', exact: true }).click()
+    await page.getByRole('link', { name: /^Articles/ }).click()
 
     // Wait for articles to appear
     await expect(page.getByTestId('article-card')).toHaveCount(3, { timeout: 10_000 })
@@ -119,7 +119,7 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     // ========================================
     // 8. SCREEN ARTICLES
     // ========================================
-    await page.getByRole('tab', { name: 'Screening', exact: true }).click()
+    await page.getByRole('link', { name: /^Title\/abstract/ }).click()
 
     // Wait for first article to load
     const articleTitle = page.getByTestId('article-title')
@@ -158,7 +158,7 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     // ========================================
     // 10. VIEW ARTICLE DETAIL
     // ========================================
-    await page.getByRole('tab', { name: 'Articles', exact: true }).click()
+    await page.getByRole('link', { name: /^Articles/ }).click()
     await expect(page.getByTestId('article-card')).toHaveCount(3, { timeout: 10_000 })
 
     // Click on first article to view detail

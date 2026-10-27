@@ -298,4 +298,34 @@ test.describe('Screening Workflow', () => {
     const completionMessage = page.getByText(/you've completed screening all available articles/i)
     await expect(completionMessage).toBeVisible()
   })
+
+  test('sidebar shows the pending count, which drops after a decision', async ({ page, pageHelper, testUser }) => {
+    await pageHelper.loginDirect(testUser.token)
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
+
+    const sidebar = page.getByTestId('project-sidebar')
+    const count = sidebar.getByTestId('nav-count-title_abstract')
+    await expect(count).toHaveText('5')
+    await expect(sidebar.getByRole('link', { name: /^Title\/abstract/ })).toHaveAttribute('aria-current', 'page')
+
+    await page.keyboard.press('i')
+    await expect(count).toHaveText('4')
+  })
+
+  test('the stage query param selects the Full text stage and stays in sync', async ({ page, pageHelper, testUser }) => {
+    await pageHelper.loginDirect(testUser.token)
+    await page.goto(`/projects/${projectId}/screening?stage=full_text`)
+    await expect(page.getByRole('tab', { name: 'Full text' })).toHaveAttribute('aria-selected', 'true')
+    const sidebar = page.getByTestId('project-sidebar')
+    await expect(sidebar.getByRole('link', { name: /^Full text/ })).toHaveAttribute('aria-current', 'page')
+    await expect(sidebar.getByRole('link', { name: /^Title\/abstract/ })).not.toHaveAttribute('aria-current', 'page')
+
+    // Switching the toolbar tab updates the URL; the sidebar link switches the tab
+    await page.getByRole('tab', { name: 'Title / abstract' }).click()
+    await expect(page).toHaveURL(/stage=title_abstract/)
+    await sidebar.getByRole('link', { name: /^Full text/ }).click()
+    await expect(page).toHaveURL(/stage=full_text/)
+    await expect(page.getByRole('tab', { name: 'Full text' })).toHaveAttribute('aria-selected', 'true')
+  })
 })

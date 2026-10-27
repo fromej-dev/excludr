@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useScreeningStore } from '@/stores/screening'
 import { useCriteriaStore } from '@/stores/criteria'
 import { useMembersStore } from '@/stores/members'
 import { useAuthStore } from '@/stores/auth'
+import { useProjectNavStore } from '@/stores/projectNav'
 import { useWebSocketStore } from '@/stores/websocket'
 import type { ScreeningDecisionType, ScreeningStage } from '@/types'
 import Card from '@/components/ui/Card.vue'
@@ -18,6 +19,8 @@ import FullTextPanel from '@/components/articles/FullTextPanel.vue'
 import { decisionVariant, normalizeEvaluations } from '@/utils/criteriaEvaluations'
 
 const route = useRoute()
+const router = useRouter()
+const navStore = useProjectNavStore()
 const screeningStore = useScreeningStore()
 const criteriaStore = useCriteriaStore()
 const membersStore = useMembersStore()
@@ -31,7 +34,9 @@ const aiScreeningLoading = computed(() => screeningStore.aiScreeningLoading)
 const canReview = computed(() => membersStore.canReview)
 const roleKnown = computed(() => membersStore.role !== null)
 
-const stage = ref<Exclude<ScreeningStage, 'completed'>>('title_abstract')
+type ActiveStage = Exclude<ScreeningStage, 'completed'>
+const stageFromQuery = (): ActiveStage => (route.query.stage === 'full_text' ? 'full_text' : 'title_abstract')
+const stage = ref<ActiveStage>(stageFromQuery())
 const reasoning = ref('')
 const submitting = ref(false)
 const myDecision = ref<ScreeningDecisionType | null>(null)
@@ -144,7 +149,7 @@ const submitDecision = async (decision: ScreeningDecisionType) => {
   }
   const decidedId = article.value.id
   const decidedTitle = article.value.title || 'Untitled'
-  await screeningStore.fetchStats(projectId.value)
+  await Promise.all([screeningStore.fetchStats(projectId.value), navStore.refreshScreening(projectId.value)])
   const toastId = wsStore.addNotification(
     `${decisionPast[decision]}: ${truncate(decidedTitle, TITLE_MAX)}`,
     'success',
@@ -201,12 +206,24 @@ const resetQueue = async () => {
   if (canReview.value) await loadNextUnscreened()
 }
 
-const setStage = async (value: 'title_abstract' | 'full_text') => {
+const setStage = async (value: ActiveStage) => {
+  if (route.query.stage !== value) {
+    // Keep the URL in step with the stage without adding history entries
+    await router.replace({ query: { ...route.query, stage: value } })
+  }
   if (stage.value === value) return
   stage.value = value
   lastDecision.value = null
   await resetQueue()
 }
+
+// Sidebar links (and back/forward) change the stage via the query string
+watch(
+  () => route.query.stage,
+  () => {
+    if (route.name === 'project-screening') void setStage(stageFromQuery())
+  }
+)
 
 const refreshArticle = () => {
   if (article.value) void screeningStore.loadArticle(projectId.value, article.value.id)
@@ -331,7 +348,7 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
 
 <template>
   <div
-    class="flex flex-col gap-3 pb-[calc(7rem+env(safe-area-inset-bottom))] lg:h-[calc(100vh-12.5rem)] lg:min-h-[32rem] lg:pb-0"
+    class="flex flex-col gap-3 pb-[calc(7rem+env(safe-area-inset-bottom))] lg:h-[calc(100vh-7rem)] lg:min-h-[32rem] lg:pb-0"
   >
     <ScreeningToolbar
       :project-id="projectId"

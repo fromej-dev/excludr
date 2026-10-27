@@ -28,8 +28,8 @@ const handleLogout = () => {
 
 <template>
   <header class="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-    <div class="container flex h-16 items-center justify-between px-4">
-      <div class="flex items-center gap-6">
+    <div class="container flex h-16 items-center justify-between gap-2 px-4">
+      <div class="flex min-w-0 items-center gap-3 sm:gap-6">
         <router-link to="/" class="flex items-center space-x-2">
           <span class="text-xl font-bold">Excludr</span>
         </router-link>
@@ -40,7 +40,7 @@ const handleLogout = () => {
         </nav>
       </div>
 
-      <div class="flex items-center gap-4">
+      <div class="flex shrink-0 items-center gap-2 sm:gap-4">
         <div role="group" aria-label="Colour theme" class="inline-flex rounded-md border bg-card p-0.5" data-testid="theme-toggle">
           <button
             v-for="o in themeOptions"
@@ -68,8 +68,8 @@ const handleLogout = () => {
           </button>
         </div>
         <template v-if="authStore.isAuthenticated">
-          <span class="text-sm text-muted-foreground">{{ authStore.user?.name }}</span>
-          <Button variant="ghost" size="sm" @click="handleLogout">
+          <span class="hidden max-w-40 truncate text-sm text-muted-foreground md:inline" :title="authStore.user?.name">{{ authStore.user?.name }}</span>
+          <Button variant="ghost" size="sm" class="px-2 sm:px-3" @click="handleLogout">
             Logout
           </Button>
         </template>

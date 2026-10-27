@@ -55,10 +55,10 @@ test.describe('Project Management Flow', () => {
     await expect(page.getByRole('heading', { name: 'Navigate Test Project', level: 2 })).toBeVisible()
 
     // Verify tab navigation is visible
-    for (const name of ['Overview', 'Criteria', 'Articles', 'Screening']) {
-      await expect(page.getByRole('tab', { name, exact: true })).toBeVisible()
+    for (const name of ['Overview', 'Criteria', 'Articles', 'Title/abstract']) {
+      await expect(page.getByRole('link', { name: new RegExp(`^${name.replace('/', '\\/')}`) })).toBeVisible()
     }
-    await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('link', { name: /^Overview/ })).toHaveAttribute('aria-current', 'page')
   })
 
   test('should edit project details', async ({ page, pageHelper, testUser, api }) => {
@@ -162,24 +162,24 @@ test.describe('Project Management Flow', () => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(project.id, 'overview')
 
-    const tab = (name: string) => page.getByRole('tab', { name, exact: true })
+    const tab = (name: string) => page.getByRole('link', { name: new RegExp(`^${name.replace('/', '\\/')}`) })
 
     // Navigate to Criteria tab
     await tab('Criteria').click()
     await expect(page).toHaveURL(`/projects/${project.id}/criteria`)
-    await expect(tab('Criteria')).toHaveAttribute('aria-selected', 'true')
+    await expect(tab('Criteria')).toHaveAttribute('aria-current', 'page')
     await expect(page.getByRole('heading', { name: 'Inclusion Criteria' })).toBeVisible()
 
     // Navigate to Articles tab
     await tab('Articles').click()
     await expect(page).toHaveURL(`/projects/${project.id}/articles`)
-    await expect(tab('Articles')).toHaveAttribute('aria-selected', 'true')
+    await expect(tab('Articles')).toHaveAttribute('aria-current', 'page')
     await expect(page.getByRole('button', { name: 'Clear Filters' })).toBeVisible()
 
     // Navigate to Screening tab
-    await tab('Screening').click()
-    await expect(page).toHaveURL(`/projects/${project.id}/screening`)
-    await expect(tab('Screening')).toHaveAttribute('aria-selected', 'true')
+    await tab('Title/abstract').click()
+    await expect(page).toHaveURL(`/projects/${project.id}/screening?stage=title_abstract`)
+    await expect(tab('Title/abstract')).toHaveAttribute('aria-current', 'page')
     // The AI batch card now lives in a dialog opened from the screening toolbar
     await page.getByTestId('ai-batch-open').click()
     await expect(page.getByTestId('ai-batch-card')).toBeVisible()
@@ -189,7 +189,7 @@ test.describe('Project Management Flow', () => {
     // Navigate back to Overview
     await tab('Overview').click()
     await expect(page).toHaveURL(`/projects/${project.id}`)
-    await expect(tab('Overview')).toHaveAttribute('aria-selected', 'true')
+    await expect(tab('Overview')).toHaveAttribute('aria-current', 'page')
   })
 
   test('should show article count after import', async ({ page, pageHelper, testUser, api }) => {
