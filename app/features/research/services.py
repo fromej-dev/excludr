@@ -73,8 +73,12 @@ class ArticleService:
 
         if stage == SStage.title_abstract:
             if decision == ScreeningDecisionType.include.value or decision == "include":
-                # Move to awaiting full text
-                article.status = ArticleStatus.awaiting_full_text
+                # Move to full text; skip retrieval if a full text was already uploaded
+                article.status = (
+                    ArticleStatus.full_text_retrieved
+                    if article.full_text_retrieved
+                    else ArticleStatus.awaiting_full_text
+                )
                 article.current_stage = ScreeningStage.full_text
             elif (
                 decision == ScreeningDecisionType.exclude.value or decision == "exclude"
@@ -110,6 +114,10 @@ class ArticleService:
         """
         Mark an article as having its full text retrieved.
 
+        Only an article waiting for its full text moves to ``full_text_retrieved``;
+        for any other article (still at title/abstract, or already decided) the
+        full text is stored without changing where it is in the pipeline.
+
         Args:
             article: The article to update.
             full_text_path: Path to the stored PDF file (None for text-only retrieval).
@@ -124,7 +132,8 @@ class ArticleService:
         article.full_text_content = full_text_content
         article.full_text_source = source
         article.full_text_retrieval_error = None
-        article.status = ArticleStatus.full_text_retrieved
+        if article.status == ArticleStatus.awaiting_full_text:
+            article.status = ArticleStatus.full_text_retrieved
         self.session.add(article)
         self.session.commit()
         self.session.refresh(article)

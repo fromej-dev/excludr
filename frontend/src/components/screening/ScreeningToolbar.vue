@@ -41,14 +41,21 @@ onUnmounted(() => aiBatch.unsubscribe())
 
 const aiOpen = ref(false)
 
-/** Screened count for the CURRENT stage. */
+/**
+ * Progress of the CURRENT stage: articles whose stage is settled, out of the articles in that stage.
+ * Title/abstract: of every article that entered screening. Full text: of the articles that passed
+ * title/abstract (including those still waiting for their full text).
+ */
 const screened = computed(() => {
   if (!props.stats) return 0
-  return props.stage === 'full_text' ? props.stats.screened_full_text : props.stats.screened_title_abstract
+  return props.stage === 'full_text' ? props.stats.full_text_completed : props.stats.title_abstract_completed
 })
-const totalArticles = computed(() => props.stats?.total_articles ?? 0)
+const stageTotal = computed(() => {
+  if (!props.stats) return 0
+  return props.stage === 'full_text' ? props.stats.full_text_eligible : props.stats.title_abstract_total
+})
 const percent = computed(() =>
-  totalArticles.value ? Math.round((screened.value / totalArticles.value) * 100) : 0
+  stageTotal.value ? Math.min(100, Math.round((screened.value / stageTotal.value) * 100)) : 0
 )
 </script>
 
@@ -78,7 +85,7 @@ const percent = computed(() =>
       <Progress :value="percent" size="sm" class="max-w-xs" />
       <span class="whitespace-nowrap text-sm text-muted-foreground">
         <span class="font-semibold text-foreground" data-testid="screened-count">{{ screened }}</span>
-        / {{ totalArticles }} screened
+        / <span data-testid="stage-total">{{ stageTotal }}</span> screened
       </span>
     </div>
     <div v-else class="flex-1" />

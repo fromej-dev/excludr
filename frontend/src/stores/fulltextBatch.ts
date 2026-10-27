@@ -31,6 +31,8 @@ export const useFulltextBatchStore = defineStore('fulltextBatch', () => {
     const data = msg.data
     if (!data || projectId.value === null) return
     if (msg.room && msg.room !== `project_${projectId.value}` && !msg.room.startsWith('user_')) return
+    // Batch events name their project; the copy sent to the user's own room may be another project's
+    if (typeof data.project_id === 'number' && data.project_id !== projectId.value) return
     if (data.type === 'fulltext_progress') {
       running.value = true
       retrieved.value = num(data.retrieved)

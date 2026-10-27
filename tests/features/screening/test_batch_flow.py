@@ -102,11 +102,15 @@ async def test_flow_screens_all_and_notifies(
     assert all(
         c.kwargs["room_name"] == f"project_{project.id}" for c in room.await_args_list
     )
+    assert all(
+        c.kwargs["data"]["project_id"] == project.id for c in room.await_args_list
+    )
     last = room.await_args_list[-1].kwargs["data"]
     assert last["type"] == "ai_screening_complete"
     assert (last["screened"], last["total"], last["errors"]) == (3, 3, 0)
     user_notify.assert_awaited_once()
     assert user_notify.await_args.kwargs["data"]["type"] == "ai_screening_complete"
+    assert user_notify.await_args.kwargs["data"]["project_id"] == project.id
 
 
 @pytest.mark.asyncio

@@ -5,8 +5,6 @@ import Card from '@/components/ui/Card.vue'
 
 interface Props {
   stats: ScreeningStats | null
-  /** Full texts ready to screen for the signed-in user (adds to the "retrieved" count); null when unknown. */
-  pendingFullText: number | null
 }
 
 const props = defineProps<Props>()
@@ -17,26 +15,59 @@ interface Step {
   key: string
   label: string
   count: number
+  /** What `count` is out of. */
+  of: number
   note?: string
   tone: Tone
 }
 
 const total = computed(() => props.stats?.total_articles ?? 0)
 
+const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
+const join = (parts: Array<string | false>): string | undefined => parts.filter(Boolean).join(' · ') || undefined
+
 const steps = computed<Step[]>(() => {
   const s = props.stats
   if (!s) return []
   return [
-    { key: 'imported', label: 'Imported', count: s.total_articles, tone: 'neutral' },
-    { key: 'ta', label: 'Title/abstract screened', count: s.screened_title_abstract, tone: 'ai' },
+    {
+      key: 'imported',
+      label: 'Entered screening',
+      count: s.title_abstract_total,
+      of: s.total_articles,
+      note: join([s.imported_not_started > 0 && `${s.imported_not_started} imported, not started`]),
+      tone: 'neutral',
+    },
+    {
+      key: 'ta',
+      label: 'Title/abstract screened',
+      count: s.title_abstract_completed,
+      of: s.title_abstract_total,
+      note: join([
+        s.title_abstract_completed > 0 && `${s.full_text_eligible} passed · ${s.excluded_title_abstract} excluded`,
+        s.awaiting_screening > 0 && `${s.awaiting_screening} open`,
+      ]),
+      tone: 'ai',
+    },
     {
       key: 'ft-retrieved',
       label: 'Full text retrieved',
-      count: s.screened_full_text + (props.pendingFullText ?? 0),
-      note: s.awaiting_full_text > 0 ? `${s.awaiting_full_text} awaiting` : undefined,
+      count: s.full_text_retrieved,
+      of: s.full_text_eligible,
+      note: join([s.awaiting_full_text > 0 && `${s.awaiting_full_text} awaiting retrieval`]),
       tone: 'ai',
     },
-    { key: 'ft', label: 'Full text screened', count: s.screened_full_text, tone: 'ai' },
+    {
+      key: 'ft',
+      label: 'Full text screened',
+      count: s.full_text_completed,
+      of: s.full_text_eligible,
+      note: join([
+        s.full_text_completed > 0 && `${s.included} included · ${s.excluded_full_text} excluded`,
+        s.awaiting_full_text_screening > 0 && `${plural(s.awaiting_full_text_screening, 'full text', 'full texts')} to screen`,
+      ]),
+      tone: 'ai',
+    },
   ]
 })
 
@@ -48,6 +79,12 @@ const outcomes = computed(() => {
     { key: 'excluded', label: 'Excluded', count: s.excluded, tone: 'exclude' as Tone },
     { key: 'uncertain', label: 'Uncertain', count: s.uncertain, tone: 'uncertain' as Tone },
   ]
+})
+
+/** Articles still open somewhere in the pipeline (not included or excluded yet). */
+const open = computed(() => {
+  const s = props.stats
+  return s ? s.total_articles - s.included - s.excluded : 0
 })
 
 const barClass: Record<Tone, string> = {
@@ -65,7 +102,8 @@ const chipClass: Record<Tone, string> = {
   uncertain: 'bg-uncertain-soft text-uncertain-soft-foreground',
 }
 
-const pct = (n: number): string => (total.value > 0 ? `${Math.min(100, Math.round((n / total.value) * 100))}%` : '0%')
+const pct = (n: number, of: number = total.value): string =>
+  of > 0 ? `${Math.min(100, Math.round((n / of) * 100))}%` : '0%'
 </script>
 
 <template>
@@ -82,7 +120,10 @@ const pct = (n: number): string => (total.value > 0 ? `${Math.min(100, Math.roun
             <span class="text-sm font-medium"><span class="text-muted-foreground">{{ i + 1 }}.</span> {{ step.label }}</span>
           </div>
           <p class="mt-1 text-2xl font-bold tabular-nums">
-            {{ step.count }}<span class="text-sm font-normal text-muted-foreground"> / {{ total }}</span>
+            <span data-testid="progress-count">{{ step.count }}</span
+            ><span class="text-sm font-normal text-muted-foreground">
+              / <span data-testid="progress-of">{{ step.of }}</span></span
+            >
           </p>
           <div
             class="mt-1 h-2 overflow-hidden rounded-full bg-muted"
@@ -90,9 +131,9 @@ const pct = (n: number): string => (total.value > 0 ? `${Math.min(100, Math.roun
             :aria-label="step.label"
             :aria-valuenow="step.count"
             aria-valuemin="0"
-            :aria-valuemax="total"
+            :aria-valuemax="step.of"
           >
-            <div class="h-full rounded-full" :class="barClass[step.tone]" :style="{ width: pct(step.count) }" />
+            <div class="h-full rounded-full" :class="barClass[step.tone]" :style="{ width: pct(step.count, step.of) }" />
           </div>
           <p v-if="step.note" class="mt-1 text-xs text-muted-foreground">{{ step.note }}</p>
         </li>
@@ -114,6 +155,13 @@ const pct = (n: number): string => (total.value > 0 ? `${Math.min(100, Math.roun
             {{ o.label }} <strong class="tabular-nums">{{ o.count }}</strong>
           </li>
         </ul>
+        <p class="mt-2 text-xs text-muted-foreground" data-testid="progress-outcome-note">
+          {{ stats.excluded_title_abstract }} excluded at title/abstract · {{ stats.excluded_full_text }} at full text<template
+            v-if="open > 0"
+          >
+            · {{ open }} still open</template
+          ><template v-if="stats.uncertain > 0"> (incl. {{ stats.uncertain }} marked uncertain)</template>
+        </p>
       </div>
     </template>
   </Card>

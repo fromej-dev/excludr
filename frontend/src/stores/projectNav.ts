@@ -47,9 +47,13 @@ export const useProjectNavStore = defineStore('projectNav', () => {
     if (projectId.value === id) apply()
   }
 
+  // Pending counts are refreshed often while bulk jobs run; never let an older response win
+  let screeningSeq = 0
   const refreshScreening = async (id: number) => {
     projectId.value = id
+    const mine = ++screeningSeq
     const [ta, ft] = await Promise.all([fetchPending(id, 'title_abstract'), fetchPending(id, 'full_text')])
+    if (mine !== screeningSeq) return
     ifCurrent(id, () => {
       pendingTitleAbstract.value = ta
       pendingFullText.value = ft

@@ -6,6 +6,7 @@ import { useCriteriaStore } from '@/stores/criteria'
 import { useMembersStore } from '@/stores/members'
 import { useAuthStore } from '@/stores/auth'
 import { useProjectNavStore } from '@/stores/projectNav'
+import { useProjectStatsStore } from '@/stores/projectStats'
 import { useWebSocketStore } from '@/stores/websocket'
 import type { ScreeningDecisionType, ScreeningStage } from '@/types'
 import Card from '@/components/ui/Card.vue'
@@ -22,6 +23,7 @@ const route = useRoute()
 const router = useRouter()
 const navStore = useProjectNavStore()
 const screeningStore = useScreeningStore()
+const statsStore = useProjectStatsStore()
 const criteriaStore = useCriteriaStore()
 const membersStore = useMembersStore()
 const authStore = useAuthStore()
@@ -45,7 +47,7 @@ const myDecision = ref<ScreeningDecisionType | null>(null)
 const history = ref<number[]>([])
 const pos = ref(-1)
 
-const stats = computed(() => screeningStore.stats)
+const stats = computed(() => statsStore.stats)
 const evaluations = computed(() => normalizeEvaluations(aiDecision.value?.criteria_evaluations))
 
 const articlePane = ref<HTMLElement | null>(null)
@@ -149,7 +151,7 @@ const submitDecision = async (decision: ScreeningDecisionType) => {
   }
   const decidedId = article.value.id
   const decidedTitle = article.value.title || 'Untitled'
-  await Promise.all([screeningStore.fetchStats(projectId.value), navStore.refreshScreening(projectId.value)])
+  await Promise.all([statsStore.fetch(projectId.value), navStore.refreshScreening(projectId.value)])
   const toastId = wsStore.addNotification(
     `${decisionPast[decision]}: ${truncate(decidedTitle, TITLE_MAX)}`,
     'success',
@@ -229,8 +231,8 @@ const refreshArticle = () => {
   if (article.value) void screeningStore.loadArticle(projectId.value, article.value.id)
 }
 
+// Stats are refreshed by ProjectView when a batch completes; only the open article's AI verdict is ours
 const onBatchFinished = async () => {
-  await screeningStore.fetchStats(projectId.value)
   if (article.value) await screeningStore.fetchAiDecision(projectId.value, article.value.id)
 }
 
@@ -283,7 +285,6 @@ watch(
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
   await criteriaStore.fetchCriteria(projectId.value)
-  await screeningStore.fetchStats(projectId.value)
 })
 
 onUnmounted(() => {

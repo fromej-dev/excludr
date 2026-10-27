@@ -5,7 +5,6 @@ import type {
   Article,
   ScreeningDecision,
   ScreeningDecisionCreate,
-  ScreeningStats,
   ScreeningStage,
   NextArticleResponse,
   PaginatedResponse,
@@ -19,7 +18,6 @@ export const useScreeningStore = defineStore('screening', () => {
 
   const currentArticle = ref<Article | null>(null)
   const decisions = ref<ScreeningDecision[]>([])
-  const stats = ref<ScreeningStats | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
   const aiDecision = ref<ScreeningDecision | null>(null)
@@ -31,20 +29,17 @@ export const useScreeningStore = defineStore('screening', () => {
   const setupWebSocketListeners = () => {
     const wsStore = useWebSocketStore()
 
+    // Stats are kept live by ProjectView (see useProjectLiveUpdates); here only the open article matters
     wsUnsubscribe = wsStore.onMessage('*', async (response: WebSocketResponse) => {
-      // Handle screening decision updates
-      if (response.data?.event === 'screening_decision' && response.data?.project_id) {
-        await fetchStats(response.data.project_id)
-      }
-
-      // Handle AI screening completion
-      if (response.data?.event === 'ai_screening_complete' && response.data?.project_id) {
-        await fetchStats(response.data.project_id)
-
-        // If the completed article is the current one, refresh AI decision
-        if (response.data?.article_id && currentArticle.value?.id === response.data.article_id) {
-          await fetchAiDecision(response.data.project_id, response.data.article_id)
-        }
+      const data = response.data
+      // The AI batch just screened the article on screen: show its verdict
+      if (
+        data?.type === 'ai_screening_progress' &&
+        typeof data.project_id === 'number' &&
+        data.project_id === currentArticle.value?.project_id &&
+        data.article_id === currentArticle.value?.id
+      ) {
+        await fetchAiDecision(data.project_id, data.article_id)
       }
     })
   }
@@ -147,19 +142,6 @@ export const useScreeningStore = defineStore('screening', () => {
     }
   }
 
-  const fetchStats = async (projectId: number) => {
-    loading.value = true
-    error.value = null
-
-    try {
-      stats.value = await get<ScreeningStats>(`/projects/${projectId}/screening/stats`)
-    } catch (err: unknown) {
-      error.value = getErrorMessage(err, 'Failed to fetch screening stats')
-    } finally {
-      loading.value = false
-    }
-  }
-
   const triggerAiScreening = async (projectId: number, articleId: number) => {
     aiScreeningLoading.value = true
     error.value = null
@@ -207,7 +189,6 @@ export const useScreeningStore = defineStore('screening', () => {
   return {
     currentArticle,
     decisions,
-    stats,
     loading,
     error,
     aiDecision,
@@ -215,7 +196,6 @@ export const useScreeningStore = defineStore('screening', () => {
     fetchNextArticle,
     submitDecision,
     fetchDecisions,
-    fetchStats,
     triggerAiScreening,
     loadArticle,
     fetchQueueIds,

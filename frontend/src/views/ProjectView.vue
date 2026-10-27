@@ -5,6 +5,8 @@ import { useProjectsStore } from '@/stores/projects'
 import { useMembersStore } from '@/stores/members'
 import { useConflictsStore } from '@/stores/conflicts'
 import { useProjectNavStore } from '@/stores/projectNav'
+import { useProjectStatsStore } from '@/stores/projectStats'
+import { useProjectLiveUpdates } from '@/composables/useProjectLiveUpdates'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ProjectSidebar from '@/components/layout/ProjectSidebar.vue'
 
@@ -13,6 +15,7 @@ const projectsStore = useProjectsStore()
 const membersStore = useMembersStore()
 const conflictsStore = useConflictsStore()
 const navStore = useProjectNavStore()
+const statsStore = useProjectStatsStore()
 
 const projectId = computed(() => Number(route.params.id))
 
@@ -22,6 +25,7 @@ watch(
   (id) => {
     membersStore.reset()
     navStore.reset()
+    statsStore.reset()
     projectsStore.fetchProject(id)
     membersStore.fetchMyRole(id)
     membersStore.fetchMembers(id)
@@ -39,6 +43,16 @@ const refreshNav = () => {
   void navStore.refresh(projectId.value, { canReview: membersStore.canReview, isOwner: membersStore.isOwner })
 }
 watch(() => [projectId.value, membersStore.role, route.name, route.params.articleId], refreshNav, { immediate: true })
+
+// Screening stats (Overview progress, next step, screening toolbar): load per project and refresh on
+// every page change within it, keeping the last numbers on screen while the refresh runs
+watch([projectId, () => route.name], () => void statsStore.fetch(projectId.value), { immediate: true })
+
+// While a bulk job (full-text retrieval, AI batch) runs, keep stats and sidebar counts live
+useProjectLiveUpdates(projectId, (id) => {
+  void statsStore.fetch(id)
+  if (membersStore.canReview) void navStore.refreshScreening(id)
+})
 
 // Keep the conflicts badge in step when conflicts are resolved on the Conflicts page
 watch(

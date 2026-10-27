@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useProjectsStore } from '@/stores/projects'
 import { useRoute, useRouter } from 'vue-router'
@@ -14,7 +14,7 @@ import ImportCard from '@/components/projects/ImportCard.vue'
 import FullTextBatchCard from '@/components/articles/FullTextBatchCard.vue'
 import ReviewSettingsCard from '@/components/projects/ReviewSettingsCard.vue'
 import { useMembersStore } from '@/stores/members'
-import { useScreeningStore } from '@/stores/screening'
+import { useProjectStatsStore } from '@/stores/projectStats'
 import { useProjectNavStore } from '@/stores/projectNav'
 import NextStepCard from '@/components/overview/NextStepCard.vue'
 import ReviewProgress from '@/components/overview/ReviewProgress.vue'
@@ -27,9 +27,8 @@ const router = useRouter()
 const projectsStore = useProjectsStore()
 const membersStore = useMembersStore()
 
-const screeningStore = useScreeningStore()
+const statsStore = useProjectStatsStore()
 const navStore = useProjectNavStore()
-const { stats } = storeToRefs(screeningStore)
 const { pendingTitleAbstract, pendingFullText, conflicts, criteria } = storeToRefs(navStore)
 
 
@@ -70,16 +69,10 @@ const cancelEdit = () => {
   isEditing.value = false
 }
 
-const statsReady = ref(false)
-const loadStats = async () => {
-  statsReady.value = false
-  screeningStore.stats = null
-  await screeningStore.fetchStats(projectId.value)
-  statsReady.value = true
-}
-watch(projectId, loadStats, { immediate: true })
-
-const currentStats = computed(() => (statsReady.value ? stats.value : null))
+// Stats live in a shared store that ProjectView loads and keeps current while bulk jobs run
+const statsReady = computed(() => statsStore.projectId === projectId.value && statsStore.settled)
+const currentStats = computed(() => (statsReady.value ? statsStore.stats : null))
+const loadStats = () => statsStore.fetch(projectId.value, { clear: true })
 
 const nextStep = computed(() =>
   computeNextStep({
@@ -134,7 +127,7 @@ const scrollToSection = async (id: string) => {
 // Refresh the project (article count), stats and sidebar counts after an import
 const onImported = async () => {
   await projectsStore.fetchProject(projectId.value)
-  void loadStats()
+  void statsStore.fetch(projectId.value)
   if (membersStore.canReview) void navStore.refreshScreening(projectId.value)
 }
 
@@ -209,7 +202,7 @@ const handleDelete = async () => {
 
     <NextStepCard :step="nextStep" @anchor="scrollToSection" @retry="retryNextStep" />
 
-    <ReviewProgress :stats="currentStats" :pending-full-text="pendingFullText" />
+    <ReviewProgress :stats="currentStats" />
 
     <SetupChecklist v-if="showChecklist" :items="checklist" @anchor="scrollToSection" />
 

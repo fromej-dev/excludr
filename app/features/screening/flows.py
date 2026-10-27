@@ -84,7 +84,7 @@ async def batch_ai_screening_flow(
         ) or DEFAULT_REVIEW_QUESTION
 
         for article_id in article_ids:
-            data: dict[str, Any] = {"article_id": article_id}
+            data: dict[str, Any] = {"project_id": project_id, "article_id": article_id}
             try:
                 article = session.get(Article, article_id)
                 if article is None or article.project_id != project_id:
@@ -142,7 +142,7 @@ async def batch_ai_screening_flow(
     await _notify(
         project_id,
         f"AI screening complete: {screened} screened, {errors} failed",
-        {"type": "ai_screening_complete", **summary},
+        {"type": "ai_screening_complete", "project_id": project_id, **summary},
         NotificationLevel.WARNING if errors else NotificationLevel.SUCCESS,
         user_id=user_id,
     )

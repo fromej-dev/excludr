@@ -106,11 +106,14 @@ async def test_flow_isolates_failures_and_notifies(
     assert progress[0]["source"] == "unpaywall"
     assert progress[1]["success"] is False
     assert "secret" not in str(payloads)
+    # Every message names its project so clients can ignore other projects' events
+    assert all(p["project_id"] == project.id for p in payloads)
     final = payloads[-1]
     assert final["type"] == "fulltext_complete"
     assert (final["retrieved"], final["errors"], final["total"]) == (1, 3, 4)
     user_notify.assert_awaited_once()
     assert user_notify.await_args.kwargs["data"]["type"] == "fulltext_complete"
+    assert user_notify.await_args.kwargs["data"]["project_id"] == project.id
 
     actions = [
         e.action

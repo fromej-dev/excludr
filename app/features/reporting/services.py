@@ -256,41 +256,35 @@ class ReportingService:
             .where(ImportBatch.project_id == project.id)
             .order_by(ImportBatch.created_at, ImportBatch.id)
         ).all()
-        articles = self.session.exec(
-            select(Article).where(Article.project_id == project.id)
-        ).all()
+        # Stage counts share one definition with the screening stats endpoint.
+        stats = self.screening.get_screening_stats(project.id)
 
         if batches:
             identified = sum(b.records_found for b in batches)
             duplicates = sum(b.duplicates for b in batches)
         else:  # articles added without a tracked import
-            identified, duplicates = len(articles), 0
+            identified, duplicates = stats.total_articles, 0
 
         exclusions = self._exclusion_outcomes(project)
         codes = self._exclusion_codes(project.id)
-
-        screened = excluded_ta = sought = not_retrieved = excluded_ft = included = 0
+        excluded_ids = self.session.exec(
+            select(Article.id).where(
+                Article.project_id == project.id,
+                Article.status == ArticleStatus.excluded,
+            )
+        ).all()
         reasons: Counter[str] = Counter()
-        for a in articles:
-            if a.status != ArticleStatus.imported:
-                screened += 1
-            if a.status == ArticleStatus.included:
-                included += 1
-            ex = exclusions.get(a.id) if a.status == ArticleStatus.excluded else None
-            if a.status == ArticleStatus.excluded:
-                at_ft = ex is not None and ex[0] == ScreeningStage.full_text
-                if not at_ft:
-                    excluded_ta += 1
-                    continue
-                excluded_ft += 1
+        for article_id in excluded_ids:
+            ex = exclusions.get(article_id)
+            if ex is not None and ex[0] == ScreeningStage.full_text:
                 reasons[self._reason_of(ex[1], codes) or UNSPECIFIED_REASON] += 1
-            # Past title/abstract: waiting for / in / done with full-text review.
-            if a.current_stage == ScreeningStage.full_text or (
-                a.current_stage == ScreeningStage.completed
-            ):
-                sought += 1
-            if a.status == ArticleStatus.awaiting_full_text:
-                not_retrieved += 1
+
+        screened = stats.title_abstract_total
+        excluded_ta = stats.excluded_title_abstract
+        sought = stats.full_text_eligible
+        not_retrieved = stats.awaiting_full_text
+        excluded_ft = stats.excluded_full_text
+        included = stats.included
 
         return PrismaFlow(
             identification=PrismaIdentification(

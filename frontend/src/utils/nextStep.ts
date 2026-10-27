@@ -138,7 +138,14 @@ export function computeNextStep(i: NextStepInput): NextStep | null {
     (owner && i.conflicts === null)
   if (unknown && (reviewer || i.stats === null)) return UNAVAILABLE
 
-  const stillOpen = (i.stats?.awaiting_screening ?? 0) > 0 || awaiting > 0
+  // Anything not yet included/excluded keeps the review open: not-started imports, title/abstract
+  // screening (incl. second reviewers and conflicts), full texts to retrieve and full texts to screen
+  const s = i.stats
+  const stillOpen =
+    s !== null &&
+    (s.imported_not_started > 0 ||
+      s.title_abstract_completed < s.title_abstract_total ||
+      s.full_text_completed < s.full_text_eligible)
   if (!reviewer && stillOpen) {
     return {
       kind: 'waiting',

@@ -104,22 +104,34 @@ test.describe('Screening Workflow', () => {
     await expect(page.getByText('Excluded', { exact: true })).toBeVisible()
   })
 
-  test('should use full-text screened count when on the full text stage', async ({ page, pageHelper, testUser }) => {
+  test('should show per-stage progress (full text out of articles that passed title/abstract)', async ({
+    page,
+    pageHelper,
+    testUser,
+  }) => {
     await pageHelper.loginDirect(testUser.token)
-    // Stats are mocked so the two stages report different counts
+    // Stats are mocked so the two stages report different counts and denominators
     await page.route('**/screening/stats', async (route) => {
       const res = await route.fetch()
       const body = await res.json()
-      const data = { ...(body.data ?? body), screened_title_abstract: 2, screened_full_text: 4 }
+      const data = {
+        ...(body.data ?? body),
+        title_abstract_total: 5,
+        title_abstract_completed: 2,
+        full_text_eligible: 3,
+        full_text_completed: 1,
+      }
       await route.fulfill({ response: res, json: body.data ? { ...body, data } : data })
     })
     await pageHelper.goToProjectTab(projectId, 'screening')
     await page.getByTestId('article-title').waitFor({ timeout: 10000 })
 
-    await expect(page.getByTestId('screened-count')).toHaveText('2')
+    await expect(page.getByTestId('screening-progress')).toContainText('2 / 5 screened')
     await page.getByRole('tab', { name: 'Full text' }).click()
     await expect(page.getByRole('tab', { name: 'Full text' })).toHaveAttribute('aria-selected', 'true')
-    await expect(page.getByTestId('screened-count')).toHaveText('4')
+    await expect(page.getByTestId('screened-count')).toHaveText('1')
+    await expect(page.getByTestId('stage-total')).toHaveText('3')
+    await expect(page.getByTestId('screening-progress')).toContainText('1 / 3 screened')
   })
 
   test('should undo the last decision via the toast', async ({ page, pageHelper, testUser }) => {
