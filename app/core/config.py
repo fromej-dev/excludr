@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     upload_directory: str = "/tmp/ris_uploads"
     pdf_storage_path: str = "/tmp/pdfs"
 
+    # Built frontend (vite `dist/`) to serve from the API; unset in development
+    frontend_dist_path: Optional[str] = None
+
     model_config = SettingsConfigDict(env_file=".env")
 
     # Prefect settings
