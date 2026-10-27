@@ -1,212 +1,205 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import { useArticlesStore } from '@/stores/articles'
-import type { ArticleStatus, FinalDecision } from '@/types'
-import Card from '@/components/ui/Card.vue'
-import Badge from '@/components/ui/Badge.vue'
-import Select from '@/components/ui/Select.vue'
-import Label from '@/components/ui/Label.vue'
+import { useMembersStore } from '@/stores/members'
+import { useWebSocketStore } from '@/stores/websocket'
 import Button from '@/components/ui/Button.vue'
+import ArticlesToolbar from '@/components/articles/ArticlesToolbar.vue'
+import ArticlesTable from '@/components/articles/ArticlesTable.vue'
+import ArticlesPagination from '@/components/articles/ArticlesPagination.vue'
+import ArticlesBulkBar from '@/components/articles/ArticlesBulkBar.vue'
+import { useArticleListQuery, toListOptions } from '@/components/articles/useArticleListQuery'
 
 const route = useRoute()
 const router = useRouter()
 const articlesStore = useArticlesStore()
+const membersStore = useMembersStore()
+const wsStore = useWebSocketStore()
+const { articles, pagination, loading, error } = storeToRefs(articlesStore)
+const { isOwner } = storeToRefs(membersStore)
 
 const projectId = computed(() => Number(route.params.id))
+const { state, hasFilters, update, clearFilters, toggleSort } = useArticleListQuery()
 
-const statusFilter = ref<ArticleStatus | ''>('')
-const decisionFilter = ref<FinalDecision | ''>('')
-const currentPage = ref(1)
+// Selection (owner bulk actions). Cleared whenever the result set changes.
+const selected = ref<Set<number>>(new Set())
+const retrieving = ref(false)
 
-const statusOptions = [
-  { value: '', label: 'All Statuses' },
-  { value: 'imported', label: 'Imported' },
-  { value: 'screening', label: 'Screening' },
-  { value: 'awaiting_full_text', label: 'Awaiting Full Text' },
-  { value: 'full_text_retrieved', label: 'Full Text Retrieved' },
-  { value: 'included', label: 'Included' },
-  { value: 'excluded', label: 'Excluded' },
-]
+// Avoid flashing the empty state (or another project's rows) before the first response.
+const hasFetched = ref(false)
+articlesStore.articles = []
 
-const decisionOptions = [
-  { value: '', label: 'All Decisions' },
-  { value: 'pending', label: 'Pending' },
-  { value: 'included', label: 'Included' },
-  { value: 'excluded', label: 'Excluded' },
-]
-
-const fetchArticles = () => {
-  articlesStore.fetchArticles(projectId.value, {
-    status: statusFilter.value || undefined,
-    final_decision: decisionFilter.value || undefined,
-    page: currentPage.value,
-  })
+const fetchArticles = async () => {
+  await articlesStore.fetchArticles(projectId.value, toListOptions(state.value))
+  hasFetched.value = true
 }
 
-onMounted(() => {
-  fetchArticles()
+// The query string is the single source of truth: any change refetches.
+watch(
+  () => [route.name, route.params.id, route.query] as const,
+  ([name]) => {
+    if (name !== 'project-articles') return
+    fetchArticles()
+  },
+  { deep: true },
+)
+
+// Filters/sort/page changes invalidate the selection.
+watch(
+  () => JSON.stringify(route.query),
+  () => {
+    selected.value = new Set()
+  },
+)
+
+// Keep the page in range (e.g. after shrinking results or a stale ?page=).
+watch(
+  () => [loading.value, pagination.value.pages] as const,
+  ([isLoading, pages]) => {
+    if (!isLoading && pages > 0 && state.value.page > pages) update({ page: pages })
+  },
+)
+
+// Returning from an article via its "Back" button lands on a bare URL, so remember
+// the list query when leaving for a detail page and restore it once.
+const RESTORE_KEY = 'excludr_articles_query'
+
+onBeforeRouteLeave((to) => {
+  if (to.name === 'article-detail') {
+    sessionStorage.setItem(
+      RESTORE_KEY,
+      JSON.stringify({ projectId: projectId.value, query: route.query }),
+    )
+  }
 })
 
-watch([statusFilter, decisionFilter], () => {
-  currentPage.value = 1
+onMounted(() => {
+  const raw = sessionStorage.getItem(RESTORE_KEY)
+  sessionStorage.removeItem(RESTORE_KEY)
+  if (raw && Object.keys(route.query).length === 0) {
+    try {
+      const saved = JSON.parse(raw) as { projectId: number; query: Record<string, string> }
+      if (saved.projectId === projectId.value && Object.keys(saved.query).length > 0) {
+        router.replace({ query: saved.query })
+        return
+      }
+    } catch {
+      // Ignore corrupt entries
+    }
+  }
   fetchArticles()
 })
 
 const goToArticle = (articleId: number) => {
-  router.push({
-    name: 'article-detail',
-    params: { id: projectId.value, articleId },
-  })
+  router.push({ name: 'article-detail', params: { id: projectId.value, articleId } })
 }
 
-const nextPage = () => {
-  if (currentPage.value < articlesStore.pagination.pages) {
-    currentPage.value++
-    fetchArticles()
+const toggleRow = (id: number) => {
+  const next = new Set(selected.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selected.value = next
+}
+
+const toggleAll = (checked: boolean) => {
+  selected.value = checked ? new Set(articles.value.map((a) => a.id)) : new Set()
+}
+
+const retrieveSelected = async () => {
+  const ids = [...selected.value]
+  if (ids.length === 0) return
+  retrieving.value = true
+  const res = await articlesStore.retrieveFulltext(projectId.value, ids)
+  retrieving.value = false
+  if (!res) {
+    wsStore.addNotification(error.value ?? 'Failed to start full-text retrieval', 'error')
+  } else if (res.count === 0) {
+    wsStore.addNotification('None of the selected articles are awaiting a full text', 'info')
+  } else {
+    wsStore.addNotification(
+      `Full-text retrieval started for ${res.count} of ${ids.length} selected articles`,
+      'success',
+    )
+    selected.value = new Set()
   }
 }
 
-const previousPage = () => {
-  if (currentPage.value > 1) {
-    currentPage.value--
-    fetchArticles()
-  }
-}
-
-const getStatusBadgeVariant = (status: ArticleStatus) => {
-  const variants: Record<ArticleStatus, 'default' | 'secondary' | 'outline' | 'include' | 'exclude'> = {
-    imported: 'outline',
-    screening: 'default',
-    awaiting_full_text: 'secondary',
-    full_text_retrieved: 'default',
-    included: 'include',
-    excluded: 'exclude',
-  }
-  return variants[status] || 'outline'
-}
-
-const getDecisionBadgeVariant = (decision: FinalDecision) => {
-  const variants: Record<FinalDecision, 'include' | 'exclude' | 'outline'> = {
-    pending: 'outline',
-    included: 'include',
-    excluded: 'exclude',
-  }
-  return variants[decision] || 'outline'
-}
+const isEmpty = computed(() => hasFetched.value && !loading.value && !error.value && articles.value.length === 0)
 </script>
 
 <template>
-  <div class="space-y-6">
-    <!-- Filters -->
-    <Card class="p-4">
-      <div class="grid gap-4 md:grid-cols-3">
-        <div class="space-y-2">
-          <Label for="status-filter">Status</Label>
-          <Select id="status-filter" v-model="statusFilter" :options="statusOptions" />
-        </div>
+  <div class="space-y-4">
+    <ArticlesToolbar
+      :state="state"
+      :total="pagination.total"
+      :has-filters="hasFilters"
+      :loading="loading"
+      @update="update"
+      @clear="clearFilters"
+    />
 
-        <div class="space-y-2">
-          <Label for="decision-filter">Decision</Label>
-          <Select id="decision-filter" v-model="decisionFilter" :options="decisionOptions" />
-        </div>
+    <ArticlesBulkBar
+      v-if="isOwner && selected.size > 0"
+      :count="selected.size"
+      :busy="retrieving"
+      @retrieve="retrieveSelected"
+      @clear="selected = new Set()"
+    />
 
-        <div class="flex items-end">
-          <Button
-            variant="outline"
-            @click="() => { statusFilter = ''; decisionFilter = '' }"
-          >
-            Clear Filters
-          </Button>
-        </div>
-      </div>
-    </Card>
+    <p v-if="error" role="alert" class="rounded-md border border-destructive/50 p-3 text-sm text-destructive">
+      {{ error }}
+    </p>
 
-    <!-- Articles List -->
-    <div v-if="articlesStore.loading" class="text-center py-12">
-      <p class="text-muted-foreground">Loading articles...</p>
-    </div>
-
-    <div v-else-if="articlesStore.articles?.length === 0" class="text-center py-12">
-      <p class="text-muted-foreground">No articles found</p>
-    </div>
-
-    <div v-else class="space-y-4">
-      <Card
-        v-for="article in articlesStore.articles"
-        :key="article.id"
-        class="p-4 cursor-pointer hover:shadow-lg transition-shadow"
-        data-testid="article-card"
-        @click="goToArticle(article.id)"
+    <div
+      v-if="isEmpty && !hasFilters"
+      class="rounded-lg border border-dashed py-14 text-center"
+      data-testid="articles-empty"
+    >
+      <p class="font-medium">No articles found</p>
+      <p class="mt-1 text-sm text-muted-foreground">Import a RIS or PubMed file to get started.</p>
+      <router-link
+        :to="{ name: 'project-overview', params: { id: projectId } }"
+        class="mt-4 inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
       >
-        <div class="space-y-3">
-          <div class="flex items-start justify-between gap-4">
-            <h3 class="text-lg font-semibold flex-1" data-testid="article-card-title">
-              {{ article.title || 'Untitled' }}
-            </h3>
-            <div class="flex gap-2 flex-shrink-0">
-              <Badge :variant="getStatusBadgeVariant(article.status)">
-                {{ article.status }}
-              </Badge>
-              <Badge v-if="article.full_text_source" variant="secondary" data-testid="fulltext-source">
-                {{ article.full_text_source }}
-              </Badge>
-              <Badge :variant="getDecisionBadgeVariant(article.final_decision)">
-                {{ article.final_decision }}
-              </Badge>
-            </div>
-          </div>
-
-          <div class="text-sm text-muted-foreground">
-            <p v-if="article.authors.length > 0">
-              {{ article.authors.slice(0, 3).join(', ') }}
-              <span v-if="article.authors.length > 3">et al.</span>
-            </p>
-            <p v-if="article.year || article.journal">
-              <span v-if="article.year">{{ article.year }}</span>
-              <span v-if="article.year && article.journal"> - </span>
-              <span v-if="article.journal">{{ article.journal }}</span>
-            </p>
-          </div>
-
-          <p
-            v-if="article.full_text_retrieval_error && !article.full_text_retrieved"
-            class="text-xs text-destructive"
-            data-testid="fulltext-error"
-          >
-            Full text: {{ article.full_text_retrieval_error }}
-          </p>
-
-          <p v-if="article.abstract" class="text-sm text-muted-foreground line-clamp-2">
-            {{ article.abstract }}
-          </p>
-        </div>
-      </Card>
+        Go to Overview to import
+      </router-link>
     </div>
 
-    <!-- Pagination -->
-    <div v-if="articlesStore.pagination.pages > 1" class="flex items-center justify-between">
-      <p class="text-sm text-muted-foreground">
-        Page {{ currentPage }} of {{ articlesStore.pagination.pages }}
-        ({{ articlesStore.pagination.total }} total)
-      </p>
-
-      <div class="flex gap-2">
-        <Button
-          variant="outline"
-          @click="previousPage"
-          :disabled="currentPage === 1"
-        >
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          @click="nextPage"
-          :disabled="currentPage === articlesStore.pagination.pages"
-        >
-          Next
-        </Button>
-      </div>
+    <div
+      v-else-if="isEmpty"
+      class="rounded-lg border border-dashed py-14 text-center"
+      data-testid="articles-no-matches"
+    >
+      <p class="font-medium">No articles found</p>
+      <p class="mt-1 text-sm text-muted-foreground">Nothing matches the current search and filters.</p>
+      <Button class="mt-4" variant="outline" size="sm" @click="clearFilters">Clear all filters</Button>
     </div>
+
+    <template v-else>
+      <ArticlesTable
+        :articles="articles"
+        :loading="loading"
+        :sort="state.sort"
+        :order="state.order"
+        :selected="selected"
+        :selectable="isOwner"
+        @open="goToArticle"
+        @sort="toggleSort"
+        @toggle-row="toggleRow"
+        @toggle-all="toggleAll"
+      />
+
+      <ArticlesPagination
+        :page="state.page"
+        :per-page="state.perPage"
+        :total="pagination.total"
+        :pages="pagination.pages"
+        :count="articles.length"
+        @update:page="update({ page: $event })"
+        @update:per-page="update({ perPage: $event })"
+      />
+    </template>
   </div>
 </template>

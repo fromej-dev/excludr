@@ -5,14 +5,14 @@ import type {
   Article,
   ArticleStats,
   PaginatedResponse,
-  ArticleStatus,
-  FinalDecision,
+  ArticleListOptions,
+  RetrieveFullTextBulkResponse,
   WebSocketResponse,
 } from '@/types'
 import { useWebSocketStore } from './websocket'
 
 export const useArticlesStore = defineStore('articles', () => {
-  const { get, getRaw } = useApi()
+  const { get, getRaw, post } = useApi()
 
   const articles = ref<Article[]>([])
   const currentArticle = ref<Article | null>(null)
@@ -25,7 +25,9 @@ export const useArticlesStore = defineStore('articles', () => {
   })
   const loading = ref(false)
   const error = ref<string | null>(null)
-  const lastFetchOptions = ref<any>(null)
+  const lastFetchOptions = ref<{ projectId: number; options?: ArticleListOptions } | null>(null)
+  /** Guards against out-of-order responses when filters change quickly. */
+  let requestSeq = 0
 
   // WebSocket integration
   let wsUnsubscribe: (() => void) | null = null
@@ -42,6 +44,11 @@ export const useArticlesStore = defineStore('articles', () => {
         if (lastFetchOptions.value?.projectId === response.data.project_id) {
           await fetchArticles(response.data.project_id, lastFetchOptions.value.options)
         }
+      }
+
+      // A full-text batch finished: statuses and sources changed
+      if (response.data?.type === 'fulltext_complete' && lastFetchOptions.value) {
+        await fetchArticles(lastFetchOptions.value.projectId, lastFetchOptions.value.options)
       }
 
       // Handle upload completion - refresh stats and articles
@@ -62,15 +69,13 @@ export const useArticlesStore = defineStore('articles', () => {
     }
   }
 
-  const fetchArticles = async (
-    projectId: number,
-    options?: {
-      status?: ArticleStatus
-      final_decision?: FinalDecision
-      page?: number
-      per_page?: number
-    }
-  ) => {
+  /**
+   * Fetch one page of articles. Search, decision and sort use the `fastapi_fsp`
+   * query params (`search`/`search_fields`, `field`/`operator`/`value`, `sort_by`/`order`);
+   * `status` and `has_full_text` are explicit endpoint params.
+   */
+  const fetchArticles = async (projectId: number, options?: ArticleListOptions) => {
+    const seq = ++requestSeq
     loading.value = true
     error.value = null
 
@@ -80,7 +85,23 @@ export const useArticlesStore = defineStore('articles', () => {
     try {
       const params = new URLSearchParams()
       if (options?.status) params.append('status', options.status)
-      if (options?.final_decision) params.append('final_decision', options.final_decision)
+      if (options?.has_full_text !== undefined) {
+        params.append('has_full_text', String(options.has_full_text))
+      }
+      if (options?.final_decision) {
+        params.append('field', 'final_decision')
+        params.append('operator', 'eq')
+        params.append('value', options.final_decision)
+      }
+      const search = options?.search?.trim()
+      if (search) {
+        params.append('search', search)
+        params.append('search_fields', 'title,authors,journal')
+      }
+      if (options?.sort_by) {
+        params.append('sort_by', options.sort_by)
+        params.append('order', options.order ?? 'asc')
+      }
       if (options?.page) params.append('page', options.page.toString())
       if (options?.per_page) params.append('per_page', options.per_page.toString())
 
@@ -88,6 +109,7 @@ export const useArticlesStore = defineStore('articles', () => {
       const url = `/projects/${projectId}/articles${queryString ? `?${queryString}` : ''}`
 
       const response = await getRaw<PaginatedResponse<Article>>(url)
+      if (seq !== requestSeq) return
       articles.value = response.data
       pagination.value = {
         total: response.meta.pagination.total_items,
@@ -96,9 +118,23 @@ export const useArticlesStore = defineStore('articles', () => {
         pages: response.meta.pagination.total_pages,
       }
     } catch (err: any) {
+      if (seq !== requestSeq) return
       error.value = err.response?.data?.detail || 'Failed to fetch articles'
     } finally {
-      loading.value = false
+      if (seq === requestSeq) loading.value = false
+    }
+  }
+
+  /** Owner only: start full-text retrieval for the given articles (eligible ones are processed). */
+  const retrieveFulltext = async (projectId: number, articleIds: number[]) => {
+    try {
+      return await post<RetrieveFullTextBulkResponse>(
+        `/projects/${projectId}/articles/retrieve-fulltext`,
+        { article_ids: articleIds },
+      )
+    } catch (err: any) {
+      error.value = err.response?.data?.detail || 'Failed to start full-text retrieval'
+      return null
     }
   }
 
@@ -141,6 +177,7 @@ export const useArticlesStore = defineStore('articles', () => {
     loading,
     error,
     fetchArticles,
+    retrieveFulltext,
     fetchArticle,
     fetchStats,
     setupWebSocketListeners,

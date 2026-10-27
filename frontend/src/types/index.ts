@@ -130,6 +130,24 @@ export interface Article {
   updated_at: string
 }
 
+/** Columns the articles list can be sorted by (server-side). */
+export type ArticleSortField = 'title' | 'year' | 'status'
+
+export type SortOrder = 'asc' | 'desc'
+
+/** Server-side query for the articles list (search, filters, sort, pagination). */
+export interface ArticleListOptions {
+  status?: ArticleStatus
+  final_decision?: FinalDecision
+  has_full_text?: boolean
+  /** Case-insensitive match on title, authors and journal. */
+  search?: string
+  sort_by?: ArticleSortField
+  order?: SortOrder
+  page?: number
+  per_page?: number
+}
+
 export interface ArticleStats {
   total: number
   by_status: Record<ArticleStatus, number>
