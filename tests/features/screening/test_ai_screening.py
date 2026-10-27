@@ -1,6 +1,10 @@
 """Tests for AI screening endpoints."""
 
+from unittest.mock import AsyncMock
+
 import pytest
+
+from app.core.config import Settings
 from app.features.research.models import Article, ArticleStatus, ScreeningStage
 from app.features.criteria.models import Criterion, CriterionType
 from app.features.screening.models import (
@@ -10,6 +14,20 @@ from app.features.screening.models import (
 )
 
 BASE_API = "api/v1/projects"
+
+
+@pytest.fixture(autouse=True)
+def _ai_configured(monkeypatch):
+    """Pretend an Anthropic key is configured and never start the real flow."""
+    monkeypatch.setattr(
+        "app.features.research.agent.get_settings",
+        lambda: Settings(_env_file=None, secret_key="x", anthropic_api_key="k"),
+    )
+    flow_mock = AsyncMock()
+    monkeypatch.setattr(
+        "app.features.screening.routers.batch_ai_screening_flow", flow_mock
+    )
+    return flow_mock
 
 
 @pytest.fixture
@@ -375,3 +393,135 @@ def test_batch_ai_screening_only_active_criteria(
     assert res.status_code == 200
     result = res.json()
     assert result["article_count"] == 1
+
+
+def test_batch_schedules_flow_with_primitive_ids_only(
+    auth_as, a_project, a_article, a_criterion, _ai_configured
+):
+    """The flow gets ids only: no request-scoped session or ORM objects."""
+    client, user = auth_as()
+    project = a_project(user)
+    project.review_question = "Q?"
+    a1 = a_article(project.id, title="A1")
+    a2 = a_article(project.id, title="A2")
+    a_criterion(project.id)
+
+    res = client.post(f"{BASE_API}/{project.id}/screening/run-ai")
+
+    assert res.status_code == 200
+    _ai_configured.assert_awaited_once()
+    args = _ai_configured.await_args
+    values = list(args.args) + list(args.kwargs.values())
+    assert all(isinstance(v, (int, str, list)) for v in values)
+    assert project.id in values
+    assert user.id in values
+    assert [a1.id, a2.id] in values
+
+
+def test_batch_eligibility_ignores_ai_decision_at_other_stage(
+    auth_as, a_project, a_article, a_criterion, session
+):
+    client, user = auth_as()
+    project = a_project(user)
+    article = a_article(project.id, current_stage=ScreeningStage.title_abstract)
+    a_criterion(project.id)
+    session.add(
+        ScreeningDecision(
+            article_id=article.id,
+            stage=ScreeningStage.full_text,
+            decision=ScreeningDecisionType.include,
+            source=DecisionSource.ai_agent,
+        )
+    )
+    # A human decision at the same stage must not count either
+    session.add(
+        ScreeningDecision(
+            article_id=article.id,
+            stage=ScreeningStage.title_abstract,
+            decision=ScreeningDecisionType.include,
+            source=DecisionSource.human,
+        )
+    )
+    session.commit()
+
+    res = client.post(f"{BASE_API}/{project.id}/screening/run-ai")
+    assert res.json()["article_count"] == 1
+
+
+def test_batch_skips_full_text_stage_articles_without_content(
+    auth_as, a_project, a_article, a_criterion
+):
+    client, user = auth_as()
+    project = a_project(user)
+    a_criterion(project.id)
+    a_article(
+        project.id,
+        current_stage=ScreeningStage.full_text,
+        status=ArticleStatus.full_text_retrieved,
+    )
+    with_text = a_article(
+        project.id,
+        current_stage=ScreeningStage.full_text,
+        status=ArticleStatus.full_text_retrieved,
+        full_text_content="text",
+    )
+
+    res = client.post(f"{BASE_API}/{project.id}/screening/run-ai")
+    assert res.json()["article_count"] == 1
+    assert with_text.id
+
+
+def test_batch_returns_503_when_not_configured(
+    auth_as, a_project, a_article, a_criterion, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.features.research.agent.get_settings",
+        lambda: Settings(_env_file=None, secret_key="x", anthropic_api_key=None),
+    )
+    client, user = auth_as()
+    project = a_project(user)
+    a_article(project.id)
+    a_criterion(project.id)
+    res = client.post(f"{BASE_API}/{project.id}/screening/run-ai")
+    assert res.status_code == 503
+    assert "not configured" in res.json()["detail"]
+
+
+def test_screen_ai_error_does_not_leak_details(
+    auth_as, a_project, a_article, a_criterion, monkeypatch, caplog
+):
+    client, user = auth_as()
+    project = a_project(user)
+    article = a_article(project.id)
+    a_criterion(project.id)
+
+    async def boom(**kwargs):
+        raise RuntimeError("secret-internal-detail sk-ant-123")
+
+    monkeypatch.setattr("app.features.screening.routers.screen_article", boom)
+    with caplog.at_level("ERROR"):
+        res = client.post(
+            f"{BASE_API}/{project.id}/screening/articles/{article.id}/screen-ai"
+        )
+    assert res.status_code == 500
+    assert "secret-internal-detail" not in res.text
+    assert "sk-ant-123" not in res.text
+    assert "secret-internal-detail" in caplog.text  # logged server-side
+
+
+def test_screen_ai_returns_503_when_not_configured(
+    auth_as, a_project, a_article, a_criterion, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.features.research.agent.get_settings",
+        lambda: Settings(_env_file=None, secret_key="x", anthropic_api_key=None),
+    )
+    client, user = auth_as()
+    project = a_project(user)
+    article = a_article(project.id)
+    a_criterion(project.id)
+    res = client.post(
+        f"{BASE_API}/{project.id}/screening/articles/{article.id}/screen-ai"
+    )
+    assert res.status_code == 503
+    assert res.json()["detail"] == "AI screening is not configured"

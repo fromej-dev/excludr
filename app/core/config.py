@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = None
     default_llm_model: str = "claude-sonnet-5-5"
     screening_confidence_threshold: float = 0.7
+    # Max characters of full text sent to the screening model (longer text is truncated)
+    screening_max_fulltext_chars: int = 150_000
 
     # Unpaywall settings for full-text retrieval
     unpaywall_email: Optional[str] = None

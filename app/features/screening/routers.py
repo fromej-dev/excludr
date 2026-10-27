@@ -1,5 +1,5 @@
+import logging
 from typing import Annotated
-import json
 
 from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
 from fastapi_fsp import FSPManager
@@ -10,9 +10,12 @@ from app.features.auth.services import get_current_user
 from app.features.users.models import User
 from app.features.projects.services import ProjectServiceDep
 from app.features.research.services import ArticleServiceDep
-from app.features.research.agent import screen_article
+from app.features.research.agent import (
+    AIScreeningNotConfiguredError,
+    ensure_ai_configured,
+    screen_article,
+)
 from app.features.criteria.models import Criterion
-from app.features.websocket.manager import manager
 from .models import (
     ScreeningDecision,
     ScreeningDecisionCreate,
@@ -21,7 +24,10 @@ from .models import (
     DecisionSource,
 )
 from .services import ScreeningServiceDep
-from sqlmodel import select
+from .flows import batch_ai_screening_flow
+from sqlmodel import and_, or_, select
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Screening"], prefix="/projects/{project_id}/screening")
 
@@ -169,6 +175,11 @@ async def screen_article_with_ai(
     # Get review question
     review_question = project.review_question or "No specific review question provided"
 
+    try:
+        ensure_ai_configured()
+    except AIScreeningNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
     # Run AI screening
     try:
         decision = await screen_article(
@@ -180,8 +191,11 @@ async def screen_article_with_ai(
         )
         return decision
     except Exception as e:
+        logger.exception(
+            "AI screening failed for article %s in project %s", article_id, project_id
+        )
         raise HTTPException(
-            status_code=500, detail=f"AI screening failed: {str(e)}"
+            status_code=500, detail="AI screening failed. Please try again later."
         ) from e
 
 
@@ -228,71 +242,6 @@ def get_ai_decision(
     return ai_decision
 
 
-async def _run_batch_ai_screening(
-    project_id: int,
-    article_ids: list[int],
-    criteria: list[Criterion],
-    review_question: str,
-    session: SessionDep,
-):
-    """Background task to run AI screening on multiple articles.
-
-    Args:
-        project_id: ID of the project
-        article_ids: List of article IDs to screen
-        criteria: List of active criteria
-        review_question: Project's review question
-        session: Database session
-    """
-    from app.features.research.models import Article
-
-    for article_id in article_ids:
-        try:
-            # Fetch article
-            article = session.exec(
-                select(Article).where(Article.id == article_id)
-            ).first()
-
-            if article is None:
-                continue
-
-            # Run AI screening
-            decision = await screen_article(
-                article=article,
-                criteria=criteria,
-                review_question=review_question,
-                session=session,
-                reviewer_id=None,
-            )
-
-            # Broadcast WebSocket notification
-            room_name = f"project_{project_id}"
-            message = json.dumps(
-                {
-                    "type": "ai_screening_complete",
-                    "article_id": article_id,
-                    "decision": decision.decision.value,
-                    "confidence": decision.confidence_score,
-                }
-            )
-            await manager.broadcast_to_room(message, room_name)
-
-        except Exception as e:
-            # Log error and continue with next article
-            print(f"Error screening article {article_id}: {str(e)}")
-            # Broadcast error notification
-            room_name = f"project_{project_id}"
-            message = json.dumps(
-                {
-                    "type": "ai_screening_error",
-                    "article_id": article_id,
-                    "error": str(e),
-                }
-            )
-            await manager.broadcast_to_room(message, room_name)
-            continue
-
-
 @router.post("/run-ai")
 async def run_batch_ai_screening(
     project_id: int,
@@ -315,58 +264,60 @@ async def run_batch_ai_screening(
     """
     from app.features.research.models import Article, ArticleStatus
 
-    # Verify project ownership
-    project = verify_project_ownership(project_id, current_user, ps)
+    verify_project_ownership(project_id, current_user, ps)
 
-    # Fetch active criteria
-    criteria = session.exec(
-        select(Criterion).where(
-            Criterion.project_id == project_id, Criterion.is_active.is_(True)
-        )
-    ).all()
-
-    if not criteria:
+    has_criteria = session.exec(
+        select(Criterion.id)
+        .where(Criterion.project_id == project_id, Criterion.is_active.is_(True))
+        .limit(1)
+    ).first()
+    if has_criteria is None:
         raise HTTPException(
             status_code=400,
             detail="No active criteria found for this project. Please add criteria before screening.",
         )
 
-    # Build query for eligible articles
-    # Eligible: status is 'screening' or 'full_text_retrieved'
-    # AND no existing AI decision for current stage
-    query = select(Article).where(
-        Article.project_id == project_id,
-        Article.status.in_(
-            [ArticleStatus.screening, ArticleStatus.full_text_retrieved]
-        ),
-    )
+    try:
+        ensure_ai_configured()
+    except AIScreeningNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
-    # Apply stage filter if provided
+    # Eligible: status is 'screening' or 'full_text_retrieved', no AI decision yet
+    # for the article's current stage (single NOT EXISTS query), and, for
+    # full_text-stage articles, extracted full text is available.
+    already_screened = (
+        select(ScreeningDecision.id)
+        .where(
+            ScreeningDecision.article_id == Article.id,
+            ScreeningDecision.source == DecisionSource.ai_agent,
+            ScreeningDecision.stage == Article.current_stage,
+        )
+        .exists()
+    )
+    query = (
+        select(Article.id)
+        .where(
+            Article.project_id == project_id,
+            Article.status.in_(
+                [ArticleStatus.screening, ArticleStatus.full_text_retrieved]
+            ),
+            ~already_screened,
+            or_(
+                Article.current_stage != ScreeningStage.full_text,
+                and_(
+                    Article.full_text_content.is_not(None),
+                    Article.full_text_content != "",
+                ),
+            ),
+        )
+        .order_by(Article.id)
+    )
     if stage:
         query = query.where(Article.current_stage == stage)
-
-    # Get articles that don't have AI decisions yet
-    all_articles = session.exec(query).all()
-
-    # Filter out articles that already have AI decisions at their current stage
-    eligible_articles = []
-    for article in all_articles:
-        existing_ai_decision = session.exec(
-            select(ScreeningDecision).where(
-                ScreeningDecision.article_id == article.id,
-                ScreeningDecision.source == DecisionSource.ai_agent,
-                ScreeningDecision.stage == article.current_stage,
-            )
-        ).first()
-
-        if existing_ai_decision is None:
-            eligible_articles.append(article)
-
-    # Apply limit if provided
     if limit:
-        eligible_articles = eligible_articles[:limit]
+        query = query.limit(limit)
 
-    article_ids = [article.id for article in eligible_articles]
+    article_ids = list(session.exec(query).all())
     article_count = len(article_ids)
 
     if article_count == 0:
@@ -375,17 +326,9 @@ async def run_batch_ai_screening(
             "article_count": 0,
         }
 
-    # Get review question
-    review_question = project.review_question or "No specific review question provided"
-
-    # Schedule background task
+    # Schedule the flow with primitive ids only: it opens its own session.
     background_tasks.add_task(
-        _run_batch_ai_screening,
-        project_id,
-        article_ids,
-        criteria,
-        review_question,
-        session,
+        batch_ai_screening_flow, project_id, article_ids, current_user.id
     )
 
     return {

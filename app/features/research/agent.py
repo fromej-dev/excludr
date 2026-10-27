@@ -1,11 +1,15 @@
 """AI screening agent using pydantic-ai for systematic review screening."""
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai.models import Model
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
 from app.core.config import get_settings
@@ -17,6 +21,23 @@ from app.features.screening.models import (
     ScreeningDecision,
     ScreeningDecisionType,
 )
+
+
+logger = logging.getLogger(__name__)
+
+# Bump whenever the system prompt, article formatting or validation rules change;
+# stored on every AI decision for provenance.
+PROMPT_VERSION = "2026-10-27.1"
+
+
+class AIScreeningNotConfiguredError(RuntimeError):
+    """Raised when AI screening is requested but no LLM API key is configured."""
+
+
+def ensure_ai_configured() -> None:
+    """Raise AIScreeningNotConfiguredError if no Anthropic API key is set."""
+    if not get_settings().anthropic_api_key:
+        raise AIScreeningNotConfiguredError("AI screening is not configured")
 
 
 @dataclass
@@ -36,23 +57,83 @@ class ScreeningDeps:
 _screening_agent: Optional[Agent] = None
 
 
+def _build_model() -> "Model | str":
+    """Build the LLM model, passing the configured API key explicitly."""
+    settings = get_settings()
+    if settings.anthropic_api_key:
+        return AnthropicModel(
+            settings.default_llm_model,
+            provider=AnthropicProvider(api_key=settings.anthropic_api_key),
+        )
+    # No key: defer; callers are expected to call ensure_ai_configured() first.
+    return f"anthropic:{settings.default_llm_model}"
+
+
 def get_screening_agent() -> Agent:
     """Get or create the screening agent (lazy initialization)."""
     global _screening_agent
     if _screening_agent is None:
-        settings = get_settings()
-        model_name = f"anthropic:{settings.default_llm_model}"
-        _screening_agent = Agent(
-            model_name,
+        agent: Agent = Agent(
+            _build_model(),
             output_type=ScreeningResult,
             deps_type=ScreeningDeps,
+            retries={"output": 2},
+            defer_model_check=True,
         )
 
-        @_screening_agent.system_prompt
+        @agent.system_prompt
         async def build_system_prompt(ctx: RunContext[ScreeningDeps]) -> str:
             return _build_system_prompt(ctx)
 
+        @agent.output_validator
+        async def validate_output(
+            ctx: RunContext[ScreeningDeps], output: ScreeningResult
+        ) -> ScreeningResult:
+            return _validate_screening_result(ctx.deps.criteria, output)
+
+        _screening_agent = agent
+
     return _screening_agent
+
+
+def _validate_screening_result(
+    criteria: list[dict], output: ScreeningResult
+) -> ScreeningResult:
+    """Ensure evaluations cover exactly the active criteria.
+
+    Raises:
+        ModelRetry: If codes are missing, unknown, duplicated, or typed wrongly.
+            The overall decision is deliberately not constrained: the model may
+            answer "uncertain" regardless of the per-criterion outcomes.
+    """
+    expected = {c["code"]: c["type"] for c in criteria}
+    returned = [e.criterion_code for e in output.criteria_evaluations]
+    problems: list[str] = []
+
+    missing = sorted(set(expected) - set(returned))
+    extra = sorted(set(returned) - set(expected))
+    duplicates = sorted({c for c in returned if returned.count(c) > 1})
+    if missing:
+        problems.append(f"missing evaluations for: {', '.join(missing)}")
+    if extra:
+        problems.append(f"unknown criterion codes: {', '.join(extra)}")
+    if duplicates:
+        problems.append(f"duplicate evaluations for: {', '.join(duplicates)}")
+    wrong_type = sorted(
+        e.criterion_code
+        for e in output.criteria_evaluations
+        if e.criterion_code in expected
+        and e.criterion_type != expected[e.criterion_code]
+    )
+    if wrong_type:
+        problems.append(f"wrong criterion_type for: {', '.join(wrong_type)}")
+
+    if problems:
+        raise ModelRetry(
+            "criteria_evaluations must contain exactly one evaluation for each of "
+            f"the criteria {sorted(expected)}; " + "; ".join(problems) + "."
+        )
+    return output
 
 
 def _build_system_prompt(ctx: RunContext[ScreeningDeps]) -> str:
@@ -140,8 +221,24 @@ Your response must be a structured evaluation with:
     return system_prompt
 
 
+def _full_text_for_model(article: Article) -> Optional[str]:
+    """Return the extracted full text the model should see, or None.
+
+    Full text is only used when the article is past title/abstract screening and
+    extracted text (``full_text_content``) exists. ``full_text_path`` points at a
+    PDF and is never read here.
+    """
+    if article.current_stage == ScreeningStage.title_abstract:
+        return None
+    content = (article.full_text_content or "").strip()
+    return content or None
+
+
 def _build_article_text(article: Article) -> str:
     """Build the article text from title, abstract, and full text if available.
+
+    Full text is truncated to ``screening_max_fulltext_chars`` characters with an
+    explicit marker so the model knows it is incomplete.
 
     Args:
         article: Article instance to extract text from
@@ -164,16 +261,17 @@ def _build_article_text(article: Article) -> str:
     if article.abstract:
         parts.append(f"\n## Abstract\n\n{article.abstract}\n")
 
-    # Read full text if available
-    if article.full_text_retrieved and article.full_text_path:
-        try:
-            full_text_path = Path(article.full_text_path)
-            if full_text_path.exists():
-                full_text = full_text_path.read_text(encoding="utf-8")
-                parts.append(f"\n## Full Text\n\n{full_text}\n")
-        except Exception:
-            # If we can't read the full text, continue with what we have
-            pass
+    full_text = _full_text_for_model(article)
+    if full_text:
+        limit = get_settings().screening_max_fulltext_chars
+        total = len(full_text)
+        if total > limit:
+            full_text = (
+                full_text[:limit]
+                + f"\n\n[... FULL TEXT TRUNCATED: showing the first {limit} of "
+                f"{total} characters; the rest was omitted ...]"
+            )
+        parts.append(f"\n## Full Text\n\n{full_text}\n")
 
     return "\n".join(parts)
 
@@ -197,6 +295,14 @@ def _prepare_criteria_list(criteria: list[Criterion]) -> list[dict]:
         for c in criteria
         if c.is_active
     ]
+
+
+def _model_name_from_result(result: object) -> str:
+    """Name of the model that produced the result (falls back to settings)."""
+    name = getattr(getattr(result, "response", None), "model_name", None)
+    if isinstance(name, str) and name:
+        return name
+    return get_settings().default_llm_model
 
 
 async def screen_article(
@@ -228,8 +334,9 @@ async def screen_article(
     Raises:
         Exception: If the agent fails to evaluate the article
     """
-    # Build article text
+    # Build article text and note whether the model actually gets the full text
     article_text = _build_article_text(article)
+    full_text_provided = _full_text_for_model(article) is not None
 
     # Prepare criteria list
     criteria_list = _prepare_criteria_list(criteria)
@@ -243,10 +350,10 @@ async def screen_article(
         result = await agent.run(article_text, deps=deps)
         screening_result: ScreeningResult = result.output
 
-        # Determine screening stage based on whether full text was used
+        # The recorded stage reflects what the model actually saw.
         stage = (
             ScreeningStage.full_text
-            if article.full_text_retrieved
+            if full_text_provided
             else ScreeningStage.title_abstract
         )
 
@@ -280,11 +387,14 @@ async def screen_article(
             reasoning=screening_result.summary_reasoning,
             primary_exclusion_reason=screening_result.primary_exclusion_reason,
             criteria_evaluations=criteria_evaluations,
+            model_name=_model_name_from_result(result),
+            prompt_version=PROMPT_VERSION,
         )
 
         session.add(screening_decision)
 
-        # Update article's AI check fields
+        # Update article's AI check fields. AI decisions are advisory: article
+        # status / current_stage / final_decision are changed by humans only.
         article.ai_check_status = "completed"
         article.ai_check_result = {
             "decision": screening_result.decision,
@@ -301,6 +411,9 @@ async def screen_article(
         return screening_decision
 
     except Exception as e:
+        if isinstance(e, SQLAlchemyError):
+            session.rollback()  # session unusable until rolled back
+        logger.warning("AI screening failed for article %s: %s", article.id, e)
         # Update article with error status
         article.ai_check_status = "error"
         article.ai_check_result = {"error": str(e)}

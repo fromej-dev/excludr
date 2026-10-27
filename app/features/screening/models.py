@@ -63,6 +63,10 @@ class ScreeningDecision(ScreeningDecisionBase, table=True):
     # Structure: {"I1": {"met": true, "reasoning": "..."}, "E1": {"met": false, "reasoning": "..."}}
     criteria_evaluations: Optional[dict] = Field(default=None, sa_column=Column(JSON))
 
+    # Provenance for AI decisions (null for human decisions)
+    model_name: Optional[str] = Field(default=None, max_length=200)
+    prompt_version: Optional[str] = Field(default=None, max_length=50)
+
     created_at: Optional[datetime] = Field(
         default=None, sa_column_kwargs={"server_default": func.now()}
     )
