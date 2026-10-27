@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import func, Column, JSON
+from sqlalchemy import func, false as sa_false, Column, JSON
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -62,6 +62,13 @@ class ScreeningDecision(ScreeningDecisionBase, table=True):
     # JSON field for per-criterion evaluations
     # Structure: {"I1": {"met": true, "reasoning": "..."}, "E1": {"met": false, "reasoning": "..."}}
     criteria_evaluations: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+
+    # True for the owner's final decision resolving a reviewer conflict
+    is_resolution: bool = Field(
+        default=False,
+        sa_column_kwargs={"server_default": sa_false(), "nullable": False},
+        description="Owner decision that resolves a conflict between reviewers",
+    )
 
     # Provenance for AI decisions (null for human decisions)
     model_name: Optional[str] = Field(default=None, max_length=200)

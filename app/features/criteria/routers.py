@@ -5,41 +5,30 @@ from fastapi_fsp import FSPManager
 from fastapi_fsp.models import PaginatedResponse
 
 from app.core.database import SessionDep
-from app.features.auth.services import get_current_user
-from app.features.users.models import User
-from app.features.projects.services import ProjectServiceDep
+from app.features.audit import services as audit
+from app.features.projects.permissions import OwnerAccess, ViewerAccess
 from .models import Criterion, CriterionCreate, CriterionUpdate, CriterionReorder
 from .services import CriterionServiceDep
 
+
+def _plain(value):
+    """JSON-friendly form of a criterion field value (enums -> their value)."""
+    return getattr(value, "value", value)
+
+
 router = APIRouter(tags=["Criteria"], prefix="/projects/{project_id}/criteria")
-
-
-def verify_project_ownership(
-    project_id: int, current_user: User, ps: ProjectServiceDep
-):
-    """Helper to verify project exists and user owns it."""
-    project = ps.get_project_by_id(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="You are not the owner of the project"
-        )
-    return project
 
 
 @router.get("", response_model=PaginatedResponse[Criterion])
 def get_criteria(
     project_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
+    access: ViewerAccess,
     session: SessionDep,
-    ps: ProjectServiceDep,
     cs: CriterionServiceDep,
     fsp: Annotated[FSPManager, Depends()],
     active_only: bool = False,
 ):
     """Get all criteria for a project."""
-    verify_project_ownership(project_id, current_user, ps)
     if active_only:
         query = cs.get_active_criteria_for_project(project_id)
     else:
@@ -51,12 +40,10 @@ def get_criteria(
 def get_criterion(
     project_id: int,
     criterion_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: ViewerAccess,
     cs: CriterionServiceDep,
 ):
     """Get a single criterion by ID."""
-    verify_project_ownership(project_id, current_user, ps)
     criterion = cs.get_criterion_by_id(criterion_id)
     if criterion is None or criterion.project_id != project_id:
         raise HTTPException(status_code=404, detail="Criterion not found")
@@ -67,13 +54,23 @@ def get_criterion(
 def create_criterion(
     project_id: int,
     data: CriterionCreate,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     cs: CriterionServiceDep,
+    session: SessionDep,
 ):
     """Create a new criterion for a project."""
-    verify_project_ownership(project_id, current_user, ps)
-    return cs.create_criterion(project_id, data)
+    criterion = cs.create_criterion(project_id, data)
+    audit.record_event(
+        session,
+        project_id,
+        audit.CRITERION_CREATED,
+        "criterion",
+        criterion.id,
+        access.user.id,
+        {"code": criterion.code, "type": criterion.type.value},
+    )
+    session.refresh(criterion)  # the audit commit expired it
+    return criterion
 
 
 @router.patch("/{criterion_id}", response_model=Criterion)
@@ -81,32 +78,63 @@ def update_criterion(
     project_id: int,
     criterion_id: int,
     data: CriterionUpdate,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     cs: CriterionServiceDep,
+    session: SessionDep,
 ):
     """Update an existing criterion."""
-    verify_project_ownership(project_id, current_user, ps)
     criterion = cs.get_criterion_by_id(criterion_id)
     if criterion is None or criterion.project_id != project_id:
         raise HTTPException(status_code=404, detail="Criterion not found")
-    return cs.update_criterion(criterion, data)
+    changes = data.model_dump(
+        exclude_unset=True, exclude_defaults=True, exclude_none=True
+    )
+    before = {k: getattr(criterion, k) for k in changes}
+    criterion = cs.update_criterion(criterion, data)
+    audit.record_event(
+        session,
+        project_id,
+        audit.CRITERION_UPDATED,
+        "criterion",
+        criterion.id,
+        access.user.id,
+        {
+            "code": criterion.code,
+            "version": criterion.version,
+            "changes": {
+                k: {"from": _plain(before[k]), "to": _plain(v)}
+                for k, v in changes.items()
+                if before[k] != v
+            },
+        },
+    )
+    session.refresh(criterion)
+    return criterion
 
 
 @router.delete("/{criterion_id}", status_code=204)
 def delete_criterion(
     project_id: int,
     criterion_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     cs: CriterionServiceDep,
+    session: SessionDep,
 ):
     """Delete a criterion."""
-    verify_project_ownership(project_id, current_user, ps)
     criterion = cs.get_criterion_by_id(criterion_id)
     if criterion is None or criterion.project_id != project_id:
         raise HTTPException(status_code=404, detail="Criterion not found")
+    details = {"code": criterion.code, "type": criterion.type.value}
     cs.delete_criterion(criterion)
+    audit.record_event(
+        session,
+        project_id,
+        audit.CRITERION_DELETED,
+        "criterion",
+        criterion_id,
+        access.user.id,
+        details,
+    )
     return
 
 
@@ -114,10 +142,8 @@ def delete_criterion(
 def reorder_criteria(
     project_id: int,
     data: CriterionReorder,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     cs: CriterionServiceDep,
 ):
     """Reorder criteria for a project."""
-    verify_project_ownership(project_id, current_user, ps)
     return cs.reorder_criteria(project_id, data.criterion_ids)

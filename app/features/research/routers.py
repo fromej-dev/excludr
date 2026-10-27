@@ -5,42 +5,24 @@ from fastapi_fsp import FSPManager
 from fastapi_fsp.models import PaginatedResponse
 
 from app.core.database import SessionDep
-from app.features.auth.services import get_current_user
-from app.features.users.models import User
-from app.features.projects.services import ProjectServiceDep
+from app.features.projects.permissions import OwnerAccess, ViewerAccess
 from .models import Article, ArticleStatus, ScreeningStage
 from .services import ArticleServiceDep
 
 router = APIRouter(tags=["Articles"], prefix="/projects/{project_id}/articles")
 
 
-def verify_project_ownership(
-    project_id: int, current_user: User, ps: ProjectServiceDep
-):
-    """Helper to verify project exists and user owns it."""
-    project = ps.get_project_by_id(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="You are not the owner of the project"
-        )
-    return project
-
-
 @router.get("", response_model=PaginatedResponse[Article])
 def get_articles(
     project_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
+    access: ViewerAccess,
     session: SessionDep,
-    ps: ProjectServiceDep,
     article_service: ArticleServiceDep,
     fsp: Annotated[FSPManager, Depends()],
     status: Annotated[Optional[ArticleStatus], Query()] = None,
     stage: Annotated[Optional[ScreeningStage], Query()] = None,
 ):
     """Get all articles for a project with optional filtering."""
-    verify_project_ownership(project_id, current_user, ps)
 
     if status:
         query = article_service.get_articles_by_status(project_id, status)
@@ -55,14 +37,11 @@ def get_articles(
 @router.get("/stats")
 def get_article_stats(
     project_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
+    access: ViewerAccess,
     session: SessionDep,
-    ps: ProjectServiceDep,
 ):
     """Get article statistics for a project."""
     from sqlmodel import select, func
-
-    verify_project_ownership(project_id, current_user, ps)
 
     # Total count
     total = session.exec(
@@ -94,12 +73,10 @@ def get_article_stats(
 def get_article(
     project_id: int,
     article_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: ViewerAccess,
     article_service: ArticleServiceDep,
 ):
     """Get a single article by ID."""
-    verify_project_ownership(project_id, current_user, ps)
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -110,12 +87,10 @@ def get_article(
 def delete_article(
     project_id: int,
     article_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     article_service: ArticleServiceDep,
 ):
     """Delete an article."""
-    verify_project_ownership(project_id, current_user, ps)
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -126,12 +101,10 @@ def delete_article(
 @router.post("/start-screening")
 def start_screening(
     project_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     article_service: ArticleServiceDep,
 ):
     """Move all imported articles to screening status."""
-    verify_project_ownership(project_id, current_user, ps)
     count = article_service.start_screening(project_id)
     return {"message": f"Started screening for {count} articles", "count": count}
 
@@ -141,8 +114,7 @@ async def upload_fulltext(
     project_id: int,
     article_id: int,
     file: UploadFile,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     article_service: ArticleServiceDep,
 ):
     """Upload a full-text PDF for an article and extract text content."""
@@ -150,7 +122,6 @@ async def upload_fulltext(
     from app.core.uploads import remove_file, save_upload
     from .pdf_extraction import extract_text_from_pdf_safe
 
-    verify_project_ownership(project_id, current_user, ps)
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")

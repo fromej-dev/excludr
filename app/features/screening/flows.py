@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
 
 from app.core.database import engine
+from app.features.audit import services as audit
 from app.features.criteria.models import Criterion
 from app.features.projects.models import Project
 from app.features.research.agent import screen_article
@@ -125,6 +126,19 @@ async def batch_ai_screening_flow(
             )
 
     summary = {"total": total, "screened": screened, "errors": errors}
+    try:
+        with Session(engine) as audit_session:
+            audit.record_event(
+                audit_session,
+                project_id,
+                audit.AI_BATCH_FINISHED,
+                "ai_batch",
+                None,
+                user_id,
+                summary,
+            )
+    except Exception:
+        logger.exception("Failed to record AI batch audit event")
     await _notify(
         project_id,
         f"AI screening complete: {screened} screened, {errors} failed",

@@ -10,11 +10,51 @@ from sqlmodel import select
 
 from app.core.prefect_config import get_prefect_session
 from app.features.projects.dedup import ProjectArticleIndex
+from app.features.projects.models import ImportBatch
 from app.features.research.models import Article
 from app.features.projects.parsers import parse_pubmed_txt, parse_pubmed_csv
 from app.features.research.pubmed_service import PubMedService
 
 logger = logging.getLogger(__name__)
+
+
+def record_import_batch(
+    project_id: int,
+    filename: str,
+    file_format: str,
+    result: dict[str, Any],
+    user_id: int | None,
+) -> None:
+    """Persist an :class:`ImportBatch` (and its audit event) for a finished import."""
+    from app.features.audit import services as audit
+
+    with get_prefect_session() as session:
+        batch = ImportBatch(
+            project_id=project_id,
+            filename=filename[:500],
+            format=file_format,
+            records_found=result["records_found"],
+            imported=result["articles_created"],
+            duplicates=result["duplicates"],
+            created_by=user_id,
+        )
+        session.add(batch)
+        session.flush()
+        audit.record_event(
+            session,
+            project_id,
+            audit.IMPORT_COMPLETED,
+            "import_batch",
+            batch.id,
+            user_id,
+            {
+                "filename": batch.filename,
+                "format": file_format,
+                "records_found": batch.records_found,
+                "imported": batch.imported,
+                "duplicates": batch.duplicates,
+            },
+        )
 
 
 @task(name="parse_ris_entries")
@@ -30,6 +70,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
 
     with open(file_path, "r", encoding="utf-8") as file:
         entries = rispy.load(file)
+        records_found = len(entries)
 
         with get_prefect_session() as session:
             index = ProjectArticleIndex(session, project_id)
@@ -120,6 +161,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                     articles_created += 1
 
     return {
+        "records_found": records_found,
         "articles_created": articles_created,
         "articles_updated": articles_updated,
         "duplicates": duplicates,
@@ -129,7 +171,10 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
 
 @flow(name="parse_ris_file", log_prints=True)
 def parse_ris_file_flow(
-    file_path: str, project_id: int, original_filename: str | None = None
+    file_path: str,
+    project_id: int,
+    original_filename: str | None = None,
+    user_id: int | None = None,
 ) -> dict:
     """Prefect flow to parse a RIS file and save/update entries in the database.
 
@@ -137,6 +182,7 @@ def parse_ris_file_flow(
         file_path: Path to the RIS file to parse.
         project_id: ID of the project to associate articles with.
         original_filename: Client-supplied display name (metadata only, never a path).
+        user_id: User who uploaded the file (recorded on the import batch).
 
     Returns:
         Dictionary with status, articles_created, and articles_updated counts.
@@ -147,6 +193,7 @@ def parse_ris_file_flow(
 
     try:
         result = parse_ris_entries(file_path, project_id, original_filename)
+        record_import_batch(project_id, original_filename, "ris", result, user_id)
 
         logger.info(
             f"Processing complete for {original_filename}. "
@@ -275,6 +322,7 @@ def parse_pubmed_entries(
                     pmids_needing_abstracts.append(pmid)
 
     return {
+        "records_found": len(entries),
         "articles_created": articles_created,
         "articles_updated": articles_updated,
         "duplicates": duplicates,
@@ -318,7 +366,10 @@ def fetch_pubmed_abstracts(pmids: list[str], project_id: int) -> dict[str, Any]:
 
 @flow(name="parse_pubmed_file", log_prints=True)
 def parse_pubmed_file_flow(
-    file_path: str, project_id: int, original_filename: str | None = None
+    file_path: str,
+    project_id: int,
+    original_filename: str | None = None,
+    user_id: int | None = None,
 ) -> dict[str, Any]:
     """Prefect flow to parse a PubMed export file and save entries to the database.
 
@@ -329,6 +380,7 @@ def parse_pubmed_file_flow(
         file_path: Path to the PubMed export file.
         project_id: ID of the project to associate articles with.
         original_filename: Client-supplied display name (metadata only, never a path).
+        user_id: User who uploaded the file (recorded on the import batch).
 
     Returns:
         Dictionary with status and article counts.
@@ -353,6 +405,9 @@ def parse_pubmed_file_flow(
         # Parse entries and save to database
         result = parse_pubmed_entries(
             file_path, project_id, original_filename, file_format
+        )
+        record_import_batch(
+            project_id, original_filename, f"pubmed_{file_format}", result, user_id
         )
 
         logger.info(

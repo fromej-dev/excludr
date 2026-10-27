@@ -42,6 +42,9 @@ Excludr is a **systematic review screening tool** for researchers. In a systemat
 - **Screening stages**: `title_abstract` | `full_text` | `completed`
 - **Decision sources**: `ai_agent` | `human`
 - **Criteria types**: `inclusion` | `exclusion` — each with a code, description, and rationale
+- **Roles**: `owner` | `reviewer` | `viewer` per project (`ProjectMember`); enforced with `require_project_role(min_role)` from `app/features/projects/permissions.py` (viewer reads, reviewer also decides + runs AI, owner does everything else)
+- **Dual screening & conflicts**: `Project.required_reviewers` (1 or 2). Each reviewer's latest human decision per article/stage counts; an article advances only when the required reviewers have decided and agree, otherwise it is *in conflict* (computed, no status value) and the owner resolves it (`is_resolution` decision). AI decisions never count as reviewers.
+- **Reporting & audit**: PRISMA counts (from `ImportBatch` + decisions), CSV/RIS export, agreement stats (Cohen's kappa), and an append-only `AuditEvent` log
 
 ### Tech Stack
 

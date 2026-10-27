@@ -9,6 +9,7 @@ from sqlmodel import Session
 from app.core.database import SessionDep
 from app.features.auth.services import verify_token_and_get_user
 from app.features.projects.models import Project
+from app.features.projects.permissions import get_user_role
 from app.features.users.models import User
 from app.features.users.services import UserServiceDep
 from .manager import manager
@@ -22,7 +23,8 @@ _PROJECT_ROOM = re.compile(r"^project_([1-9][0-9]{0,17})$")
 def can_join_room(user: User, room: str, session: Session) -> bool:
     """Return True if ``user`` may join ``room``.
 
-    Allowed rooms: ``user_{own_id}`` and ``project_{id}`` for projects the user owns.
+    Allowed rooms: ``user_{own_id}`` and ``project_{id}`` for projects the user is a
+    member of (any role).
     Everything else is refused.
     """
     if room == f"user_{user.id}":
@@ -31,7 +33,7 @@ def can_join_room(user: User, room: str, session: Session) -> bool:
     if match is None:
         return False
     project = session.get(Project, int(match.group(1)))
-    return project is not None and project.owner_id == user.id
+    return project is not None and get_user_role(session, project, user) is not None
 
 
 async def _send_error(user_id: int, text: str) -> None:
@@ -65,7 +67,7 @@ async def websocket_endpoint(
     Message types:
     - text: Send a personal message back to the user
     - join_room: Join a room (requires "room" field). Only "user_{own_id}" and
-      "project_{id}" for projects you own are allowed.
+      "project_{id}" for projects you are a member of are allowed.
     - leave_room: Leave a specific room (requires "room" field)
     - room_message: Send message to all users in a room you have joined
     - broadcast: Send message to all connected users (superusers only)

@@ -4,16 +4,20 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, UploadFile, Path
 from fastapi.params import Depends
 from fastapi_fsp import FSPManager
+from sqlmodel import select
 from fastapi_fsp.models import PaginatedResponse
 from starlette.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.core.database import SessionDep
 from app.core.uploads import display_filename, remove_file, save_upload
+from app.features.audit import services as audit
 from app.features.auth.services import get_current_user
 from app.features.users.models import User
-from .models import Project, ProjectCreate, ProjectUpdate
+from .models import ImportBatch, Project, ProjectCreate, ProjectUpdate
+from .permissions import OwnerAccess, ViewerAccess
 from .services import ProjectService, ProjectServiceDep
+from app.features.screening.services import ScreeningService
 from .flows import parse_ris_file_flow, parse_pubmed_file_flow
 
 logger = logging.getLogger(__name__)
@@ -32,19 +36,8 @@ def get_projects(
 
 
 @router.get("/{project_id}", response_model=Project)
-def get_project(
-    current_user: Annotated[User, Depends(get_current_user)],
-    project_id: int,
-    ps: ProjectServiceDep,
-):
-    project = ps.get_project_by_id(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="You are not the owner of the project"
-        )
-    return project
+def get_project(access: ViewerAccess):
+    return access.project
 
 
 @router.post("", response_model=Project, status_code=201)
@@ -59,8 +52,7 @@ def create_project(
 @router.post("/{project_id}/upload/ris", status_code=200)
 async def upload_ris_file(
     file: UploadFile,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     project_id: int = Path(
         ..., title="The ID of the project to link the articles to", gt=0
     ),
@@ -69,15 +61,6 @@ async def upload_ris_file(
     Accepts a RIS file upload, saves it temporarily, and dispatches a
     Prefect flow to parse it.
     """
-    # Verify project ownership
-    project = ps.get_project_by_id(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="You are not the owner of the project"
-        )
-
     temp_file_path: str | None = None
     try:
         # Validates extension and size; stored under a server-generated name
@@ -89,7 +72,9 @@ async def upload_ris_file(
         )
 
         # The flow removes the temporary file when it finishes
-        result = parse_ris_file_flow(temp_file_path, project_id, display_filename(file))
+        result = parse_ris_file_flow(
+            temp_file_path, project_id, display_filename(file), access.user.id
+        )
 
         return JSONResponse(
             content={
@@ -115,8 +100,7 @@ async def upload_ris_file(
 @router.post("/{project_id}/upload/pubmed", status_code=200)
 async def upload_pubmed_file(
     file: UploadFile,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
+    access: OwnerAccess,
     project_id: int = Path(
         ..., title="The ID of the project to link the articles to", gt=0
     ),
@@ -127,15 +111,6 @@ async def upload_pubmed_file(
 
     For CSV files, abstracts will be automatically fetched from PubMed.
     """
-    # Verify project ownership
-    project = ps.get_project_by_id(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="You are not the owner of the project"
-        )
-
     temp_file_path: str | None = None
     try:
         temp_file_path = await save_upload(
@@ -149,7 +124,7 @@ async def upload_pubmed_file(
 
         # The flow removes the temporary file when it finishes
         result = parse_pubmed_file_flow(
-            temp_file_path, project_id, display_filename(file)
+            temp_file_path, project_id, display_filename(file), access.user.id
         )
 
         return JSONResponse(
@@ -173,35 +148,45 @@ async def upload_pubmed_file(
         await file.close()
 
 
+@router.get("/{project_id}/imports", response_model=list[ImportBatch])
+def get_imports(access: ViewerAccess, session: SessionDep):
+    """List the project's import batches, newest first."""
+    return session.exec(
+        select(ImportBatch)
+        .where(ImportBatch.project_id == access.project.id)
+        .order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc())
+    ).all()
+
+
 @router.patch("/{project_id}", response_model=Project)
 def update_project(
-    project_id: int,
     data: ProjectUpdate,
-    current_user: Annotated[User, Depends(get_current_user)],
+    access: OwnerAccess,
     ps: ProjectServiceDep,
+    session: SessionDep,
 ):
-    project = ps.get_project_by_id(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="You are not the owner of the project"
+    """Update project fields and settings (owner only)."""
+    changes = data.model_dump(exclude_unset=True, exclude_none=True)
+    reviewers_before = access.project.required_reviewers
+    project = ps.update_project(access.project, data)
+    if project.required_reviewers != reviewers_before:
+        # Articles may now be settled (or in conflict) under the new rule.
+        ScreeningService(session).reevaluate_project(project)
+    if changes:
+        audit.record_event(
+            session,
+            project.id,
+            audit.PROJECT_SETTINGS_UPDATED,
+            "project",
+            project.id,
+            access.user.id,
+            changes,
         )
-    return ps.update_project(project, data)
+        session.refresh(project)  # the audit commit expired it
+    return project
 
 
 @router.delete("/{project_id}", status_code=204)
-def delete_project(
-    project_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
-    ps: ProjectServiceDep,
-):
-    project = ps.get_project_by_id(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if project.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=403, detail="You are not the owner of the project"
-        )
-    ps.delete_project(project)
+def delete_project(access: OwnerAccess, ps: ProjectServiceDep):
+    ps.delete_project(access.project)
     return
