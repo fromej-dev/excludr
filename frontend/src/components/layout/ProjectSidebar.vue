@@ -1,19 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import type { RouteLocationRaw } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { useStorage } from '@vueuse/core'
 import { useProjectsStore } from '@/stores/projects'
 import { useMembersStore } from '@/stores/members'
 import { useProjectNavStore } from '@/stores/projectNav'
-
-interface Props {
-  /** `sidebar`: grouped list inside the app sidebar. `pills`: scrollable pill row below lg. */
-  variant?: 'sidebar' | 'pills'
-}
-
-const props = withDefaults(defineProps<Props>(), { variant: 'sidebar' })
 
 const route = useRoute()
 const projectsStore = useProjectsStore()
@@ -97,60 +89,19 @@ const groups = computed<NavGroup[]>(() => {
   ]
 })
 
-// Keep the active pill visible in the scrollable mobile nav
-watch(
-  () => groups.value.flatMap((g) => g.items).find((i) => i.active)?.key,
-  async () => {
-    if (props.variant !== 'pills') return
-    await nextTick()
-    document
-      .querySelector('[data-testid="project-pills"] [aria-current="page"]')
-      ?.scrollIntoView({ block: 'nearest', inline: 'center' })
-  },
-  { immediate: true, flush: 'post' }
-)
-
-// Below lg the two stage pills collapse into one "Screening" pill (the toolbar switches stage)
-const lastStage = useStorage<'title_abstract' | 'full_text'>('excludr-last-screening-stage', 'title_abstract')
-watch(
-  () => (name.value === 'project-screening' ? stage.value : null),
-  (s) => {
-    if (s) lastStage.value = s
-  },
-  { immediate: true }
-)
-const mobileGroups = computed<NavGroup[]>(() =>
-  groups.value.map((g) => {
-    if (g.label !== 'Screening') return g
-    const stages = g.items.filter((i) => i.key === 'title_abstract' || i.key === 'full_text')
-    const rest = g.items.filter((i) => i.key !== 'title_abstract' && i.key !== 'full_text')
-    const target = stages.find((i) => i.key === lastStage.value) ?? stages[0]
-    const total = stages.some((i) => i.count !== null) ? stages.reduce((n, i) => n + (i.count ?? 0), 0) : null
-    const merged: NavItem = {
-      ...target,
-      key: 'screening',
-      label: 'Screening',
-      active: stages.some((i) => i.active),
-      count: total,
-    }
-    return { ...g, items: [merged, ...rest] }
-  })
-)
-
 const showCount = (item: NavItem) => item.count !== null && (item.tone !== 'conflict' || item.count > 0)
 
-const countClasses = (item: NavItem, mobile: boolean): string => {
+const countClasses = (item: NavItem): string => {
   if (item.tone === 'conflict') return 'bg-uncertain-soft text-uncertain-soft-foreground border border-uncertain/60 font-semibold'
   if (item.tone === 'pending') return 'bg-secondary text-secondary-foreground font-semibold'
-  return mobile ? 'text-muted-foreground' : 'text-muted-foreground'
+  return 'text-muted-foreground'
 }
 
 const countAria = (item: NavItem) => (item.countLabel ? `${item.count} ${item.countLabel}` : `${item.count}`)
 </script>
 
 <template>
-  <!-- Inside the app sidebar -->
-  <div v-if="variant === 'sidebar'" data-testid="project-sidebar">
+  <div data-testid="project-sidebar">
     <p class="mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Project</p>
     <p
       class="mb-4 truncate px-3 text-sm font-semibold"
@@ -174,7 +125,7 @@ const countAria = (item: NavItem) => (item.countLabel ? `${item.count} ${item.co
               <span
                 v-if="showCount(item)"
                 class="min-w-5 rounded-full px-1.5 text-center text-xs tabular-nums"
-                :class="countClasses(item, false)"
+                :class="countClasses(item)"
                 :aria-label="countAria(item)"
                 :data-testid="`nav-count-${item.key}`"
                 >{{ item.count }}</span
@@ -183,41 +134,6 @@ const countAria = (item: NavItem) => (item.countLabel ? `${item.count} ${item.co
           </li>
         </ul>
       </div>
-    </nav>
-  </div>
-
-  <!-- Below lg: project name and horizontally scrollable pills -->
-  <div v-else class="min-w-0 space-y-2 lg:hidden">
-    <p v-if="name !== 'project-overview'" class="truncate text-xl font-bold" :title="projectsStore.currentProject?.name">
-      {{ projectsStore.currentProject?.name }}
-    </p>
-    <nav
-      aria-label="Project sections"
-      class="-mx-4 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6"
-      data-testid="project-pills"
-    >
-      <ul class="flex w-max items-center gap-1.5">
-        <template v-for="(group, gi) in mobileGroups" :key="group.label">
-          <li v-if="gi > 0" aria-hidden="true" class="mx-1 h-5 w-px bg-border" />
-          <li v-for="item in group.items" :key="item.key">
-            <router-link
-              :to="item.to"
-              :aria-current="item.active ? 'page' : undefined"
-              class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              :class="item.active ? 'border-transparent bg-primary text-primary-foreground' : 'bg-card text-muted-foreground hover:text-foreground'"
-            >
-              {{ item.label }}
-              <span
-                v-if="showCount(item)"
-                class="min-w-4 rounded-full px-1 text-center text-xs tabular-nums"
-                :class="item.active ? 'bg-primary-foreground/20 text-primary-foreground' : countClasses(item, true)"
-                :aria-label="countAria(item)"
-                >{{ item.count }}</span
-              >
-            </router-link>
-          </li>
-        </template>
-      </ul>
     </nav>
   </div>
 </template>

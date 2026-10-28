@@ -69,37 +69,34 @@ watch(
 <template>
   <AppLayout :full-width="isScreening">
     <template #sidebar>
-      <ProjectSidebar variant="sidebar" />
+      <ProjectSidebar />
     </template>
 
-    <div class="space-y-3 lg:space-y-0">
-      <ProjectSidebar variant="pills" />
-
-      <div class="min-w-0" :class="isScreening ? 'space-y-3' : 'space-y-6'">
-        <h1
+    <div class="min-w-0" :class="isScreening ? 'space-y-3' : 'space-y-6'">
+      <h1
+        v-if="!isOverview"
+        class="truncate"
+        :class="isScreening ? 'sr-only' : 'text-2xl font-bold lg:text-3xl'"
+      >
+        {{ projectsStore.currentProject?.name }}
+      </h1>
+      <div
+        v-if="billingStore.status?.read_only"
+        role="status"
+        data-testid="read-only-banner"
+        class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm"
+      >
+        This review's pass has expired, so the project is read-only. You can still view and
+        export everything.
+        <router-link
           v-if="!isOverview"
-          :class="isScreening ? 'sr-only' : 'max-lg:sr-only text-3xl font-bold'"
+          :to="{ name: 'project-overview', params: { id: projectId } }"
+          class="ml-1 font-medium text-primary hover:underline"
         >
-          {{ projectsStore.currentProject?.name }}
-        </h1>
-        <div
-          v-if="billingStore.status?.read_only"
-          role="status"
-          data-testid="read-only-banner"
-          class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm"
-        >
-          This review's pass has expired, so the project is read-only. You can still view and
-          export everything.
-          <router-link
-            v-if="!isOverview"
-            :to="{ name: 'project-overview', params: { id: projectId } }"
-            class="ml-1 font-medium text-primary hover:underline"
-          >
-            Renew the pass
-          </router-link>
-        </div>
-        <router-view />
+          Renew the pass
+        </router-link>
       </div>
+      <router-view />
     </div>
   </AppLayout>
 </template>

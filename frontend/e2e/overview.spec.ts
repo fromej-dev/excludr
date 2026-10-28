@@ -23,20 +23,19 @@ test.describe('Project overview', () => {
     await expect(page.getByTestId('setup-checklist')).toHaveCount(0)
   })
 
-  test('mobile pill nav shows a single Screening pill', async ({ page, pageHelper, testUser, api }) => {
+  test('mobile project sections live in the menu drawer', async ({ page, pageHelper, testUser, api }) => {
     const project = await api.createProject(testUser.token)
     await page.setViewportSize({ width: 390, height: 844 })
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(project.id, 'overview')
 
-    const pills = page.getByTestId('project-pills')
-    await expect(pills.getByRole('link', { name: /^Screening/ })).toHaveCount(1)
-    await expect(pills.getByRole('link', { name: /^Title\/abstract/ })).toHaveCount(0)
-    await expect(pills.getByRole('link', { name: /^Full text/ })).toHaveCount(0)
-
-    await pills.getByRole('link', { name: /^Screening/ }).click()
+    // No second navigation row above the page; the sections are in the drawer
+    await expect(page.getByTestId('project-pills')).toHaveCount(0)
+    await page.getByTestId('menu-button').click()
+    const sections = page.getByTestId('app-sidebar').getByRole('navigation', { name: 'Project sections' })
+    await sections.getByRole('link', { name: /^Title\/abstract/ }).click()
     await expect(page).toHaveURL(/\/screening\?stage=title_abstract/)
-    await expect(pills.getByRole('link', { name: /^Screening/ })).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByTestId('app-sidebar')).not.toBeInViewport()
   })
 
   test('next step resolves when the conflicts request fails', async ({ page, pageHelper, testUser, api }) => {
