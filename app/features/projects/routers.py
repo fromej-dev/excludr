@@ -1,7 +1,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, UploadFile, Path
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, Path
 from fastapi.params import Depends
 from fastapi_fsp import FSPManager
 from sqlmodel import select
@@ -18,6 +18,8 @@ from app.features.users.models import User
 from .models import ImportBatch, Project, ProjectCreate, ProjectUpdate
 from .permissions import OwnerAccess, OwnerAccessAnyState, ViewerAccess
 from .services import ProjectService, ProjectServiceDep
+from app.features.research.flows import schedule_auto_retrieval
+from app.features.research.models import Article, ArticleStatus
 from app.features.screening.services import ScreeningService
 from .flows import parse_ris_file_flow, parse_pubmed_file_flow
 
@@ -169,12 +171,25 @@ def get_imports(access: ViewerAccess, session: SessionDep):
     ).all()
 
 
+def _awaiting_full_text(session: SessionDep, project_id: int) -> list[Article]:
+    """The project's articles waiting for their full text."""
+    return list(
+        session.exec(
+            select(Article).where(
+                Article.project_id == project_id,
+                Article.status == ArticleStatus.awaiting_full_text,
+            )
+        ).all()
+    )
+
+
 @router.patch("/{project_id}", response_model=Project)
 def update_project(
     data: ProjectUpdate,
     access: OwnerAccess,
     ps: ProjectServiceDep,
     session: SessionDep,
+    background_tasks: BackgroundTasks,
 ):
     """Update project fields and settings (owner only)."""
     changes = data.model_dump(exclude_unset=True, exclude_none=True)
@@ -187,7 +202,14 @@ def update_project(
     project = ps.update_project(access.project, data)
     if project.required_reviewers != reviewers_before:
         # Articles may now be settled (or in conflict) under the new rule.
+        waiting_before = {a.id for a in _awaiting_full_text(session, project.id)}
         ScreeningService(session).reevaluate_project(project)
+        now_waiting = [
+            a
+            for a in _awaiting_full_text(session, project.id)
+            if a.id not in waiting_before
+        ]
+        schedule_auto_retrieval(background_tasks, now_waiting, access.user.id)
     if changes:
         audit.record_event(
             session,

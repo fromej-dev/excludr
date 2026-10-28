@@ -9,11 +9,11 @@ from prefect import flow, task
 from sqlmodel import select
 
 from app.core.prefect_config import get_prefect_session
-from app.features.projects.dedup import ProjectArticleIndex
+from app.features.projects.dedup import ProjectArticleIndex, normalize_title
 from app.features.projects.models import ImportBatch
 from app.features.research.models import Article, ArticleStatus, ScreeningStage
 from app.features.projects.parsers import parse_pubmed_txt, parse_pubmed_csv
-from app.features.research.pubmed_service import PubMedService
+from app.features.research.pubmed_service import PubMedRecord, PubMedService
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
     articles_updated = 0
     duplicates = 0
     duplicates_by_title_year = 0
+    pmids_needing_abstracts: list[str] = []
 
     with open(file_path, "r", encoding="utf-8") as file:
         entries = rispy.load(file)
@@ -140,7 +141,9 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                     "project_id": project_id,
                     "title": title,
                     "authors": entry.get("authors", []),
-                    "abstract": entry.get("abstract"),
+                    # rispy reads AB as abstract and N2 as notes_abstract; EndNote,
+                    # Scopus and Ovid exports put the abstract in N2.
+                    "abstract": entry.get("abstract") or entry.get("notes_abstract"),
                     "publication_date": entry.get("date"),
                     "year": year,
                     "journal": entry.get("journal_name")
@@ -167,12 +170,18 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                             setattr(existing_article, key, value)
                     session.add(existing_article)
                     articles_updated += 1
+                    article = existing_article
                 else:
                     # Or, create a new article instance.
-                    new_article = new_screening_article(article_data)
-                    session.add(new_article)
-                    index.add(new_article)
+                    article = new_screening_article(article_data)
+                    session.add(article)
+                    index.add(article)
                     articles_created += 1
+
+                # AN holds the PMID in PubMed and Ovid MEDLINE exports; other
+                # databases put their own accession numbers there.
+                if not article.abstract and pmid and str(pmid).strip().isdigit():
+                    pmids_needing_abstracts.append(str(pmid).strip())
 
     return {
         "records_found": records_found,
@@ -180,6 +189,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
         "articles_updated": articles_updated,
         "duplicates": duplicates,
         "duplicates_by_title_year": duplicates_by_title_year,
+        "pmids_needing_abstracts": pmids_needing_abstracts,
     }
 
 
@@ -209,6 +219,16 @@ def parse_ris_file_flow(
         result = parse_ris_entries(file_path, project_id, original_filename)
         record_import_batch(project_id, original_filename, "ris", result, user_id)
 
+        # Fill in missing abstracts from PubMed; the record must match the article,
+        # because an accession number is not always a PMID.
+        abstracts_fetched = 0
+        if result["pmids_needing_abstracts"]:
+            fetch_result = fetch_pubmed_abstracts(
+                result["pmids_needing_abstracts"], project_id, verify=True
+            )
+            abstracts_fetched = fetch_result["abstracts_fetched"]
+            logger.info(f"Fetched {abstracts_fetched} abstracts from PubMed")
+
         logger.info(
             f"Processing complete for {original_filename}. "
             f"Created: {result['articles_created']}, Updated: {result['articles_updated']}, "
@@ -221,6 +241,7 @@ def parse_ris_file_flow(
             "articles_updated": result["articles_updated"],
             "duplicates": result["duplicates"],
             "duplicates_by_title_year": result["duplicates_by_title_year"],
+            "abstracts_fetched": abstracts_fetched,
         }
 
     except FileNotFoundError:
@@ -344,13 +365,25 @@ def parse_pubmed_entries(
     }
 
 
+def _same_article(article: Article, record: PubMedRecord) -> bool:
+    """True when a PubMed record describes the imported article (DOI, else title)."""
+    if article.doi and record.doi:
+        return article.doi.strip().lower() == record.doi.lower()
+    title = normalize_title(article.title)
+    return bool(title) and title == normalize_title(record.title)
+
+
 @task(name="fetch_pubmed_abstracts")
-def fetch_pubmed_abstracts(pmids: list[str], project_id: int) -> dict[str, Any]:
+def fetch_pubmed_abstracts(
+    pmids: list[str], project_id: int, verify: bool = False
+) -> dict[str, Any]:
     """Fetch abstracts from PubMed for articles missing them.
 
     Args:
         pmids: List of PMIDs to fetch abstracts for.
         project_id: Project ID for updating articles.
+        verify: Only use a record whose DOI (or, without one, title) matches the
+            article; for PMIDs that may be another database's accession number.
 
     Returns:
         Dictionary with count of abstracts fetched.
@@ -360,20 +393,32 @@ def fetch_pubmed_abstracts(pmids: list[str], project_id: int) -> dict[str, Any]:
 
     # Fetch abstracts from PubMed
     pubmed_service = PubMedService()
-    abstracts = pubmed_service.fetch_abstracts_sync(pmids)
+    if verify:
+        records = pubmed_service.fetch_records_sync(pmids)
+    else:
+        records = {
+            pmid: PubMedRecord(pmid=pmid, abstract=abstract)
+            for pmid, abstract in pubmed_service.fetch_abstracts_sync(pmids).items()
+        }
 
     # Update articles with fetched abstracts
     abstracts_updated = 0
     with get_prefect_session() as session:
-        for pmid, abstract in abstracts.items():
+        for pmid, record in records.items():
+            if not record.abstract:
+                continue
             statement = select(Article).where(
                 Article.pmid == pmid, Article.project_id == project_id
             )
             article = session.exec(statement).first()
-            if article and not article.abstract:
-                article.abstract = abstract
-                session.add(article)
-                abstracts_updated += 1
+            if article is None or article.abstract:
+                continue
+            if verify and not _same_article(article, record):
+                logger.info(f"PubMed record {pmid} does not match the article; skipped")
+                continue
+            article.abstract = record.abstract
+            session.add(article)
+            abstracts_updated += 1
 
     return {"abstracts_fetched": abstracts_updated}
 

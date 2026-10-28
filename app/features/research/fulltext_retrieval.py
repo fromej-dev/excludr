@@ -35,7 +35,7 @@ from sqlmodel import Session
 
 from app.core.config import get_settings
 from app.core.uploads import remove_file
-from .models import Article, FullTextSource
+from .models import Article, ArticleStatus, FullTextSource
 from .pdf_extraction import extract_text_from_pdf_safe
 from .schemas import FullTextRetrievalResult, SourceAttempt
 from .services import ArticleService
@@ -65,6 +65,14 @@ HOST_INTERVALS: dict[str, float] = {
 DEFAULT_HOST_INTERVAL = 0.5
 
 _RETRYABLE = frozenset({429, 500, 502, 503, 504})
+
+
+def eligible_for_retrieval(article: Article) -> bool:
+    """Articles that wait for a full text and do not have one yet."""
+    return (
+        article.status == ArticleStatus.awaiting_full_text
+        and not article.full_text_retrieved
+    )
 
 
 class HostRateLimiter:

@@ -15,6 +15,8 @@ from app.features.projects.permissions import (
     ReviewerAccess,
     ViewerAccess,
 )
+from app.features.research.flows import schedule_auto_retrieval
+from app.features.research.models import ArticleStatus
 from app.features.research.services import ArticleServiceDep
 from app.features.research.agent import (
     AIScreeningNotConfiguredError,
@@ -136,6 +138,7 @@ def create_decision(
     session: SessionDep,
     article_service: ArticleServiceDep,
     ss: ScreeningServiceDep,
+    background_tasks: BackgroundTasks,
 ):
     """Create the caller's human screening decision for an article.
 
@@ -144,7 +147,8 @@ def create_decision(
     The article advances only once the project's required
     number of reviewers have decided and agree; otherwise it is left in conflict
     for the owner to resolve. Decisions with ``source=ai_agent`` are owner-only,
-    are stored as-is and never affect article status.
+    are stored as-is and never affect article status. An article that moves on
+    to wait for its full text gets full-text retrieval started in the background.
     """
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
@@ -157,12 +161,15 @@ def create_decision(
             )
         return ss.create_decision(article_id, data, None)
 
+    was_waiting = article.status == ArticleStatus.awaiting_full_text
     try:
         decision, replaced = ss.submit_human_decision(
             access.project, article, data, access.user.id
         )
     except ScreeningError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    if not was_waiting:
+        schedule_auto_retrieval(background_tasks, [article], access.user.id)
     audit.record_event(
         session,
         project_id,
@@ -192,11 +199,13 @@ def resolve_conflict(
     session: SessionDep,
     article_service: ArticleServiceDep,
     ss: ScreeningServiceDep,
+    background_tasks: BackgroundTasks,
 ):
     """Resolve a reviewer conflict with the owner's final decision (owner only)."""
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
+    was_waiting = article.status == ArticleStatus.awaiting_full_text
     try:
         decision = ss.resolve_conflict(
             access.project,
@@ -208,6 +217,8 @@ def resolve_conflict(
         )
     except ScreeningError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    if not was_waiting:
+        schedule_auto_retrieval(background_tasks, [article], access.user.id)
     audit.record_event(
         session,
         project_id,

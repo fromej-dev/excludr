@@ -19,7 +19,7 @@ from app.core.prefect_config import run_flow_in_background
 from app.features.projects.permissions import OwnerAccess, ViewerAccess
 from .models import Article, ArticleStatus, ScreeningStage
 from .flows import retrieve_fulltext_flow
-from .fulltext_retrieval import retrieve_full_text
+from .fulltext_retrieval import eligible_for_retrieval, retrieve_full_text
 from . import pdf_bulk_upload
 from .schemas import (
     FullTextRetrievalResult,
@@ -193,14 +193,6 @@ def start_screening(
     return {"message": f"Started screening for {count} articles", "count": count}
 
 
-def _eligible_for_retrieval(article: Article) -> bool:
-    """Articles that wait for a full text and do not have one yet."""
-    return (
-        article.status == ArticleStatus.awaiting_full_text
-        and not article.full_text_retrieved
-    )
-
-
 @router.post("/retrieve-fulltext")
 def retrieve_fulltext_bulk(
     project_id: int,
@@ -251,7 +243,7 @@ async def retrieve_fulltext_single(
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
-    if not _eligible_for_retrieval(article):
+    if not eligible_for_retrieval(article):
         raise HTTPException(
             status_code=409,
             detail="Article is not awaiting full text or already has one",
