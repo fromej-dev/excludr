@@ -141,8 +141,10 @@ export const useWebSocketStore = defineStore('websocket', () => {
       const perArticle = ['ai_screening_progress', 'ai_screening_skipped', 'fulltext_progress'].includes(
         String(response.data?.type)
       )
-      // Lookahead batches of the screening view (`targeted`) run quietly in the background
-      if (response.data?.notification && !perArticle && response.data?.targeted !== true) {
+      // Lookahead batches of the screening view (`targeted`) and full-text retrieval started
+      // automatically after a screening decision (`auto`) run quietly in the background
+      const quiet = response.data?.targeted === true || response.data?.auto === true
+      if (response.data?.notification && !perArticle && !quiet) {
         const level = (response.data.level as NotificationLevel) || 'info'
         addNotification(response.message, level)
       }

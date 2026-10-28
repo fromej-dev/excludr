@@ -54,6 +54,8 @@ class Settings(BaseSettings):
 
     # Unpaywall settings for full-text retrieval
     unpaywall_email: Optional[str] = None
+    # Start full-text retrieval as soon as an article starts waiting for its full text
+    fulltext_auto_retrieval: bool = True
 
     # PubMed E-utilities settings
     pubmed_email: Optional[str] = None  # Required by NCBI for API usage

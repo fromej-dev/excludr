@@ -3,15 +3,23 @@
 import logging
 from typing import Any
 
+from fastapi import BackgroundTasks
 from prefect import flow
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
+from app.core.config import get_settings
 from app.core.database import engine
+from app.core.prefect_config import run_flow_in_background
 from app.features.audit import services as audit
 from app.features.websocket.schemas import NotificationLevel
 from app.features.websocket.services import NotificationService
-from .fulltext_retrieval import build_client, record_failure, retrieve_full_text
+from .fulltext_retrieval import (
+    build_client,
+    eligible_for_retrieval,
+    record_failure,
+    retrieve_full_text,
+)
 from .models import Article
 
 logger = logging.getLogger(__name__)
@@ -58,7 +66,7 @@ def _audit(project_id: int, action: str, user_id: int, details: dict[str, Any]) 
 
 @flow(name="retrieve_fulltext", log_prints=True)
 async def retrieve_fulltext_flow(
-    project_id: int, article_ids: list[int], user_id: int
+    project_id: int, article_ids: list[int], user_id: int, trigger: str = "manual"
 ) -> dict[str, int]:
     """Retrieve open-access full texts for many articles.
 
@@ -69,6 +77,12 @@ async def retrieve_fulltext_flow(
     Progress (``fulltext_progress``) is pushed to the ``project_{project_id}``
     room after every article and ``fulltext_complete`` goes to the project room
     and the requesting user, mirroring the AI screening batch messages.
+    Automatic runs (``trigger="auto"``) only tell the project room, marked
+    ``auto`` so clients can refresh without showing a notification.
+
+    An article that is no longer eligible when its turn comes (a full text was
+    uploaded or retrieved meanwhile, or it moved on) is skipped and not counted
+    as a failure.
 
     Returns:
         ``{"total", "retrieved", "failed"}`` counts.
@@ -76,7 +90,13 @@ async def retrieve_fulltext_flow(
     total = len(article_ids)
     retrieved = 0
     failed = 0
-    _audit(project_id, audit.FULLTEXT_BATCH_STARTED, user_id, {"article_count": total})
+    auto = trigger == "auto"
+    _audit(
+        project_id,
+        audit.FULLTEXT_BATCH_STARTED,
+        user_id,
+        {"article_count": total, "trigger": trigger},
+    )
 
     with Session(engine) as session:
         async with build_client() as client:
@@ -89,6 +109,9 @@ async def retrieve_fulltext_flow(
                     article = session.get(Article, article_id)
                     if article is None or article.project_id != project_id:
                         raise LookupError(f"Article {article_id} not found in project")
+                    if not eligible_for_retrieval(article):
+                        total -= 1
+                        continue
                     result = await retrieve_full_text(session, article, client)
                     data.update(
                         type="fulltext_progress",
@@ -127,7 +150,7 @@ async def retrieve_fulltext_flow(
                     )
                     level = NotificationLevel.WARNING
 
-                data.update(retrieved=retrieved, errors=failed, total=total)
+                data.update(retrieved=retrieved, errors=failed, total=total, auto=auto)
                 await _notify(
                     project_id,
                     f"Full-text retrieval progress: {retrieved + failed}/{total}",
@@ -136,7 +159,12 @@ async def retrieve_fulltext_flow(
                 )
 
     summary = {"total": total, "retrieved": retrieved, "failed": failed}
-    _audit(project_id, audit.FULLTEXT_BATCH_FINISHED, user_id, summary)
+    _audit(
+        project_id,
+        audit.FULLTEXT_BATCH_FINISHED,
+        user_id,
+        {**summary, "trigger": trigger},
+    )
     await _notify(
         project_id,
         f"Full-text retrieval complete: {retrieved} retrieved, {failed} failed",
@@ -145,9 +173,39 @@ async def retrieve_fulltext_flow(
             "project_id": project_id,
             "retrieved": retrieved,
             "errors": failed,
+            "auto": auto,
             **summary,
         },
         NotificationLevel.WARNING if failed else NotificationLevel.SUCCESS,
-        user_id=user_id,
+        user_id=None if auto else user_id,
     )
     return summary
+
+
+def schedule_auto_retrieval(
+    background_tasks: BackgroundTasks,
+    articles: list[Article],
+    user_id: int,
+) -> list[int]:
+    """Queue full-text retrieval for articles that just started waiting for one.
+
+    Called after a screening decision moved articles to ``awaiting_full_text``;
+    does nothing when ``fulltext_auto_retrieval`` is off. ``articles`` must
+    belong to one project. Returns the ids that were queued.
+    """
+    if not get_settings().fulltext_auto_retrieval:
+        return []
+    eligible = [a for a in articles if eligible_for_retrieval(a)]
+    if not eligible:
+        return []
+    article_ids = [a.id for a in eligible]
+    # Primitive ids only: the flow opens its own session.
+    background_tasks.add_task(
+        run_flow_in_background,
+        retrieve_fulltext_flow,
+        eligible[0].project_id,
+        article_ids,
+        user_id,
+        "auto",
+    )
+    return article_ids

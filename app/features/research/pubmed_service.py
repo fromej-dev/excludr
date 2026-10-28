@@ -4,6 +4,7 @@ import asyncio
 import logging
 import time
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from typing import Optional
 
 import httpx
@@ -11,6 +12,16 @@ import httpx
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PubMedRecord:
+    """The parts of a PubMed article we use to fill in imported articles."""
+
+    pmid: str
+    title: Optional[str] = None
+    doi: Optional[str] = None
+    abstract: Optional[str] = None
 
 
 class PubMedService:
@@ -65,16 +76,16 @@ class PubMedService:
             params["api_key"] = self.api_key
         return params
 
-    def _parse_abstracts_from_xml(self, xml_content: str) -> dict[str, str]:
-        """Parse abstracts from PubMed XML response.
+    def _parse_records_from_xml(self, xml_content: str) -> dict[str, PubMedRecord]:
+        """Parse PMID, title, DOI and abstract of each article in an efetch response.
 
         Args:
             xml_content: XML response from efetch.
 
         Returns:
-            Dictionary mapping PMIDs to abstracts.
+            Dictionary mapping PMIDs to their records.
         """
-        abstracts = {}
+        records: dict[str, PubMedRecord] = {}
         try:
             root = ET.fromstring(xml_content)
 
@@ -99,13 +110,42 @@ class PubMedService:
                     else:
                         abstract_parts.append(full_text)
 
-                if abstract_parts:
-                    abstracts[pmid] = " ".join(abstract_parts)
+                title_elem = article.find(".//ArticleTitle")
+                title = "".join(title_elem.itertext()) if title_elem is not None else ""
+                # The article's own ids, not those of its references
+                doi = article.findtext(
+                    "PubmedData/ArticleIdList/ArticleId[@IdType='doi']", ""
+                ).strip()
+                records[pmid] = PubMedRecord(
+                    pmid=pmid,
+                    title=title or None,
+                    doi=doi or None,
+                    abstract=" ".join(abstract_parts) if abstract_parts else None,
+                )
 
         except ET.ParseError as e:
             logger.warning("Error parsing PubMed XML: %s", e)
 
-        return abstracts
+        return records
+
+    def _parse_abstracts_from_xml(self, xml_content: str) -> dict[str, str]:
+        """Parse abstracts from PubMed XML response.
+
+        Args:
+            xml_content: XML response from efetch.
+
+        Returns:
+            Dictionary mapping PMIDs to abstracts.
+        """
+        return {
+            pmid: record.abstract
+            for pmid, record in self._parse_records_from_xml(xml_content).items()
+            if record.abstract
+        }
+
+    def _client(self) -> httpx.Client:
+        """HTTP client for the synchronous calls (replaced in tests)."""
+        return httpx.Client(timeout=30.0)
 
     async def fetch_abstracts(self, pmids: list[str]) -> dict[str, str]:
         """Fetch abstracts for a list of PMIDs.
@@ -154,10 +194,25 @@ class PubMedService:
         Returns:
             Dictionary mapping PMIDs to abstracts.
         """
+        return {
+            pmid: record.abstract
+            for pmid, record in self.fetch_records_sync(pmids).items()
+            if record.abstract
+        }
+
+    def fetch_records_sync(self, pmids: list[str]) -> dict[str, PubMedRecord]:
+        """Fetch title, DOI and abstract for a list of PMIDs (synchronous).
+
+        Args:
+            pmids: List of PubMed IDs.
+
+        Returns:
+            Dictionary mapping PMIDs to records; PMIDs PubMed does not know are absent.
+        """
         if not pmids:
             return {}
 
-        all_abstracts: dict[str, str] = {}
+        all_records: dict[str, PubMedRecord] = {}
 
         # Split into batches
         batches = [
@@ -165,7 +220,7 @@ class PubMedService:
             for i in range(0, len(pmids), self.MAX_PMIDS_PER_REQUEST)
         ]
 
-        with httpx.Client(timeout=30.0) as client:
+        with self._client() as client:
             for batch in batches:
                 # Simple rate limiting for sync version
                 elapsed = time.time() - self._last_request_time
@@ -178,11 +233,10 @@ class PubMedService:
                     response = client.get(self.EFETCH_URL, params=params)
                     response.raise_for_status()
 
-                    abstracts = self._parse_abstracts_from_xml(response.text)
-                    all_abstracts.update(abstracts)
+                    all_records.update(self._parse_records_from_xml(response.text))
 
                 except httpx.HTTPError as e:
                     logger.warning("Error fetching abstracts from PubMed: %s", e)
                     continue
 
-        return all_abstracts
+        return all_records

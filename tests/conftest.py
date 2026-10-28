@@ -24,6 +24,26 @@ def reset_login_rate_limiter():
     login_rate_limiter.reset()
 
 
+@pytest.fixture(autouse=True)
+def no_external_lookups(monkeypatch):
+    """Keep imports and screening decisions off the network.
+
+    Automatic full-text retrieval is off and PubMed lookups get a 503 (the
+    service treats that as "no abstracts"). Tests that cover these turn them
+    back on with their own fakes.
+    """
+    import httpx
+
+    from app.core.config import get_settings
+    from app.features.research.pubmed_service import PubMedService
+
+    monkeypatch.setattr(get_settings(), "fulltext_auto_retrieval", False)
+    offline = httpx.MockTransport(lambda request: httpx.Response(503))
+    monkeypatch.setattr(
+        PubMedService, "_client", lambda self: httpx.Client(transport=offline)
+    )
+
+
 @pytest.fixture(name="faker", scope="session")
 def faker_fixture():
     return Faker()

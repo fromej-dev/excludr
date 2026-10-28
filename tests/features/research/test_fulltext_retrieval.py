@@ -14,7 +14,7 @@ pytestmark = pytest.mark.asyncio
 
 UNPAYWALL = "api.unpaywall.org/v2/10.1/abc"
 IDCONV = "www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
-OA = "www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
+S3 = "pmc-oa-opendata.s3.amazonaws.com/"
 NO_PMCID = httpx.Response(200, json={"records": [{"status": "error"}]})
 EPMC = "www.ebi.ac.uk/europepmc/webservices/rest/PMC123/fullTextXML"
 
@@ -29,11 +29,31 @@ def unpaywall_json(best=None, others=()):
     )
 
 
-def oa_xml(*links: tuple[str, str]):
-    inner = "".join(f'<link format="{f}" href="{h}"/>' for f, h in links)
-    return httpx.Response(
-        200, text=f'<OA><records><record id="PMC123">{inner}</record></records></OA>'
+def s3_listing(*prefixes: str):
+    inner = "".join(
+        f"<CommonPrefixes><Prefix>{p}</Prefix></CommonPrefixes>" for p in prefixes
     )
+    return httpx.Response(
+        200,
+        text=(
+            '<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">'
+            f"<Name>pmc-oa-opendata</Name>{inner}</ListBucketResult>"
+        ),
+    )
+
+
+def s3_meta(version: str, pdf: bool = True):
+    pdf_url = f"s3://pmc-oa-opendata/{version}/{version}.pdf?md5=abc" if pdf else None
+    return httpx.Response(
+        200, json={"pmcid": version.split(".")[0], "pdf_url": pdf_url}
+    )
+
+
+def s3_article(web, version: str = "PMC123.1"):
+    """A PMC article in the open-access bucket, with a PDF."""
+    web.add(S3, s3_listing(f"{version}/"))
+    web.add(f"{S3}{version}/{version}.json", s3_meta(version))
+    web.add(f"{S3}{version}/{version}.pdf", pdf_response())
 
 
 @pytest.fixture
@@ -117,34 +137,51 @@ async def test_missing_unpaywall_email_is_reported_not_error(
     assert article.status == ArticleStatus.awaiting_full_text
 
 
-async def test_pmc_pdf_link_from_pmcid(session, make_article, web):
+async def test_pmc_pdf_from_open_access_bucket(session, make_article, web):
     article = make_article(pmcid="PMC123")
-    web.add(
-        OA,
-        oa_xml(
-            ("tgz", "ftp://ftp.ncbi.nlm.nih.gov/a.tgz"),
-            ("pdf", "https://ftp.ncbi.nlm.nih.gov/pub/pmc/a.pdf"),
-        ),
-    )
-    web.add("ftp.ncbi.nlm.nih.gov/pub/pmc/a.pdf", pdf_response())
+    s3_article(web)
 
     result = await ft.retrieve_full_text(session, article)
 
     assert result.retrieved and result.source == "pmc"
     assert [a.status for a in result.attempts] == ["not_available", "success"]
     assert article.full_text_source == "pmc"
-    assert web.requests[0].url.params["id"] == "PMC123"
+    listing = web.requests[0].url.params
+    assert (listing["prefix"], listing["delimiter"]) == ("PMC123.", "/")
 
 
-async def test_pmc_ftp_pdf_link_is_rewritten_to_https(session, make_article, web):
+async def test_pmc_uses_any_version_with_a_pdf(session, make_article, web):
     article = make_article(pmcid="PMC123")
-    web.add(OA, oa_xml(("pdf", "ftp://ftp.ncbi.nlm.nih.gov/pub/pmc/a.pdf")))
-    web.add("ftp.ncbi.nlm.nih.gov/pub/pmc/a.pdf", pdf_response())
+    # Unrelated prefixes and a version without a PDF are passed over
+    web.add(S3, s3_listing("PMC123.1/", "PMC123.2/", "PMC1234.1/", "PMC123.x/"))
+    web.add(f"{S3}PMC123.2/PMC123.2.json", s3_meta("PMC123.2", pdf=False))
+    web.add(f"{S3}PMC123.1/PMC123.1.json", s3_meta("PMC123.1"))
+    web.add(f"{S3}PMC123.1/PMC123.1.pdf", pdf_response())
 
     result = await ft.retrieve_full_text(session, article)
 
     assert result.retrieved
-    assert str(web.requests[1].url).startswith("https://ftp.ncbi.nlm.nih.gov/")
+    assert web.hosts_called()[1:] == [
+        f"{S3}PMC123.2/PMC123.2.json",
+        f"{S3}PMC123.1/PMC123.1.json",
+        f"{S3}PMC123.1/PMC123.1.pdf",
+    ]
+
+
+async def test_pmc_rejects_pdf_locations_outside_the_bucket(session, make_article, web):
+    article = make_article(pmcid="PMC123")
+    web.add(S3, s3_listing("PMC123.1/"))
+    web.add(
+        f"{S3}PMC123.1/PMC123.1.json",
+        httpx.Response(200, json={"pdf_url": "s3://other-bucket/x.pdf"}),
+    )
+    web.add(EPMC, httpx.Response(404))
+
+    result = await ft.retrieve_full_text(session, article)
+
+    assert not result.retrieved
+    assert "unexpected PDF location" in result.attempts[1].detail
+    assert all("other-bucket" not in h for h in web.hosts_called())
 
 
 async def test_pmid_resolved_to_pmcid_via_idconverter(session, make_article, web):
@@ -153,8 +190,7 @@ async def test_pmid_resolved_to_pmcid_via_idconverter(session, make_article, web
         IDCONV,
         httpx.Response(200, json={"records": [{"pmid": "555", "pmcid": "PMC123"}]}),
     )
-    web.add(OA, oa_xml(("pdf", "https://ftp.ncbi.nlm.nih.gov/p.pdf")))
-    web.add("ftp.ncbi.nlm.nih.gov/p.pdf", pdf_response())
+    s3_article(web)
 
     result = await ft.retrieve_full_text(session, article)
 
@@ -164,9 +200,92 @@ async def test_pmid_resolved_to_pmcid_via_idconverter(session, make_article, web
     assert params["email"] == "me@example.org"
 
 
-async def test_tgz_only_falls_back_to_europepmc_text(session, make_article, web):
+async def test_idconverter_falls_back_to_doi_and_skips_non_pmids(
+    session, make_article, web
+):
+    # An accession number from another database is never sent as a PMID
+    article = make_article(pmid="WOS:000123", doi="10.1/abc")
+    web.add(UNPAYWALL, httpx.Response(404))
+    web.add(
+        IDCONV,
+        httpx.Response(200, json={"records": [{"doi": "10.1/abc", "pmcid": "PMC123"}]}),
+    )
+    s3_article(web)
+
+    result = await ft.retrieve_full_text(session, article)
+
+    assert result.retrieved and result.source == "pmc"
+    (idconv,) = [r for r in web.requests if r.url.path.endswith("/v1.0/")]
+    assert idconv.url.params["ids"] == "10.1/abc"
+
+
+async def test_idconverter_error_for_pmid_still_tries_doi(session, make_article, web):
+    article = make_article(pmid="555", doi="10.1/abc")
+    web.add(UNPAYWALL, httpx.Response(404))
+    web.add(
+        IDCONV,
+        [
+            httpx.Response(400),
+            httpx.Response(200, json={"records": [{"pmcid": "PMC123"}]}),
+        ],
+    )
+    s3_article(web)
+
+    result = await ft.retrieve_full_text(session, article)
+
+    assert result.retrieved and result.source == "pmc"
+
+
+async def test_idconverter_failure_is_reported_on_both_pmc_sources(
+    session, make_article, web
+):
+    article = make_article(pmid="555")
+    web.add(IDCONV, httpx.Response(400))
+
+    result = await ft.retrieve_full_text(session, article)
+
+    assert not result.retrieved
+    pmc, epmc = result.attempts[1:]
+    assert pmc.status == epmc.status == "error"
+    assert "ID converter: HTTP 400" in pmc.detail
+    assert "ID converter: HTTP 400" in epmc.detail
+
+
+async def test_pmcid_from_unpaywall_landing_page_skips_idconverter(
+    session, make_article, web
+):
+    article = make_article(doi="10.1/abc", pmid="555")
+    web.add(
+        UNPAYWALL,
+        httpx.Response(
+            200,
+            json={
+                "best_oa_location": {"url_for_pdf": "https://pub.example.org/a.pdf"},
+                "oa_locations": [
+                    {
+                        "url_for_pdf": None,
+                        "url_for_landing_page": "https://www.ncbi.nlm.nih.gov/pmc/articles/123",
+                    }
+                ],
+            },
+        ),
+    )
+    web.add("pub.example.org/a.pdf", httpx.Response(403))
+    s3_article(web)
+
+    result = await ft.retrieve_full_text(session, article)
+
+    assert result.retrieved and result.source == "pmc"
+    assert result.attempts[0].detail == (
+        "none of 1 PDF location(s) could be downloaded (pub.example.org: HTTP 403)"
+    )
+    assert IDCONV not in web.hosts_called()
+
+
+async def test_no_pmc_pdf_falls_back_to_europepmc_text(session, make_article, web):
     article = make_article(pmcid="PMC123")
-    web.add(OA, oa_xml(("tgz", "ftp://ftp.ncbi.nlm.nih.gov/a.tgz")))
+    web.add(S3, s3_listing("PMC123.1/"))
+    web.add(f"{S3}PMC123.1/PMC123.1.json", s3_meta("PMC123.1", pdf=False))
     paragraphs = ["Alpha " * 40, "Beta " * 40]
     web.add(EPMC, httpx.Response(200, content=jats(paragraphs)))
 
@@ -189,7 +308,7 @@ async def test_all_sources_fail_records_error_and_keeps_status(
 ):
     article = make_article(doi="10.1/abc", pmcid="PMC123")
     web.add(UNPAYWALL, httpx.Response(404))
-    web.add(OA, httpx.Response(200, text='<OA><error code="idIsNotOpenAccess"/></OA>'))
+    web.add(S3, s3_listing())
     web.add(EPMC, httpx.Response(404))
 
     result = await ft.retrieve_full_text(session, article)
