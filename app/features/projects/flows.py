@@ -11,11 +11,25 @@ from sqlmodel import select
 from app.core.prefect_config import get_prefect_session
 from app.features.projects.dedup import ProjectArticleIndex
 from app.features.projects.models import ImportBatch
-from app.features.research.models import Article
+from app.features.research.models import Article, ArticleStatus, ScreeningStage
 from app.features.projects.parsers import parse_pubmed_txt, parse_pubmed_csv
 from app.features.research.pubmed_service import PubMedService
 
 logger = logging.getLogger(__name__)
+
+
+def new_screening_article(article_data: dict[str, Any]) -> Article:
+    """Build a newly imported article that is ready for title/abstract screening.
+
+    Imported articles go straight into the screening queue, in the same session
+    (and transaction) that creates them. Existing articles matched by dedup are
+    updated elsewhere and keep their status.
+    """
+    return Article(
+        **article_data,
+        status=ArticleStatus.screening,
+        current_stage=ScreeningStage.title_abstract,
+    )
 
 
 def record_import_batch(
@@ -155,7 +169,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                     articles_updated += 1
                 else:
                     # Or, create a new article instance.
-                    new_article = Article(**article_data)
+                    new_article = new_screening_article(article_data)
                     session.add(new_article)
                     index.add(new_article)
                     articles_created += 1
@@ -312,7 +326,7 @@ def parse_pubmed_entries(
                     pmids_needing_abstracts.append(pmid)
             else:
                 # Create new article
-                new_article = Article(**article_data)
+                new_article = new_screening_article(article_data)
                 session.add(new_article)
                 index.add(new_article)
                 articles_created += 1

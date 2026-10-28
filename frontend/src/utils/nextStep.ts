@@ -3,6 +3,7 @@ import type { ProjectRole, ScreeningStats } from '@/types'
 export type NextStepKind =
   | 'define-criteria'
   | 'import'
+  | 'start-screening'
   | 'screen-title-abstract'
   | 'retrieve-fulltext'
   | 'screen-full-text'
@@ -14,6 +15,10 @@ export type NextStepKind =
 export type NextStepTarget =
   | { type: 'route'; name: string; query?: Record<string, string> }
   | { type: 'anchor'; id: string }
+  /** An action the page performs itself (e.g. an API call) instead of navigating. */
+  | { type: 'command'; id: NextStepCommand }
+
+export type NextStepCommand = 'start-screening'
 
 export interface NextStepInput {
   /** All loads (role, nav counts, stats) have finished, successfully or not; false means keep waiting. */
@@ -85,6 +90,18 @@ export function computeNextStep(i: NextStepInput): NextStep | null {
           title: 'Waiting for articles',
           description: 'The project owner has not imported any articles yet.',
         }
+  }
+
+  // Safety net: articles left in 'imported' (imports made before they went straight to screening) are
+  // invisible to screening until the owner releases them. Others just see them counted as not started.
+  const notStarted = i.stats?.imported_not_started ?? 0
+  if (owner && notStarted > 0) {
+    return {
+      kind: 'start-screening',
+      title: `Start screening ${plural(notStarted, 'imported article', 'imported articles')}`,
+      description: 'These articles were imported but have not entered title/abstract screening yet.',
+      action: { label: 'Start screening', target: { type: 'command', id: 'start-screening' } },
+    }
   }
 
   const ta = i.pendingTitleAbstract ?? 0

@@ -16,7 +16,6 @@ test.describe('Live progress during bulk jobs', () => {
     const project = await api.createProject(testUser.token)
     await api.createCriterion(testUser.token, project.id, { type: 'inclusion', code: 'I1', description: 'RCTs' })
     await api.uploadRisFile(testUser.token, project.id, generateRisContent(3))
-    await api.startScreening(testUser.token, project.id)
 
     // Proxy the app's websocket so the test can push server messages into it
     let socket: WebSocketRoute | null = null
@@ -109,7 +108,6 @@ test.describe('Live progress during bulk jobs', () => {
     const project = await api.createProject(token)
     await api.createCriterion(token, project.id, { type: 'inclusion', code: 'I1', description: 'RCTs' })
     await api.uploadRisFile(token, project.id, generateRisContent(3))
-    await api.startScreening(token, project.id)
     const { data } = await api.getArticles(token, project.id)
 
     let socket: WebSocketRoute | null = null

@@ -122,14 +122,6 @@ export class ApiHelper {
     expect(res.ok()).toBeTruthy()
   }
 
-  async startScreening(token: string, projectId: number): Promise<{ count: number }> {
-    const res = await this.request.post(`${API_BASE}/projects/${projectId}/articles/start-screening`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    expect(res.ok()).toBeTruthy()
-    return await res.json()
-  }
-
   async getArticles(token: string, projectId: number): Promise<{ data: TestArticle[] }> {
     const res = await this.request.get(`${API_BASE}/projects/${projectId}/articles`, {
       headers: { Authorization: `Bearer ${token}` },

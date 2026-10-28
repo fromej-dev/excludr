@@ -28,12 +28,9 @@ test.describe('Screening Workflow', () => {
       type: 'exclusion',
     })
 
-    // Upload articles (generates 5 articles in "imported" status)
+    // Upload articles (5 articles, straight into title/abstract screening)
     const risContent = generateRisContent(5)
     await api.uploadRisFile(testUser.token, projectId, risContent)
-
-    // Start screening (moves articles from "imported" to "screening" status)
-    await api.startScreening(testUser.token, projectId)
   })
 
   test('should display first article for screening', async ({ page, pageHelper, testUser }) => {

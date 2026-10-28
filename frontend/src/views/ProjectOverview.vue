@@ -21,6 +21,9 @@ import ReviewProgress from '@/components/overview/ReviewProgress.vue'
 import SetupChecklist from '@/components/overview/SetupChecklist.vue'
 import type { ChecklistItem } from '@/components/overview/SetupChecklist.vue'
 import { computeNextStep } from '@/utils/nextStep'
+import type { NextStepCommand } from '@/utils/nextStep'
+import { useApi } from '@/composables/useApi'
+import { getErrorMessage } from '@/utils/errors'
 
 const route = useRoute()
 const router = useRouter()
@@ -131,6 +134,28 @@ const onImported = async () => {
   if (membersStore.canReview) void navStore.refreshScreening(projectId.value)
 }
 
+// Next-step commands: release articles still in 'imported' into title/abstract screening
+const { post } = useApi()
+const commandBusy = ref(false)
+const commandError = ref<string | null>(null)
+const runCommand = async (id: NextStepCommand) => {
+  if (id !== 'start-screening' || commandBusy.value) return
+  commandBusy.value = true
+  commandError.value = null
+  const pid = projectId.value
+  try {
+    await post(`/projects/${pid}/articles/start-screening`)
+    await Promise.all([
+      statsStore.fetch(pid),
+      navStore.refresh(pid, { canReview: membersStore.canReview, isOwner: membersStore.isOwner }),
+    ])
+  } catch (err: unknown) {
+    commandError.value = getErrorMessage(err, 'Failed to start screening')
+  } finally {
+    commandBusy.value = false
+  }
+}
+
 const handleDelete = async () => {
   const success = await projectsStore.deleteProject(projectId.value)
   if (success) {
@@ -200,7 +225,14 @@ const handleDelete = async () => {
       </Card>
     </header>
 
-    <NextStepCard :step="nextStep" @anchor="scrollToSection" @retry="retryNextStep" />
+    <NextStepCard
+      :step="nextStep"
+      :busy="commandBusy"
+      :error="commandError"
+      @anchor="scrollToSection"
+      @command="runCommand"
+      @retry="retryNextStep"
+    />
 
     <ReviewProgress :stats="currentStats" />
 

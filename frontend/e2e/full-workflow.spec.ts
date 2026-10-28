@@ -1,7 +1,7 @@
 import { test, expect, generateRisContent } from './fixtures'
 
 test.describe.serial('Complete Systematic Review Workflow', () => {
-  test('complete systematic review workflow', async ({ page, api }) => {
+  test('complete systematic review workflow', async ({ page }) => {
     const uid = Math.random().toString(36).slice(2, 10)
     const userEmail = `researcher_${uid}@example.com`
     const userPassword = 'SecurePass123!'
@@ -111,13 +111,7 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     await expect(page.getByTestId('article-card')).toHaveCount(3, { timeout: 10_000 })
 
     // ========================================
-    // 7. START SCREENING (via API — no UI button for this)
-    // ========================================
-    const token = await api.login(userEmail, userPassword)
-    await api.startScreening(token, projectId)
-
-    // ========================================
-    // 8. SCREEN ARTICLES
+    // 7. SCREEN ARTICLES (imports go straight to title/abstract screening)
     // ========================================
     await page.getByRole('link', { name: /^Title\/abstract/ }).click()
 
@@ -149,14 +143,14 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     await expect(page.getByRole('heading', { name: /no more articles to screen/i })).toBeVisible({ timeout: 10_000 })
 
     // ========================================
-    // 9. VERIFY STATS
+    // 8. VERIFY STATS
     // ========================================
     // After screening all articles, stats should show counts
     await expect(page.getByText('Included', { exact: true })).toBeVisible()
     await expect(page.getByText('Excluded', { exact: true })).toBeVisible()
 
     // ========================================
-    // 10. VIEW ARTICLE DETAIL
+    // 9. VIEW ARTICLE DETAIL
     // ========================================
     await page.getByRole('link', { name: /^Articles/ }).click()
     await expect(page.getByTestId('article-card')).toHaveCount(3, { timeout: 10_000 })

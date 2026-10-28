@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import type { NextStep } from '@/utils/nextStep'
+import type { NextStep, NextStepCommand } from '@/utils/nextStep'
 import Button from '@/components/ui/Button.vue'
 
 interface Props {
   step: NextStep | null
+  /** A command action is running; its button is disabled meanwhile. */
+  busy?: boolean
+  /** Error from the last command action, shown under the description. */
+  error?: string | null
 }
 
 defineProps<Props>()
 
-const emit = defineEmits<{ anchor: [id: string]; retry: [] }>()
+const emit = defineEmits<{ anchor: [id: string]; command: [id: NextStepCommand]; retry: [] }>()
 
 const isDone = (kind: string) => kind === 'complete'
 const isWaiting = (kind: string) => kind === 'waiting' || kind === 'unavailable'
@@ -36,6 +40,9 @@ const isWaiting = (kind: string) => kind === 'waiting' || kind === 'unavailable'
       <div class="min-w-0">
         <h2 class="text-xl font-semibold" data-testid="next-step-title">{{ step.title }}</h2>
         <p class="mt-1 text-sm opacity-90">{{ step.description }}</p>
+        <p v-if="error" class="mt-1 text-sm font-medium text-destructive" role="alert" data-testid="next-step-error">
+          {{ error }}
+        </p>
       </div>
       <Button
         v-if="step.kind === 'unavailable'"
@@ -49,6 +56,15 @@ const isWaiting = (kind: string) => kind === 'waiting' || kind === 'unavailable'
       <template v-if="step.action">
         <Button v-if="step.action.target.type === 'anchor'" class="shrink-0" data-testid="next-step-action" @click="emit('anchor', step.action.target.id)">
           {{ step.action.label }}
+        </Button>
+        <Button
+          v-else-if="step.action.target.type === 'command'"
+          class="shrink-0"
+          :disabled="busy"
+          data-testid="next-step-action"
+          @click="step.action.target.type === 'command' && emit('command', step.action.target.id)"
+        >
+          {{ busy ? 'Working…' : step.action.label }}
         </Button>
         <router-link
           v-else

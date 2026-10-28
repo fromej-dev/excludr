@@ -100,11 +100,8 @@ test.describe('Articles Management', () => {
     await pageHelper.loginDirect(testUser.token)
     const project = await api.createProject(testUser.token)
 
-    // Upload articles (they start with status "imported")
+    // Upload articles (they go straight to status "screening")
     await api.uploadRisFile(testUser.token, project.id, generateRisContent(5))
-
-    // Start screening to move all imported articles to "screening" status
-    await api.startScreening(testUser.token, project.id)
 
     await pageHelper.goToProjectTab(project.id, 'articles')
     await articleCards(page).first().waitFor({ timeout: 10000 })
@@ -137,10 +134,9 @@ test.describe('Articles Management', () => {
     const initialCount = await articleTitles(page).count()
     expect(initialCount).toBe(5)
 
-    // Apply a filter (filter by "imported" status)
+    // Apply a filter that matches nothing: imports go straight to "screening"
     const statusSelect = page.getByLabel('Status', { exact: true })
-    await statusSelect.selectOption('screening')
-    // Nothing has started screening, so the filter empties the list
+    await statusSelect.selectOption('imported')
     await expect(articleTitles(page)).toHaveCount(0)
 
     // Click "Clear Filters" button
@@ -177,7 +173,7 @@ test.describe('Articles Management', () => {
     expect(hasMetadata).toBeTruthy()
 
     // Assert status badge is visible
-    await expect(firstArticle.getByText(/imported|screening|included|excluded/i).first()).toBeVisible()
+    await expect(firstArticle.getByTestId('article-status').first()).toBeVisible()
   })
 
   test.describe('table, search, sort and URL state', () => {
@@ -286,16 +282,16 @@ test.describe('Articles Management', () => {
       await pageHelper.goToProjectTab(project.id, 'articles')
       await expect(articleTitles(page)).toHaveCount(3)
 
-      await page.getByLabel('Status', { exact: true }).selectOption('imported')
+      await page.getByLabel('Status', { exact: true }).selectOption('screening')
       await page.getByLabel('Search').fill('a')
       await page.getByTestId('sort-year').click()
-      await expect(page).toHaveURL(/status=imported/)
+      await expect(page).toHaveURL(/status=screening/)
       await expect(page).toHaveURL(/q=a/)
       await expect(page).toHaveURL(/sort=year/)
 
       // Reload keeps the state
       await page.reload()
-      await expect(page.getByLabel('Status', { exact: true })).toHaveValue('imported')
+      await expect(page.getByLabel('Status', { exact: true })).toHaveValue('screening')
       await expect(page.getByLabel('Search')).toHaveValue('a')
       await expect(articleTitles(page).first()).toBeVisible()
 
@@ -304,10 +300,10 @@ test.describe('Articles Management', () => {
       await expect(page.getByTestId('article-detail-title')).toBeVisible()
       await page.getByRole('button', { name: /back/i }).click()
 
-      await expect(page).toHaveURL(/status=imported/)
+      await expect(page).toHaveURL(/status=screening/)
       await expect(page).toHaveURL(/q=a/)
       await expect(page).toHaveURL(/sort=year/)
-      await expect(page.getByLabel('Status', { exact: true })).toHaveValue('imported')
+      await expect(page.getByLabel('Status', { exact: true })).toHaveValue('screening')
       await expect(page.getByLabel('Search')).toHaveValue('a')
       await expect(articleTitles(page).first()).toBeVisible()
 
@@ -315,7 +311,7 @@ test.describe('Articles Management', () => {
       await articleCards(page).first().click()
       await expect(page.getByTestId('article-detail-title')).toBeVisible()
       await page.goBack()
-      await expect(page).toHaveURL(/status=imported/)
+      await expect(page).toHaveURL(/status=screening/)
       await expect(page.getByLabel('Search')).toHaveValue('a')
     })
 
@@ -381,20 +377,17 @@ test.describe('Articles Management', () => {
       await pageHelper.loginDirect(token)
       const project = await api.createProject(token)
       await api.uploadRisFile(token, project.id, generateRisContent(4))
-      await api.startScreening(token, project.id)
-      await api.uploadRisFile(token, project.id, generateRisContent(1)) // stays "imported"
       const { data } = await api.getArticles(token, project.id)
       await decide(request, token, project.id, data[0].id, 'include') // awaiting full text
       await decide(request, token, project.id, data[1].id, 'exclude') // excluded
 
       await pageHelper.goToProjectTab(project.id, 'articles')
-      await expect(articleCards(page)).toHaveCount(5)
+      await expect(articleCards(page)).toHaveCount(4)
 
       await expect(page.getByRole('columnheader', { name: 'Decision' })).toHaveCount(0)
       await expect(page.getByRole('columnheader', { name: /status/i })).toHaveCount(1)
 
       const statuses = page.getByTestId('article-status')
-      await expect(statuses.filter({ hasText: 'Imported' })).toHaveCount(1)
       await expect(statuses.filter({ hasText: 'Title/abstract' })).toHaveCount(2)
       await expect(statuses.filter({ hasText: 'Awaiting full text' })).toHaveCount(1)
       await expect(statuses.filter({ hasText: 'Excluded' })).toHaveCount(1)
@@ -414,7 +407,6 @@ test.describe('Articles Management', () => {
     async function seedAwaiting(api: ApiHelper, request: APIRequestContext, token: string) {
       const project = await api.createProject(token)
       await api.uploadRisFile(token, project.id, generateRisContent(3))
-      await api.startScreening(token, project.id)
       const { data } = await api.getArticles(token, project.id)
       for (const a of data.slice(0, 2)) await decide(request, token, project.id, a.id, 'include')
       return { project, ids: data.slice(0, 2).map((a) => a.id) }

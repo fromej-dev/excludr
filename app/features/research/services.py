@@ -140,7 +140,15 @@ class ArticleService:
         return article
 
     def start_screening(self, project_id: int) -> int:
-        """Move all imported articles to screening status. Returns count of updated articles."""
+        """Move all imported articles to title/abstract screening.
+
+        Imports already create articles in ``screening``, so this only releases
+        articles left in ``imported`` (e.g. created before that change). It is
+        idempotent: a second call finds nothing to move and returns 0.
+
+        Returns:
+            Number of articles moved.
+        """
         articles = self.session.exec(
             select(Article).where(
                 Article.project_id == project_id,
@@ -151,6 +159,7 @@ class ArticleService:
         count = 0
         for article in articles:
             article.status = ArticleStatus.screening
+            article.current_stage = ScreeningStage.title_abstract
             self.session.add(article)
             count += 1
 
