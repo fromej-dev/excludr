@@ -112,7 +112,7 @@ test.describe('Project Management Flow', () => {
     await page.getByRole('dialog', { name: 'Delete Project' }).getByRole('button', { name: 'Delete Project' }).click()
 
     // Wait for redirect to dashboard
-    await expect(page).toHaveURL('/', { timeout: 10000 })
+    await expect(page).toHaveURL('/dashboard', { timeout: 10000 })
 
     // Assert project is gone from the list
     await expect(page.getByText('Project To Delete')).not.toBeVisible()

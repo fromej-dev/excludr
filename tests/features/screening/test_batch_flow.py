@@ -93,7 +93,7 @@ async def test_flow_screens_all_and_notifies(
 
     result = await flows.batch_ai_screening_flow.fn(project.id, ids, user.id)
 
-    assert result == {"total": 3, "screened": 3, "errors": 0}
+    assert result == {"total": 3, "screened": 3, "errors": 0, "skipped": 0}
     assert [c[0] for c in calls] == ids
     assert calls[0][1:] == (["I1"], "Q?")
     room, user_notify = notifier
@@ -125,7 +125,7 @@ async def test_flow_isolates_per_article_errors(
         project.id, [a.id for a in articles], user.id
     )
 
-    assert result == {"total": 3, "screened": 2, "errors": 1}
+    assert result == {"total": 3, "screened": 2, "errors": 1, "skipped": 0}
     assert len(calls) == 3  # batch continued after the failure
     room, _ = notifier
     payloads = [c.kwargs["data"] for c in room.await_args_list]

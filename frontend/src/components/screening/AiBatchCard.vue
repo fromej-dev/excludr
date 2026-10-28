@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAiBatchStore } from '@/stores/aiBatch'
 import { useWebSocketStore } from '@/stores/websocket'
+import { useBillingStore } from '@/stores/billing'
 import Card from '@/components/ui/Card.vue'
 import Button from '@/components/ui/Button.vue'
 import Progress from '@/components/ui/Progress.vue'
@@ -23,13 +24,18 @@ const emit = defineEmits<{ finished: [] }>()
 
 const aiBatch = useAiBatchStore()
 const wsStore = useWebSocketStore()
-const { running, starting, screened, errors, total, staleCount, percent, error } = storeToRefs(aiBatch)
+const billingStore = useBillingStore()
+const { running, starting, screened, errors, skipped, total, staleCount, percent, error } =
+  storeToRefs(aiBatch)
 
 const rescreenStale = ref(false)
 
 onMounted(() => {
   if (!props.manageSubscription) return
-  aiBatch.subscribe(props.projectId, () => emit('finished'))
+  aiBatch.subscribe(props.projectId, () => {
+    void billingStore.fetchStatus(props.projectId) // usage changed
+    emit('finished')
+  })
   aiBatch.fetchStale(props.projectId)
 })
 
@@ -44,6 +50,13 @@ const run = async () => {
     wsStore.addNotification(error.value ?? 'Failed to start AI screening', 'error')
   } else if (res.article_count === 0) {
     wsStore.addNotification('No eligible articles for AI screening', 'info')
+  } else if (res.skipped_over_allowance > 0) {
+    wsStore.addNotification(
+      `AI screening started for ${res.article_count} articles. ` +
+        `${res.skipped_over_allowance} more need a larger allowance; see the plan on the Overview tab.`,
+      'warning',
+      10000
+    )
   } else {
     wsStore.addNotification(`AI screening started for ${res.article_count} articles`, 'success')
   }
@@ -80,10 +93,11 @@ const run = async () => {
     </label>
 
     <div v-if="running || total > 0" class="space-y-1" data-testid="ai-progress">
-      <Progress :value="percent" :variant="errors > 0 ? 'warning' : 'default'" />
+      <Progress :value="percent" :variant="errors + skipped > 0 ? 'warning' : 'default'" />
       <p class="text-xs text-muted-foreground">
-        {{ screened + errors }} / {{ total }} done
+        {{ screened + errors + skipped }} / {{ total }} done
         <template v-if="errors > 0"> - {{ errors }} failed</template>
+        <template v-if="skipped > 0"> - {{ skipped }} over the plan's allowance</template>
         <template v-if="!running"> - complete</template>
       </p>
     </div>

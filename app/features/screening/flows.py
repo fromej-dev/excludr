@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 
 from app.core.database import engine
 from app.features.audit import services as audit
+from app.features.billing import services as billing
 from app.features.criteria.models import Criterion
 from app.features.projects.models import Project
 from app.features.research.agent import screen_article
@@ -66,11 +67,12 @@ async def batch_ai_screening_flow(
             UI can keep such small batches out of the project-wide batch progress.
 
     Returns:
-        ``{"total", "screened", "errors"}`` counts.
+        ``{"total", "screened", "errors", "skipped"}`` counts.
     """
     total = len(article_ids)
     screened = 0
     errors = 0
+    skipped = 0  # refused by the plan (allowance used up, or project read-only)
 
     with Session(engine) as session:
         project = session.get(Project, project_id)
@@ -96,6 +98,8 @@ async def batch_ai_screening_flow(
                     raise LookupError(f"Article {article_id} not found in project")
                 if not criteria:
                     raise LookupError("No active criteria")
+                if project is not None:
+                    billing.check_can_ai_screen(session, project, article)
                 decision = await screen_article(
                     article=article,
                     criteria=criteria,
@@ -110,6 +114,10 @@ async def batch_ai_screening_flow(
                     confidence=decision.confidence_score,
                 )
                 level = NotificationLevel.INFO
+            except billing.BillingError as exc:
+                skipped += 1
+                data.update(type="ai_screening_skipped", error=str(exc))
+                level = NotificationLevel.WARNING
             except Exception as exc:
                 logger.exception(
                     "AI screening failed for article %s in project %s",
@@ -122,15 +130,20 @@ async def batch_ai_screening_flow(
                 data.update(type="ai_screening_error", error="AI screening failed")
                 level = NotificationLevel.WARNING
 
-            data.update(screened=screened, errors=errors, total=total)
+            data.update(screened=screened, errors=errors, skipped=skipped, total=total)
             await _notify(
                 project_id,
-                f"AI screening progress: {screened + errors}/{total}",
+                f"AI screening progress: {screened + errors + skipped}/{total}",
                 data,
                 level,
             )
 
-    summary = {"total": total, "screened": screened, "errors": errors}
+    summary = {
+        "total": total,
+        "screened": screened,
+        "errors": errors,
+        "skipped": skipped,
+    }
     try:
         with Session(engine) as audit_session:
             audit.record_event(
@@ -146,14 +159,15 @@ async def batch_ai_screening_flow(
         logger.exception("Failed to record AI batch audit event")
     await _notify(
         project_id,
-        f"AI screening complete: {screened} screened, {errors} failed",
+        f"AI screening complete: {screened} screened, {errors} failed"
+        + (f", {skipped} over the plan's allowance" if skipped else ""),
         {
             "type": "ai_screening_complete",
             "project_id": project_id,
             **({"targeted": True, "article_ids": article_ids} if targeted else {}),
             **summary,
         },
-        NotificationLevel.WARNING if errors else NotificationLevel.SUCCESS,
+        NotificationLevel.WARNING if errors or skipped else NotificationLevel.SUCCESS,
         user_id=user_id,
     )
     return summary

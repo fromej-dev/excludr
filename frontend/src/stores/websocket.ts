@@ -137,7 +137,10 @@ export const useWebSocketStore = defineStore('websocket', () => {
 
       // Handle notifications
       // Per-article batch progress is rendered as a progress bar, not as a toast each
-      const perArticle = response.data?.type === 'ai_screening_progress' || response.data?.type === 'fulltext_progress'
+      // (articles skipped over the plan's AI allowance are summed up there too)
+      const perArticle = ['ai_screening_progress', 'ai_screening_skipped', 'fulltext_progress'].includes(
+        String(response.data?.type)
+      )
       // Lookahead batches of the screening view (`targeted`) run quietly in the background
       if (response.data?.notification && !perArticle && response.data?.targeted !== true) {
         const level = (response.data.level as NotificationLevel) || 'info'

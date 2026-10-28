@@ -75,6 +75,53 @@ ruff check --fix .
 ruff format .
 ```
 
+## Billing (review passes)
+
+Billing is off by default, so development and self-hosted installs have no limits.
+To sell review passes, turn it on with these environment variables:
+
+| Variable | Purpose |
+|---|---|
+| `BILLING_ENABLED=true` | Enforce the free allowance, passes and read-only expiry |
+| `STRIPE_SECRET_KEY` | Stripe API key (`sk_test_...` until going live) |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret of the webhook endpoint (`whsec_...`) |
+| `PUBLIC_APP_URL` | Public URL of the app; Stripe returns the browser here after payment |
+| `STRIPE_AUTOMATIC_TAX=true` | Optional; needs Stripe Tax set up in the Stripe dashboard first |
+| `VITE_CONTACT_EMAIL` | Optional, at frontend build time; shows contact links on the home page |
+
+**Before Stripe is set up**, `BILLING_ENABLED=true` alone already enforces the free
+allowance, passes and read-only expiry. Owners then see the pass prices and a "Contact us"
+link (set `VITE_CONTACT_EMAIL`) instead of buy buttons, and an admin grants passes in the
+admin area. Adding the Stripe keys later switches the buttons on.
+
+In Stripe, add a webhook endpoint at `<PUBLIC_APP_URL>/api/v1/billing/webhook` for the
+events `checkout.session.completed`, `checkout.session.async_payment_succeeded` and
+`charge.refunded`.
+No products need to be created in Stripe: prices come from
+`app/features/billing/plans.py`, which also feeds the home page.
+
+For local testing, the Stripe CLI can forward events:
+`stripe listen --forward-to localhost:8000/api/v1/billing/webhook`.
+
+Refunds are made in the Stripe dashboard (that is what `charge.refunded` is for):
+a full refund of a project's latest payment undoes that payment (a new pass goes back to
+the free tier, an upgrade back to the previous tier). Partial refunds, and refunds of older
+payments, are recorded but leave the pass alone; adjust it in the admin area if needed.
+
+## Admin area
+
+Superusers get an **Admin** link in the app (`/admin`): headline numbers, users
+(search, deactivate, admin rights), projects with their plans (grant, extend, change
+the limit, end early) and payments with links to the Stripe dashboard. Plan changes
+are written to the project's audit log.
+
+Make the first admin from the command line (the account must be registered first):
+
+```bash
+python -m app.cli make-admin you@example.com
+python -m app.cli make-admin you@example.com --revoke
+```
+
 ## Project Structure
 
 ```

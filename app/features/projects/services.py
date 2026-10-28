@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import Depends
 from sqlalchemy import or_
-from sqlmodel import Session, delete, select
+from sqlmodel import Session, delete, select, update
 
 from .models import (
     ImportBatch,
@@ -117,9 +117,16 @@ class ProjectService:
         # Child rows without an ORM cascade (also covered by DB-level ON DELETE
         # CASCADE; done explicitly so it works on databases without FK enforcement).
         from app.features.audit.models import AuditEvent
+        from app.features.billing.models import Payment, ProjectPlan
 
-        for model in (ProjectMember, ImportBatch, AuditEvent):
+        for model in (ProjectMember, ImportBatch, AuditEvent, ProjectPlan):
             self.session.exec(delete(model).where(model.project_id == project.id))
+        # Payments are financial records: keep them, without the project link.
+        self.session.exec(
+            update(Payment)
+            .where(Payment.project_id == project.id)
+            .values(project_id=None)
+        )
         self.session.delete(project)
         self.session.commit()
         return

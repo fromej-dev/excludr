@@ -13,9 +13,10 @@ from app.core.database import SessionDep
 from app.core.uploads import display_filename, remove_file, save_upload
 from app.features.audit import services as audit
 from app.features.auth.services import get_current_user
+from app.features.billing import services as billing
 from app.features.users.models import User
 from .models import ImportBatch, Project, ProjectCreate, ProjectUpdate
-from .permissions import OwnerAccess, ViewerAccess
+from .permissions import OwnerAccess, OwnerAccessAnyState, ViewerAccess
 from .services import ProjectService, ProjectServiceDep
 from app.features.screening.services import ScreeningService
 from .flows import parse_ris_file_flow, parse_pubmed_file_flow
@@ -178,6 +179,11 @@ def update_project(
     """Update project fields and settings (owner only)."""
     changes = data.model_dump(exclude_unset=True, exclude_none=True)
     reviewers_before = access.project.required_reviewers
+    if changes.get("required_reviewers", reviewers_before) > reviewers_before:
+        try:
+            billing.ensure_dual_screening_allowed(session, access.project)
+        except billing.BillingError as e:
+            raise HTTPException(status_code=402, detail=str(e)) from e
     project = ps.update_project(access.project, data)
     if project.required_reviewers != reviewers_before:
         # Articles may now be settled (or in conflict) under the new rule.
@@ -197,6 +203,6 @@ def update_project(
 
 
 @router.delete("/{project_id}", status_code=204)
-def delete_project(access: OwnerAccess, ps: ProjectServiceDep):
+def delete_project(access: OwnerAccessAnyState, ps: ProjectServiceDep):
     ps.delete_project(access.project)
     return

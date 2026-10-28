@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
@@ -8,6 +8,15 @@ import Label from '@/components/ui/Label.vue'
 import Card from '@/components/ui/Card.vue'
 
 const router = useRouter()
+const route = useRoute()
+
+// Only follow in-app redirects, never an absolute URL
+const redirectTarget = () => {
+  const target = route.query.redirect
+  return typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')
+    ? target
+    : '/dashboard'
+}
 const authStore = useAuthStore()
 
 const name = ref('')
@@ -31,7 +40,7 @@ const handleSubmit = async () => {
   })
 
   if (success) {
-    router.push('/')
+    router.push(redirectTarget())
   } else {
     errorMessage.value = authStore.error || 'Registration failed'
   }

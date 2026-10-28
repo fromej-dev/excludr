@@ -7,6 +7,7 @@ import { useConflictsStore } from '@/stores/conflicts'
 import { useProjectNavStore } from '@/stores/projectNav'
 import { useProjectStatsStore } from '@/stores/projectStats'
 import { useProjectLiveUpdates } from '@/composables/useProjectLiveUpdates'
+import { useBillingStore } from '@/stores/billing'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ProjectSidebar from '@/components/layout/ProjectSidebar.vue'
 
@@ -16,6 +17,7 @@ const membersStore = useMembersStore()
 const conflictsStore = useConflictsStore()
 const navStore = useProjectNavStore()
 const statsStore = useProjectStatsStore()
+const billingStore = useBillingStore()
 
 const projectId = computed(() => Number(route.params.id))
 
@@ -29,6 +31,7 @@ watch(
     projectsStore.fetchProject(id)
     membersStore.fetchMyRole(id)
     membersStore.fetchMembers(id)
+    billingStore.fetchStatus(id)
   },
   { immediate: true }
 )
@@ -75,6 +78,22 @@ watch(
         >
           {{ projectsStore.currentProject?.name }}
         </h1>
+        <div
+          v-if="billingStore.status?.read_only"
+          role="status"
+          data-testid="read-only-banner"
+          class="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm"
+        >
+          This review's pass has expired, so the project is read-only. You can still view and
+          export everything.
+          <router-link
+            v-if="!isOverview"
+            :to="{ name: 'project-overview', params: { id: projectId } }"
+            class="ml-1 font-medium text-primary hover:underline"
+          >
+            Renew the pass
+          </router-link>
+        </div>
         <router-view />
       </div>
     </div>

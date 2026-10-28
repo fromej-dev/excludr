@@ -42,6 +42,16 @@ class Settings(BaseSettings):
     # Max characters of full text sent to the screening model (longer text is truncated)
     screening_max_fulltext_chars: int = 150_000
 
+    # Billing: review passes paid through Stripe Checkout. Off = no limits
+    # (development, self-hosting). Use Stripe test-mode keys until going live.
+    billing_enabled: bool = False
+    stripe_secret_key: Optional[str] = None
+    stripe_webhook_secret: Optional[str] = None
+    # Needs Stripe Tax set up in the Stripe dashboard first
+    stripe_automatic_tax: bool = False
+    # Where Stripe sends the browser back to after payment
+    public_app_url: str = "http://localhost:5173"
+
     # Unpaywall settings for full-text retrieval
     unpaywall_email: Optional[str] = None
 

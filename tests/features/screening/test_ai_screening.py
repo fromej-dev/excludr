@@ -620,6 +620,7 @@ def test_subset_with_nothing_eligible_returns_zero(
         "message": "No eligible articles to screen",
         "article_count": 0,
         "article_ids": [],
+        "skipped_over_allowance": 0,
     }
     _ai_configured.assert_not_awaited()
 

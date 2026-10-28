@@ -154,7 +154,7 @@ def test_ai_batch_start_and_finish_are_audited(
 
     asyncio.run(run())
     finished = session.query(AuditEvent).filter_by(action="ai_batch.finished").one()
-    assert finished.details == {"total": 0, "screened": 0, "errors": 0}
+    assert finished.details == {"total": 0, "screened": 0, "errors": 0, "skipped": 0}
 
 
 def test_deleting_project_removes_members_and_audit(

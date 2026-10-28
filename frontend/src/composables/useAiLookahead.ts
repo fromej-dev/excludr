@@ -23,7 +23,8 @@ const readEnabled = (): boolean => {
  *   current one, no wrapping.
  * - Each id is sent to `run-ai` at most once per project + stage while the view is open (the server
  *   also skips ids that are already screened or already queued by another batch).
- * - A 400 (no active criteria) or 503 (AI not configured) stops the lookahead for this session and
+ * - A 400 (no active criteria), 402 (plan's AI allowance used up) or 503 (AI not configured) stops
+ *   the lookahead for this session and
  *   sets `unavailable` to a short reason; nothing is toasted.
  * - Never blocks the UI: requests run in the background; results arrive over the websocket.
  */

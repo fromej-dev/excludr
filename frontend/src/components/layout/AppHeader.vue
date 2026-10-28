@@ -30,12 +30,20 @@ const handleLogout = () => {
   <header class="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
     <div class="container flex h-16 items-center justify-between gap-2 px-4">
       <div class="flex min-w-0 items-center gap-3 sm:gap-6">
-        <router-link to="/" class="flex items-center space-x-2">
+        <router-link to="/dashboard" class="flex items-center space-x-2">
           <span class="text-xl font-bold">Excludr</span>
         </router-link>
         <nav v-if="authStore.isAuthenticated" class="flex items-center gap-4">
-          <router-link to="/" class="text-sm font-medium hover:text-primary">
+          <router-link to="/dashboard" class="text-sm font-medium hover:text-primary">
             Projects
+          </router-link>
+          <router-link
+            v-if="authStore.user?.is_superuser"
+            to="/admin"
+            class="text-sm font-medium hover:text-primary"
+            data-testid="admin-link"
+          >
+            Admin
           </router-link>
         </nav>
       </div>

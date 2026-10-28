@@ -328,6 +328,8 @@ export interface RunAiResponse {
   article_count: number
   /** Ids actually queued (ineligible, already screened or already queued ids are skipped). */
   article_ids?: number[]
+  /** Eligible articles left out because the plan's AI allowance is used up */
+  skipped_over_allowance: number
 }
 
 export interface AiBatchProgress {
@@ -517,4 +519,127 @@ export interface MyProjectRole {
   project_id: number
   user_id: number
   role: ProjectRole
+}
+
+// Billing types
+export interface BillingUsage {
+  used: number
+  limit: number
+  /** 'account': free allowance shared by the owner's projects without a pass */
+  scope: 'project' | 'account'
+}
+
+export interface PassOption {
+  tier: string
+  label: string
+  fulltext_limit: number
+  amount_cents: number
+  kind: 'new' | 'renewal' | 'upgrade'
+}
+
+export interface BillingStatus {
+  billing_enabled: boolean
+  plan: string
+  plan_label: string
+  active: boolean
+  read_only: boolean
+  expires_at: string | null
+  full_text: BillingUsage
+  title_abstract: BillingUsage
+  dual_screening_allowed: boolean
+  currency: string
+  options: PassOption[]
+  /** False until Stripe is set up: passes are then granted by an admin */
+  online_payment: boolean
+}
+
+export interface PublicPlans {
+  billing_enabled: boolean
+  currency: string
+  pass_duration_days: number
+  free: { fulltext_limit: number }
+  tiers: { tier: string; label: string; fulltext_limit: number; price_cents: number }[]
+}
+
+// Admin types
+export interface AdminPage<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export type AdminProjectState = 'free' | 'active' | 'expiring' | 'expired'
+
+export interface AdminPlan {
+  tier: string
+  fulltext_limit: number
+  activated_at: string
+  expires_at: string
+  source: 'stripe' | 'admin'
+  amount_paid_cents: number
+  active: boolean
+}
+
+export interface AdminProject {
+  id: number
+  name: string
+  owner_id: number
+  owner_email: string | null
+  owner_name: string | null
+  created_at: string | null
+  article_count: number
+  ai_fulltext_used: number
+  plan: AdminPlan | null
+  state: AdminProjectState
+}
+
+export interface AdminUser {
+  id: number
+  email: string
+  name: string
+  is_active: boolean
+  is_superuser: boolean
+  is_verified: boolean
+  created_at: string | null
+  project_count: number
+  active_passes: number
+  ai_fulltext_used: number
+}
+
+export interface AdminUserDetail extends AdminUser {
+  projects: AdminProject[]
+  payments_total_cents: number
+}
+
+export type PaymentStatus = 'paid' | 'partially_refunded' | 'refunded'
+
+export interface AdminPayment {
+  id: number
+  created_at: string
+  project_id: number | null
+  project_name: string
+  user_id: number | null
+  user_email: string | null
+  tier: string
+  kind: string
+  amount_cents: number
+  refunded_cents: number
+  currency: string
+  status: PaymentStatus
+  dashboard_url: string | null
+}
+
+export interface AdminOverview {
+  users_total: number
+  users_new_30d: number
+  projects_total: number
+  active_passes: number
+  expiring_30d: number
+  revenue_month_cents: number
+  revenue_total_cents: number
+  payments_month: number
+  ai_fulltext_month: number
+  ai_title_abstract_month: number
+  currency: string
 }

@@ -213,7 +213,7 @@ def test_migration_moves_imported_articles_to_screening(tmp_path):
         )
 
     alembic("stamp", "f2b8d4e6a1c3")
-    alembic("upgrade", "head")
+    alembic("upgrade", "a9c4e2f7d1b6")  # this migration only, not later ones
 
     engine = create_engine(url)
     with engine.connect() as conn:
