@@ -41,7 +41,7 @@ const handleSubmit = async () => {
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col bg-background text-foreground">
+  <div class="flex min-h-dvh flex-col bg-background text-foreground">
     <PublicHeader />
     <main class="flex flex-1 items-center justify-center px-4 py-12">
       <Card class="w-full max-w-md p-8">

@@ -25,7 +25,7 @@ watch(menuOpen, (open) => (bodyLocked.value = open))
 </script>
 
 <template>
-  <div class="min-h-screen bg-background lg:flex">
+  <div class="min-h-dvh bg-background lg:flex">
     <!-- Below lg: compact top bar with a menu button that opens the sidebar as a drawer -->
     <header class="sticky top-0 z-40 flex h-14 items-center gap-2 border-b bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:bg-background/70 lg:hidden">
       <button
