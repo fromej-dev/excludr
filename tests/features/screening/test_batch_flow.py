@@ -64,7 +64,7 @@ def setup(session, a_user, a_project):
 def _fake_screen(fail_ids=()):
     calls = []
 
-    async def fake(article, criteria, review_question, session, reviewer_id=None):
+    async def fake(article, criteria, review_question, session, reviewer_id=None, **_):
         calls.append((article.id, [c.code for c in criteria], review_question))
         if article.id in fail_ids:
             raise RuntimeError("provider exploded: secret")

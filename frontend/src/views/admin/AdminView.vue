@@ -12,7 +12,7 @@ import AdminSidebar from '@/components/layout/AdminSidebar.vue'
     <div class="space-y-6">
       <div>
         <h1 class="text-3xl font-bold">Admin</h1>
-        <p class="mt-2 text-muted-foreground">Users, plans and payments across Excludr</p>
+        <p class="mt-2 text-muted-foreground">Users, plans, payments and AI usage across Excludr</p>
       </div>
       <router-view />
     </div>

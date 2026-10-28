@@ -97,4 +97,33 @@ class Overview(BaseModel):
     payments_month: int
     ai_fulltext_month: int
     ai_title_abstract_month: int
+    ai_tokens_month: int
+    ai_cost_month_usd: float
     currency: str
+
+
+class AIUsageTotals(BaseModel):
+    runs: int
+    failed_runs: int
+    articles: int = Field(description="Distinct articles")
+    requests: int
+    input_tokens: int = Field(description="Cache reads and writes included")
+    output_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    total_tokens: int
+    cost_usd: float = Field(description="Estimate, excluding unpriced runs")
+    unpriced_runs: int
+
+
+class AIUsageGroup(AIUsageTotals):
+    key: Optional[str]
+    label: str
+    project_id: Optional[int] = Field(default=None, description="Article groups only")
+
+
+class AIUsageReport(BaseModel):
+    group_by: str
+    totals: AIUsageTotals
+    groups: list[AIUsageGroup]
+    group_count: int

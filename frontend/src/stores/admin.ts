@@ -8,8 +8,12 @@ import type {
   AdminProjectState,
   AdminUser,
   AdminUserDetail,
+  AiUsageFilters,
+  AiUsageGroupBy,
+  AiUsageReport,
   PaymentStatus,
 } from '@/types'
+import { filenameFromDisposition } from '@/stores/reports'
 
 export interface ListParams {
   page?: number
@@ -23,7 +27,7 @@ const clean = <T extends object>(params: T) =>
 
 /** Admin API calls (superusers only). Views keep their own list state. */
 export const useAdminStore = defineStore('admin', () => {
-  const { get, post, patch } = useApi()
+  const { get, post, patch, api } = useApi()
 
   const overview = () => get<AdminOverview>('/admin/overview')
 
@@ -51,5 +55,40 @@ export const useAdminStore = defineStore('admin', () => {
   const payments = (params: ListParams & { status?: PaymentStatus | '' }) =>
     get<AdminPage<AdminPayment>>('/admin/payments', { params: clean(params) })
 
-  return { overview, users, user, updateUser, projects, grantPass, updatePass, payments }
+  const aiUsage = (params: AiUsageFilters & { group_by: AiUsageGroupBy; limit?: number }) =>
+    get<AiUsageReport>('/admin/ai-usage', { params: clean(params) })
+
+  /** Download AI usage as CSV: the totals per group, or every run without `group_by`. */
+  const exportAiUsage = async (params: AiUsageFilters & { group_by?: AiUsageGroupBy }) => {
+    const res = await api.get<Blob>('/admin/ai-usage/export', {
+      params: clean(params),
+      responseType: 'blob',
+    })
+    const name = filenameFromDisposition(
+      res.headers['content-disposition'] as string | undefined,
+      'ai-usage.csv'
+    )
+    const url = URL.createObjectURL(res.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    return name
+  }
+
+  return {
+    overview,
+    users,
+    user,
+    updateUser,
+    projects,
+    grantPass,
+    updatePass,
+    payments,
+    aiUsage,
+    exportAiUsage,
+  }
 })

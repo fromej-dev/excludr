@@ -1,14 +1,19 @@
 """Admin area API (superusers only)."""
 
-from typing import Annotated, Literal, Optional
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Annotated, Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from app.core.database import SessionDep
+from app.features.ai_usage import services as ai_usage
+from app.features.ai_usage.models import AIActivity
 from app.features.auth.services import get_current_admin_user
 from app.features.billing import services as billing
 from app.features.billing.models import ProjectPlan
 from app.features.projects.models import Project
+from app.features.screening.models import ScreeningStage
 from app.features.users.models import User
 from . import services as admin
 from .schemas import (
@@ -16,6 +21,7 @@ from .schemas import (
     AdminProject,
     AdminUser,
     AdminUserDetail,
+    AIUsageReport,
     GrantRequest,
     Overview,
     Page,
@@ -125,3 +131,72 @@ def get_payments(
     page_size: PageSizeQuery = 25,
 ):
     return admin.list_payments(session, status, page, page_size)
+
+
+def _usage_filters(
+    start: Annotated[Optional[date], Query(description="First day (UTC)")] = None,
+    end: Annotated[
+        Optional[date], Query(description="Last day (UTC), inclusive")
+    ] = None,
+    project_id: Optional[int] = None,
+    user_id: Annotated[Optional[int], Query(description="Who started the runs")] = None,
+    activity: Optional[AIActivity] = None,
+    stage: Optional[ScreeningStage] = None,
+    model: Optional[str] = None,
+) -> dict[str, Any]:
+    def midnight(day: date) -> datetime:
+        return datetime.combine(day, time.min, tzinfo=timezone.utc)
+
+    return {
+        "start": midnight(start) if start else None,
+        "end": midnight(end + timedelta(days=1)) if end else None,
+        "project_id": project_id,
+        "user_id": user_id,
+        "activity": activity.value if activity else None,
+        "stage": stage.value if stage else None,
+        "model": model,
+    }
+
+
+UsageFilters = Annotated[dict[str, Any], Depends(_usage_filters)]
+GroupByQuery = Annotated[ai_usage.GroupBy, Query()]
+
+
+@router.get("/ai-usage", response_model=AIUsageReport)
+def get_ai_usage(
+    _: AdminDep,
+    session: SessionDep,
+    filters: UsageFilters,
+    group_by: GroupByQuery = "project",
+    limit: Annotated[int, Query(ge=1, le=1000)] = 100,
+):
+    """AI token usage and estimated cost (USD), in total and per group.
+
+    Every AI run counts, failed ones included. Groups are ordered by tokens used
+    (by date for ``day`` and ``month``); ``group_count`` is the number before
+    ``limit``.
+    """
+    return ai_usage.report(session, group_by, limit, **filters)
+
+
+@router.get("/ai-usage/export")
+def export_ai_usage(
+    _: AdminDep,
+    session: SessionDep,
+    filters: UsageFilters,
+    group_by: Annotated[
+        Optional[ai_usage.GroupBy], Query(description="Omit for one line per AI run")
+    ] = None,
+):
+    """Download AI usage as CSV: every run, or the totals per group."""
+    if group_by:
+        body = ai_usage.iter_groups_csv(session, group_by, **filters)
+        name = f"ai-usage-by-{group_by}.csv"
+    else:
+        body = ai_usage.iter_runs_csv(session, **filters)
+        name = "ai-usage-runs.csv"
+    return StreamingResponse(
+        body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )

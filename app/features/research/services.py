@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import Depends
-from sqlmodel import Session, select
+from sqlmodel import Session, select, update
 
 from .models import (
     Article,
@@ -194,7 +194,14 @@ class ArticleService:
         return count
 
     def delete_article(self, article: Article) -> None:
-        """Delete an article."""
+        """Delete an article (its AI usage rows are kept, without the link)."""
+        from app.features.ai_usage.models import AIUsage
+
+        self.session.exec(
+            update(AIUsage)
+            .where(AIUsage.article_id == article.id)
+            .values(article_id=None, decision_id=None)
+        )
         self.session.delete(article)
         self.session.commit()
 

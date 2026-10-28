@@ -7,6 +7,7 @@ from fastapi_fsp.models import PaginatedResponse
 
 from app.core.database import SessionDep
 from app.core.prefect_config import run_flow_in_background
+from app.features.ai_usage.models import AIActivity
 from app.features.audit import services as audit
 from app.features.billing import services as billing
 from app.features.projects.models import ProjectRole
@@ -341,6 +342,8 @@ async def screen_article_with_ai(
             review_question=review_question,
             session=session,
             reviewer_id=None,
+            activity=AIActivity.screening_single,
+            triggered_by=access.user.id,
         )
         return decision
     except Exception as e:

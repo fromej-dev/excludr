@@ -98,7 +98,14 @@ const onSaved = () => {
             <p class="mt-2 text-sm text-muted-foreground">
               Joined {{ formatDate(user.created_at) }} · {{ formatCount(user.project_count) }} projects ·
               {{ formatCount(user.ai_fulltext_used) }} AI full texts · paid
-              {{ formatPrice(user.payments_total_cents) }}
+              {{ formatPrice(user.payments_total_cents) }} ·
+              <router-link
+                :to="{ name: 'admin-ai-usage', query: { user_id: user.id, group_by: 'project' } }"
+                class="hover:text-primary hover:underline"
+                data-testid="user-ai-usage"
+              >
+                AI usage
+              </router-link>
             </p>
           </div>
           <div v-if="!isSelf" class="flex gap-2">

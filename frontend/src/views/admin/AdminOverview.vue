@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useAdminStore } from '@/stores/admin'
 import { formatPrice } from '@/stores/billing'
-import { formatCount } from '@/utils/format'
+import { formatCount, formatUsd } from '@/utils/format'
 import { getErrorMessage } from '@/utils/errors'
 import type { AdminOverview } from '@/types'
 import Card from '@/components/ui/Card.vue'
@@ -18,6 +18,9 @@ onMounted(async () => {
     error.value = getErrorMessage(err, 'Could not load the overview')
   }
 })
+
+/** First day of this month (UTC), as the AI usage page's start date. */
+const monthStart = () => new Date().toISOString().slice(0, 8) + '01'
 
 const tiles = computed(() => {
   const d = data.value
@@ -55,6 +58,12 @@ const tiles = computed(() => {
       label: 'AI title/abstract screenings this month',
       value: formatCount(d.ai_title_abstract_month),
       note: 'Cheap; capped as fair use',
+    },
+    {
+      label: 'AI tokens this month',
+      value: formatCount(d.ai_tokens_month),
+      note: `About ${formatUsd(d.ai_cost_month_usd)} · see AI usage`,
+      link: { name: 'admin-ai-usage', query: { group_by: 'project', start: monthStart() } },
     },
   ]
 })

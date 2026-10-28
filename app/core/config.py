@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     screening_confidence_threshold: float = 0.7
     # Max characters of full text sent to the screening model (longer text is truncated)
     screening_max_fulltext_chars: int = 150_000
+    # USD per million tokens by model name, for the AI cost estimates, e.g.
+    # AI_MODEL_PRICES='{"claude-sonnet-5-5": {"input": 3, "output": 15,
+    # "cache_read": 0.3, "cache_write": 3.75}}'. Models not listed are priced from
+    # pydantic-ai's built-in price table; missing cache prices use the input price.
+    ai_model_prices: dict[str, dict[str, float]] = {}
 
     # Billing: review passes paid through Stripe Checkout. Off = no limits
     # (development, self-hosting). Use Stripe test-mode keys until going live.
