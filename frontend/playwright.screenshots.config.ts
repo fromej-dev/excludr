@@ -27,9 +27,10 @@ export default defineConfig({
 
   webServer: [
     {
-      // No API key: AI verdicts are seeded, so nothing may call a model
+      // No API key: AI verdicts are seeded, so nothing may call a model; no automatic
+      // full-text retrieval either, so seeding decisions never calls Unpaywall/PMC
       command:
-        'cd .. && rm -rf screenshots_demo.db .screenshots_pdfs && unset PREFECT_API_URL ANTHROPIC_API_KEY && SECRET_KEY=screenshots-secret-key-not-for-production DATABASE_URL=sqlite:///screenshots_demo.db PDF_STORAGE_PATH=.screenshots_pdfs BILLING_ENABLED=false uvicorn app.main:app --host 0.0.0.0 --port 8000',
+        'cd .. && rm -rf screenshots_demo.db .screenshots_pdfs && unset PREFECT_API_URL ANTHROPIC_API_KEY && SECRET_KEY=screenshots-secret-key-not-for-production DATABASE_URL=sqlite:///screenshots_demo.db PDF_STORAGE_PATH=.screenshots_pdfs BILLING_ENABLED=false FULLTEXT_AUTO_RETRIEVAL=false uvicorn app.main:app --host 0.0.0.0 --port 8000',
       url: 'http://localhost:8000/ping',
       reuseExistingServer: false,
       timeout: 60_000,
