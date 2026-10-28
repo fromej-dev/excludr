@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Article, ArticleSortField, ArticleStatus, FinalDecision, SortOrder } from '@/types'
+import type { Article, ArticleSortField, ArticleStatus, SortOrder } from '@/types'
 import Badge from '@/components/ui/Badge.vue'
 
 type BadgeVariant = InstanceType<typeof Badge>['$props']['variant']
@@ -34,16 +34,17 @@ const statusVariants: Record<ArticleStatus, BadgeVariant> = {
   excluded: 'exclude',
 }
 
-const decisionVariants: Record<FinalDecision, BadgeVariant> = {
-  pending: 'outline',
-  included: 'include',
-  excluded: 'exclude',
+// Pipeline state shown in the single Status column; included/excluded double as the final decision.
+const statusLabels: Record<ArticleStatus, string> = {
+  imported: 'Imported',
+  screening: 'Title/abstract',
+  awaiting_full_text: 'Awaiting full text',
+  full_text_retrieved: 'Full text',
+  included: 'Included',
+  excluded: 'Excluded',
 }
 
-const label = (value: string) => {
-  const text = value.replace(/_/g, ' ')
-  return text.charAt(0).toUpperCase() + text.slice(1)
-}
+const statusLabel = (status: ArticleStatus) => statusLabels[status] ?? status.replace(/_/g, ' ')
 
 const showSkeleton = computed(() => props.loading && props.articles.length === 0)
 
@@ -115,7 +116,6 @@ const thClass = 'px-3 py-2 text-left align-middle text-xs font-semibold uppercas
             </button>
           </th>
           <th role="columnheader" scope="col" :class="thClass">Full text</th>
-          <th role="columnheader" scope="col" :class="thClass">Decision</th>
         </tr>
       </thead>
 
@@ -138,7 +138,6 @@ const thClass = 'px-3 py-2 text-left align-middle text-xs font-semibold uppercas
             </td>
             <td role="cell" class="md:table-cell md:px-3 md:py-3"><div class="h-4 w-10 rounded bg-muted" /></td>
             <td role="cell" class="md:table-cell md:px-3 md:py-3"><div class="h-5 w-20 rounded-full bg-muted" /></td>
-            <td role="cell" class="md:table-cell md:px-3 md:py-3"><div class="h-5 w-16 rounded-full bg-muted" /></td>
             <td role="cell" class="md:table-cell md:px-3 md:py-3"><div class="h-5 w-16 rounded-full bg-muted" /></td>
           </tr>
         </template>
@@ -185,8 +184,12 @@ const thClass = 'px-3 py-2 text-left align-middle text-xs font-semibold uppercas
             </td>
 
             <td role="cell" class="md:table-cell md:whitespace-nowrap md:px-3 md:py-3">
-              <Badge :variant="statusVariants[article.status] ?? 'outline'" :glyph="false">
-                {{ label(article.status) }}
+              <Badge
+                :variant="statusVariants[article.status] ?? 'outline'"
+                :glyph="article.status === 'included' || article.status === 'excluded'"
+                data-testid="article-status"
+              >
+                {{ statusLabel(article.status) }}
               </Badge>
             </td>
 
@@ -198,11 +201,6 @@ const thClass = 'px-3 py-2 text-left align-middle text-xs font-semibold uppercas
               <span v-else class="text-muted-foreground" aria-label="No full text">—</span>
             </td>
 
-            <td role="cell" class="md:table-cell md:whitespace-nowrap md:px-3 md:py-3">
-              <Badge :variant="decisionVariants[article.final_decision] ?? 'outline'">
-                {{ label(article.final_decision) }}
-              </Badge>
-            </td>
           </tr>
         </template>
       </tbody>

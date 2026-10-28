@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useArticlesStore } from '@/stores/articles'
 import { useMembersStore } from '@/stores/members'
@@ -62,35 +62,7 @@ watch(
   },
 )
 
-// Returning from an article via its "Back" button lands on a bare URL, so remember
-// the list query when leaving for a detail page and restore it once.
-const RESTORE_KEY = 'excludr_articles_query'
-
-onBeforeRouteLeave((to) => {
-  if (to.name === 'article-detail') {
-    sessionStorage.setItem(
-      RESTORE_KEY,
-      JSON.stringify({ projectId: projectId.value, query: route.query }),
-    )
-  }
-})
-
-onMounted(() => {
-  const raw = sessionStorage.getItem(RESTORE_KEY)
-  sessionStorage.removeItem(RESTORE_KEY)
-  if (raw && Object.keys(route.query).length === 0) {
-    try {
-      const saved = JSON.parse(raw) as { projectId: number; query: Record<string, string> }
-      if (saved.projectId === projectId.value && Object.keys(saved.query).length > 0) {
-        router.replace({ query: saved.query })
-        return
-      }
-    } catch {
-      // Ignore corrupt entries
-    }
-  }
-  fetchArticles()
-})
+onMounted(fetchArticles)
 
 const goToArticle = (articleId: number) => {
   router.push({ name: 'article-detail', params: { id: projectId.value, articleId } })

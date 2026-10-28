@@ -23,9 +23,9 @@ const emit = defineEmits<{
 const statusOptions = [
   { value: '', label: 'All Statuses' },
   { value: 'imported', label: 'Imported' },
-  { value: 'screening', label: 'Screening' },
-  { value: 'awaiting_full_text', label: 'Awaiting Full Text' },
-  { value: 'full_text_retrieved', label: 'Full Text Retrieved' },
+  { value: 'screening', label: 'Title/abstract' },
+  { value: 'awaiting_full_text', label: 'Awaiting full text' },
+  { value: 'full_text_retrieved', label: 'Full text' },
   { value: 'included', label: 'Included' },
   { value: 'excluded', label: 'Excluded' },
 ]

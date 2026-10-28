@@ -45,8 +45,17 @@ const refreshArticle = () => {
   articlesStore.fetchArticle(projectId.value, articleId.value)
 }
 
+// Return to the list exactly as the user left it: when the previous history entry is this project's
+// articles list (including its filter/sort/page query) step back to it, otherwise (deep link, other
+// page) open the plain list.
 const goBack = () => {
-  router.push({ name: 'project-articles', params: { id: projectId.value } })
+  const listPath = router.resolve({ name: 'project-articles', params: { id: projectId.value } }).path
+  const previous = (window.history.state as { back?: string | null } | null)?.back
+  if (previous && previous.split('?')[0] === listPath) {
+    router.back()
+  } else {
+    router.push({ name: 'project-articles', params: { id: projectId.value } })
+  }
 }
 </script>
 

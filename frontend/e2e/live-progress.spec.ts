@@ -97,4 +97,55 @@ test.describe('Live progress during bulk jobs', () => {
     push(project.id, { type: 'ai_screening_progress', screened: 1, errors: 0, total: 3 })
     await expect(page.getByTestId('screening-progress')).toContainText('1 / 3 screened')
   })
+
+  test('sidebar Title/abstract count follows the server when a batch completes', async ({
+    page,
+    pageHelper,
+    testUser,
+    api,
+    request,
+  }) => {
+    const token = testUser.token
+    const project = await api.createProject(token)
+    await api.createCriterion(token, project.id, { type: 'inclusion', code: 'I1', description: 'RCTs' })
+    await api.uploadRisFile(token, project.id, generateRisContent(3))
+    await api.startScreening(token, project.id)
+    const { data } = await api.getArticles(token, project.id)
+
+    let socket: WebSocketRoute | null = null
+    await page.routeWebSocket(/\/api\/v1\/ws/, (ws) => {
+      ws.connectToServer()
+      socket = ws
+    })
+    const push = (payload: Record<string, unknown>) =>
+      socket!.send(
+        JSON.stringify({
+          type: 'room_message',
+          message: `event ${String(payload.type)}`,
+          room: `project_${project.id}`,
+          data: { level: 'info', notification: true, project_id: project.id, ...payload },
+        })
+      )
+
+    await pageHelper.loginDirect(token)
+    socket = null
+    await pageHelper.goToProjectTab(project.id, 'overview')
+    const count = page.getByTestId('nav-count-title_abstract')
+    await expect(count).toHaveText('3')
+    await expect.poll(() => socket !== null).toBe(true)
+
+    // Server state changes behind the UI's back: one article is excluded, one included
+    for (const [i, decision] of (['exclude', 'include'] as const).entries()) {
+      const res = await request.post(`/api/v1/projects/${project.id}/screening/articles/${data[i].id}/decisions`, {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { stage: 'title_abstract', decision, source: 'human', reasoning: 'e2e' },
+      })
+      expect(res.status()).toBe(201)
+    }
+    await page.waitForTimeout(500)
+    await expect(count).toHaveText('3') // no event yet, no refresh
+
+    push({ type: 'ai_screening_complete', screened: 2, errors: 0, total: 3 })
+    await expect(count).toHaveText('1', { timeout: 3000 })
+  })
 })
