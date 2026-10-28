@@ -13,6 +13,33 @@ from .models import (
 from ...core.database import SessionDep
 
 
+def skip_title_abstract(article: Article) -> bool:
+    """Send an article still waiting for title/abstract screening to full text.
+
+    For records that already passed title/abstract screening elsewhere. The
+    article goes to ``awaiting_full_text`` (or ``full_text_retrieved`` when its
+    full text is already stored); articles past title/abstract are left alone.
+    The article is marked ``title_abstract_skipped`` (counted apart in the
+    statistics and PRISMA). The caller adds and commits the article.
+
+    Returns:
+        True if the article moved.
+    """
+    if article.current_stage != ScreeningStage.title_abstract or article.status not in (
+        ArticleStatus.imported,
+        ArticleStatus.screening,
+    ):
+        return False
+    article.status = (
+        ArticleStatus.full_text_retrieved
+        if article.full_text_retrieved
+        else ArticleStatus.awaiting_full_text
+    )
+    article.current_stage = ScreeningStage.full_text
+    article.title_abstract_skipped = True
+    return True
+
+
 class ArticleService:
     """Service class for managing Article-related operations."""
 

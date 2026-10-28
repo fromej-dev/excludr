@@ -1,7 +1,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, Path
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, UploadFile, Path
 from fastapi.params import Depends
 from fastapi_fsp import FSPManager
 from sqlmodel import select
@@ -62,10 +62,28 @@ def create_project(
     return ps.create_project(data, current_user)
 
 
+def _retrieve_skipped(
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    result: dict,
+    user_id: int,
+) -> None:
+    """Start full-text retrieval for the articles an import sent past title/abstract."""
+    article_ids = result.pop("skipped_article_ids", None)
+    if article_ids:
+        articles = session.exec(
+            select(Article).where(Article.id.in_(article_ids))
+        ).all()
+        schedule_auto_retrieval(background_tasks, list(articles), user_id)
+
+
 @router.post("/{project_id}/upload/ris", status_code=200)
 async def upload_ris_file(
     file: UploadFile,
     access: OwnerAccess,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    title_abstract_screened: Annotated[bool, Form()] = False,
     project_id: int = Path(
         ..., title="The ID of the project to link the articles to", gt=0
     ),
@@ -73,6 +91,10 @@ async def upload_ris_file(
     """
     Accepts a RIS file upload, saves it temporarily, and dispatches a
     Prefect flow to parse it.
+
+    With ``title_abstract_screened`` the records already passed title/abstract
+    screening elsewhere: they go straight to full text (see
+    ``skip_title_abstract``) and their full-text retrieval starts.
     """
     temp_file_path: str | None = None
     try:
@@ -86,8 +108,13 @@ async def upload_ris_file(
 
         # The flow removes the temporary file when it finishes
         result = parse_ris_file_flow(
-            temp_file_path, project_id, display_filename(file), access.user.id
+            temp_file_path,
+            project_id,
+            display_filename(file),
+            access.user.id,
+            title_abstract_screened,
         )
+        _retrieve_skipped(session, background_tasks, result, access.user.id)
 
         return JSONResponse(
             content={
@@ -114,6 +141,9 @@ async def upload_ris_file(
 async def upload_pubmed_file(
     file: UploadFile,
     access: OwnerAccess,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    title_abstract_screened: Annotated[bool, Form()] = False,
     project_id: int = Path(
         ..., title="The ID of the project to link the articles to", gt=0
     ),
@@ -122,7 +152,8 @@ async def upload_pubmed_file(
     Accepts a PubMed export file upload (.txt MEDLINE format or .csv),
     saves it temporarily, and dispatches a Prefect flow to parse it.
 
-    For CSV files, abstracts will be automatically fetched from PubMed.
+    For CSV files, abstracts will be automatically fetched from PubMed. With
+    ``title_abstract_screened`` the records go straight to full text, as for RIS.
     """
     temp_file_path: str | None = None
     try:
@@ -137,8 +168,13 @@ async def upload_pubmed_file(
 
         # The flow removes the temporary file when it finishes
         result = parse_pubmed_file_flow(
-            temp_file_path, project_id, display_filename(file), access.user.id
+            temp_file_path,
+            project_id,
+            display_filename(file),
+            access.user.id,
+            title_abstract_screened,
         )
+        _retrieve_skipped(session, background_tasks, result, access.user.id)
 
         return JSONResponse(
             content={

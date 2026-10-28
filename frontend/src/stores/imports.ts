@@ -24,7 +24,13 @@ export const useImportsStore = defineStore('imports', () => {
     }
   }
 
-  const upload = async (projectId: number, kind: ImportKind, file: File) => {
+  /** ``titleAbstractScreened``: the records already passed title/abstract screening. */
+  const upload = async (
+    projectId: number,
+    kind: ImportKind,
+    file: File,
+    titleAbstractScreened = false,
+  ) => {
     state.value = 'uploading'
     percent.value = 0
     result.value = null
@@ -33,6 +39,7 @@ export const useImportsStore = defineStore('imports', () => {
 
     const form = new FormData()
     form.append('file', file)
+    if (titleAbstractScreened) form.append('title_abstract_screened', 'true')
     try {
       const res = await post<UploadResponse>(`/projects/${projectId}/upload/${kind}`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },

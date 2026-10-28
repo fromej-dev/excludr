@@ -23,6 +23,8 @@ const membersStore = useMembersStore()
 const { batches, state, percent, result, resultFilename, error } = storeToRefs(importsStore)
 
 const risInput = ref<HTMLInputElement | null>(null)
+// The file holds records that already passed title/abstract screening elsewhere.
+const titleAbstractScreened = ref(false)
 const pubmedInput = ref<HTMLInputElement | null>(null)
 
 const busy = computed(() => state.value === 'uploading' || state.value === 'processing')
@@ -37,7 +39,7 @@ const onFile = async (kind: ImportKind, event: Event) => {
   const file = input.files?.[0]
   input.value = ''
   if (!file) return
-  const ok = await importsStore.upload(props.projectId, kind, file)
+  const ok = await importsStore.upload(props.projectId, kind, file, titleAbstractScreened.value)
   if (ok) emit('imported')
 }
 
@@ -90,6 +92,24 @@ onMounted(() => {
       />
     </div>
 
+    <label v-if="canUpload" class="flex items-start gap-2 text-sm">
+      <input
+        v-model="titleAbstractScreened"
+        type="checkbox"
+        class="mt-0.5 h-4 w-4 accent-primary"
+        :disabled="busy"
+        data-testid="title-abstract-screened"
+      />
+      <span>
+        Title/abstract screening already done
+        <span class="block text-muted-foreground">
+          The file only holds records that passed title/abstract screening elsewhere (for example
+          in Rayyan or Covidence). They go straight to full-text screening, and existing articles
+          they match that are still at title/abstract move with them.
+        </span>
+      </span>
+    </label>
+
     <!-- Progress -->
     <div v-if="busy" class="space-y-2" role="status">
       <div class="flex justify-between text-sm">
@@ -113,6 +133,9 @@ onMounted(() => {
         <span><strong class="text-foreground">{{ result.duplicates ?? 0 }}</strong> duplicates</span>
         <span v-if="result.articles_updated">
           <strong class="text-foreground">{{ result.articles_updated }}</strong> updated
+        </span>
+        <span v-if="result.title_abstract_skipped" data-testid="import-skipped">
+          <strong class="text-foreground">{{ result.title_abstract_skipped }}</strong> sent to full text
         </span>
         <span v-if="result.abstracts_fetched">
           <strong class="text-foreground">{{ result.abstracts_fetched }}</strong> abstracts fetched
@@ -146,7 +169,12 @@ onMounted(() => {
           <tbody>
             <tr v-for="b in batches" :key="b.id" class="border-t">
               <td class="px-3 py-2 break-all">{{ b.filename }}</td>
-              <td class="px-3 py-2"><Badge variant="outline">{{ formatLabel(b.format) }}</Badge></td>
+              <td class="px-3 py-2 space-x-1 whitespace-nowrap">
+                <Badge variant="outline">{{ formatLabel(b.format) }}</Badge>
+                <Badge v-if="b.title_abstract_screened" variant="secondary" title="Title/abstract screened elsewhere">
+                  Full text
+                </Badge>
+              </td>
               <td class="px-3 py-2 text-right">{{ b.records_found }}</td>
               <td class="px-3 py-2 text-right">{{ b.imported }}</td>
               <td class="px-3 py-2 text-right">{{ b.duplicates }}</td>

@@ -143,9 +143,9 @@ def test_upload_stored_path_ignores_client_filename(
 
     real_parse = flows.parse_ris_entries
 
-    def spy(file_path, project_id, original_filename):
+    def spy(file_path, *args):
         seen.append(file_path)
-        return real_parse(file_path, project_id, original_filename)
+        return real_parse(file_path, *args)
 
     monkeypatch.setattr(flows, "parse_ris_entries", spy)
 

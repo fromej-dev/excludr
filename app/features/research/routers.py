@@ -16,9 +16,10 @@ from fastapi_fsp.models import PaginatedResponse
 
 from app.core.database import SessionDep
 from app.core.prefect_config import run_flow_in_background
+from app.features.audit import services as audit
 from app.features.projects.permissions import OwnerAccess, ViewerAccess
 from .models import Article, ArticleStatus, ScreeningStage
-from .flows import retrieve_fulltext_flow
+from .flows import retrieve_fulltext_flow, schedule_auto_retrieval
 from .fulltext_retrieval import eligible_for_retrieval, retrieve_full_text
 from . import pdf_bulk_upload
 from .schemas import (
@@ -27,8 +28,10 @@ from .schemas import (
     PdfBulkConfirmResponse,
     PdfMatchResult,
     RetrieveFullTextRequest,
+    SkipTitleAbstractRequest,
+    SkipTitleAbstractResult,
 )
-from .services import ArticleServiceDep
+from .services import ArticleServiceDep, skip_title_abstract
 from app.features.screening.services import ScreeningServiceDep
 
 router = APIRouter(tags=["Articles"], prefix="/projects/{project_id}/articles")
@@ -191,6 +194,47 @@ def start_screening(
     """Move all imported articles to screening status."""
     count = article_service.start_screening(project_id)
     return {"message": f"Started screening for {count} articles", "count": count}
+
+
+@router.post("/skip-title-abstract", response_model=SkipTitleAbstractResult)
+def skip_title_abstract_bulk(
+    project_id: int,
+    access: OwnerAccess,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    body: Optional[SkipTitleAbstractRequest] = None,
+):
+    """Send articles waiting for title/abstract screening straight to full text.
+
+    For records that already passed title/abstract screening elsewhere. Without
+    ``article_ids`` every article still waiting for title/abstract moves; with
+    ids, only those among them. Articles past title/abstract are left alone.
+    Earlier title/abstract votes are kept but no longer count. Full-text
+    retrieval starts for the moved articles.
+    """
+    query = select(Article).where(
+        Article.project_id == project_id,
+        Article.current_stage == ScreeningStage.title_abstract,
+    )
+    if body is not None and body.article_ids is not None:
+        query = query.where(Article.id.in_(body.article_ids))
+    articles = session.exec(query.order_by(Article.id)).all()
+    moved = [a for a in articles if skip_title_abstract(a)]
+    if not moved:
+        return SkipTitleAbstractResult(moved=0, retrieval_queued=0)
+    session.add_all(moved)
+    session.commit()
+    audit.record_event(
+        session,
+        project_id,
+        audit.TITLE_ABSTRACT_SKIPPED,
+        "project",
+        project_id,
+        access.user.id,
+        {"count": len(moved), "article_ids": [a.id for a in moved]},
+    )
+    queued = schedule_auto_retrieval(background_tasks, moved, access.user.id)
+    return SkipTitleAbstractResult(moved=len(moved), retrieval_queued=len(queued))
 
 
 @router.post("/retrieve-fulltext")

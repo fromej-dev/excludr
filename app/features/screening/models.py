@@ -157,6 +157,12 @@ class ScreeningStats(SQLModel):
     excluded_title_abstract: int = Field(
         default=0, description="Articles excluded at title/abstract"
     )
+    title_abstract_skipped: int = Field(
+        default=0,
+        description="Eligible articles that skipped title/abstract screening "
+        "because they were screened elsewhere (counted in title_abstract_total "
+        "and title_abstract_completed)",
+    )
     full_text_eligible: int = Field(
         default=0,
         description="Articles that passed title/abstract (at the full-text stage "

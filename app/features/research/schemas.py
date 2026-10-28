@@ -77,6 +77,22 @@ class RetrieveFullTextRequest(BaseModel):
     )
 
 
+class SkipTitleAbstractRequest(BaseModel):
+    """Body for sending articles past title/abstract screening."""
+
+    article_ids: list[int] | None = Field(
+        default=None,
+        description="Articles to move; default: all waiting for title/abstract",
+    )
+
+
+class SkipTitleAbstractResult(BaseModel):
+    moved: int = Field(description="Articles sent to full-text screening")
+    retrieval_queued: int = Field(
+        description="Of those, articles whose full-text retrieval was started"
+    )
+
+
 MatchConfidence = Literal["high", "medium", "low"]
 
 

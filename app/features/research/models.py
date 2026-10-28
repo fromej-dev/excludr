@@ -2,6 +2,7 @@ from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime, timezone
 from enum import Enum
 from sqlalchemy import UniqueConstraint
+from sqlalchemy import false as sa_false
 from sqlmodel import Field, SQLModel, Column, JSON, Text, Relationship
 
 from app.features.projects.models import Project
@@ -177,6 +178,12 @@ class Article(SQLModel, table=True):
         default=FinalDecision.pending,
         index=True,
         description="Final screening decision",
+    )
+    title_abstract_skipped: bool = Field(
+        default=False,
+        description="Sent to full text without title/abstract screening here "
+        "(screened elsewhere)",
+        sa_column_kwargs={"server_default": sa_false(), "nullable": False},
     )
 
     # --- Screening Decisions Relationship ---

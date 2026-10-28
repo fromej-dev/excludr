@@ -41,7 +41,12 @@ defineProps<Props>()
       <p class="col-span-3 my-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Screening
       </p>
-      <PrismaBox title="Records screened" :count="flow.screening.records_screened" />
+      <PrismaBox title="Records screened" :count="flow.screening.records_screened">
+        <p v-if="flow.screening.records_screened_elsewhere" data-testid="prisma-screened-elsewhere">
+          Plus {{ flow.screening.records_screened_elsewhere }} screened at title / abstract
+          elsewhere
+        </p>
+      </PrismaBox>
       <svg class="h-4 w-8 text-muted-foreground" viewBox="0 0 32 16" aria-hidden="true">
         <path d="M2 8h24m-6-5 6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.5" />
       </svg>

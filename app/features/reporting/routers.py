@@ -32,7 +32,10 @@ def get_prisma_flow(access: ViewerAccess, rs: ReportingServiceDep):
 
     * identified / duplicates come from the persisted import batches (or the article
       count when a project has none);
-    * screened = articles that left ``imported``; excluded at title/abstract =
+    * screened = articles that left ``imported``, minus those screened at
+      title/abstract elsewhere (``records_screened_elsewhere``: imported with
+      ``title_abstract_screened`` or moved by ``skip-title-abstract``); excluded
+      at title/abstract =
       excluded articles whose deciding decision was at that stage;
     * sought = articles past title/abstract; not retrieved = still
       ``awaiting_full_text``; assessed = sought - not retrieved;

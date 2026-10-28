@@ -67,8 +67,9 @@ def _assert_invariants(s):
 def _assert_matches_prisma(client, project, s):
     prisma = client.get(f"{BASE}/{project.id}/prisma").json()
     assert prisma["screening"] == {
-        "records_screened": s["title_abstract_total"],
+        "records_screened": s["title_abstract_total"] - s["title_abstract_skipped"],
         "records_excluded": s["excluded_title_abstract"],
+        "records_screened_elsewhere": s["title_abstract_skipped"],
     }
     assert prisma["retrieval"] == {
         "reports_sought": s["full_text_eligible"],
@@ -130,6 +131,7 @@ def test_single_reviewer_pipeline(auth_as, a_project, an_article_in, session):
         "title_abstract_decided": 6,
         "title_abstract_completed": 5,
         "excluded_title_abstract": 1,
+        "title_abstract_skipped": 0,
         "full_text_eligible": 4,
         "full_text_retrieved": 3,
         "awaiting_full_text_screening": 1,
