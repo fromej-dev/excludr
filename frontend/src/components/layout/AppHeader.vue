@@ -37,6 +37,14 @@ const handleLogout = () => {
           <router-link to="/dashboard" class="text-sm font-medium hover:text-primary">
             Projects
           </router-link>
+          <router-link
+            v-if="authStore.user?.is_superuser"
+            to="/admin"
+            class="text-sm font-medium hover:text-primary"
+            data-testid="admin-link"
+          >
+            Admin
+          </router-link>
         </nav>
       </div>
 
