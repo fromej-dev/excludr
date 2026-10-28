@@ -8,6 +8,7 @@ from sqlalchemy import and_, distinct, func, or_
 from sqlmodel import Session, select
 
 from app.core.config import get_settings
+from app.features.ai_usage import services as ai_usage
 from app.features.billing import plans
 from app.features.billing import services as billing
 from app.features.billing.models import Payment, ProjectPlan
@@ -338,6 +339,8 @@ def overview(session: Session) -> dict[str, Any]:
             )
         ).one()
 
+    ai_month = ai_usage.month_totals(session, month_start)
+
     return {
         "users_total": session.exec(select(func.count(User.id))).one(),
         "users_new_30d": session.exec(
@@ -364,5 +367,7 @@ def overview(session: Session) -> dict[str, Any]:
         ).one(),
         "ai_fulltext_month": ai_count(ScreeningStage.full_text),
         "ai_title_abstract_month": ai_count(ScreeningStage.title_abstract),
+        "ai_tokens_month": ai_month["total_tokens"],
+        "ai_cost_month_usd": ai_month["cost_usd"],
         "currency": plans.CURRENCY,
     }

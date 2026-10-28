@@ -728,5 +728,47 @@ export interface AdminOverview {
   payments_month: number
   ai_fulltext_month: number
   ai_title_abstract_month: number
+  ai_tokens_month: number
+  ai_cost_month_usd: number
   currency: string
+}
+
+export type AiUsageGroupBy = 'activity' | 'stage' | 'article' | 'user' | 'project' | 'model' | 'day' | 'month'
+export type AiActivity = 'screening_single' | 'screening_batch' | 'screening_lookahead'
+
+export interface AiUsageFilters {
+  start?: string
+  end?: string
+  project_id?: number
+  user_id?: number
+  activity?: AiActivity | ''
+  stage?: Exclude<ScreeningStage, 'completed'> | ''
+  model?: string
+}
+
+export interface AiUsageTotals {
+  runs: number
+  failed_runs: number
+  articles: number
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  total_tokens: number
+  cost_usd: number
+  unpriced_runs: number
+}
+
+export interface AiUsageGroup extends AiUsageTotals {
+  key: string | null
+  label: string
+  project_id: number | null
+}
+
+export interface AiUsageReport {
+  group_by: AiUsageGroupBy
+  totals: AiUsageTotals
+  groups: AiUsageGroup[]
+  group_count: number
 }

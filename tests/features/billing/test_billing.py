@@ -408,7 +408,9 @@ async def test_flow_skips_articles_once_allowance_is_used(
     _criterion(session, project)
     articles = _full_text_articles(session, project, 3)
 
-    async def fake_screen(article, criteria, review_question, session, reviewer_id):
+    async def fake_screen(
+        article, criteria, review_question, session, reviewer_id, **_
+    ):
         decision = ScreeningDecision(
             article_id=article.id,
             stage=ScreeningStage.full_text,

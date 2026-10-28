@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
 
 from app.core.database import engine
+from app.features.ai_usage.models import AIActivity
 from app.features.audit import services as audit
 from app.features.billing import services as billing
 from app.features.criteria.models import Criterion
@@ -73,6 +74,9 @@ async def batch_ai_screening_flow(
     screened = 0
     errors = 0
     skipped = 0  # refused by the plan (allowance used up, or project read-only)
+    activity = (
+        AIActivity.screening_lookahead if targeted else AIActivity.screening_batch
+    )
 
     with Session(engine) as session:
         project = session.get(Project, project_id)
@@ -106,6 +110,8 @@ async def batch_ai_screening_flow(
                     review_question=review_question,
                     session=session,
                     reviewer_id=None,
+                    activity=activity,
+                    triggered_by=user_id,
                 )
                 screened += 1
                 data.update(

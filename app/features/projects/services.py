@@ -116,6 +116,7 @@ class ProjectService:
         """
         # Child rows without an ORM cascade (also covered by DB-level ON DELETE
         # CASCADE; done explicitly so it works on databases without FK enforcement).
+        from app.features.ai_usage.models import AIUsage
         from app.features.audit.models import AuditEvent
         from app.features.billing.models import Payment, ProjectPlan
 
@@ -126,6 +127,12 @@ class ProjectService:
             update(Payment)
             .where(Payment.project_id == project.id)
             .values(project_id=None)
+        )
+        # AI usage is the AI cost record: keep it too, without the links.
+        self.session.exec(
+            update(AIUsage)
+            .where(AIUsage.project_id == project.id)
+            .values(project_id=None, article_id=None, decision_id=None)
         )
         self.session.delete(project)
         self.session.commit()

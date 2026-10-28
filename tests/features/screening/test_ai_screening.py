@@ -91,7 +91,7 @@ def test_screen_single_article_success(
 
     # Mock the screen_article function
     async def mock_screen_article(
-        article, criteria, review_question, session, reviewer_id=None
+        article, criteria, review_question, session, reviewer_id=None, **_
     ):
         decision = ScreeningDecision(
             article_id=article.id,

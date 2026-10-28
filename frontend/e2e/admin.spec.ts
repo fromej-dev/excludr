@@ -49,4 +49,24 @@ test.describe('Admin area', () => {
     await adminNav.getByRole('link', { name: 'Payments' }).click()
     await expect(page.getByRole('table')).toBeVisible()
   })
+
+  test('admin reports AI usage and exports it', async ({ page, api, pageHelper }) => {
+    const admin = await api.register()
+    api.makeAdmin(admin.email)
+
+    await pageHelper.loginViaUI(admin.email, admin.password)
+    await page.goto('/admin')
+    await page.getByRole('navigation', { name: 'Admin sections' }).getByRole('link', { name: 'AI usage' }).click()
+    await expect(page.getByTestId('ai-usage-totals')).toContainText('Estimated cost')
+    await expect(page.getByRole('table')).toBeVisible()
+
+    await page.getByLabel('Group by').selectOption('day')
+    await expect(page).toHaveURL(/group_by=day/)
+    await page.getByRole('button', { name: 'This month' }).click()
+    await expect(page).toHaveURL(/start=\d{4}-\d{2}-01/)
+
+    const download = page.waitForEvent('download')
+    await page.getByTestId('export-runs').click()
+    expect((await download).suggestedFilename()).toBe('ai-usage-runs.csv')
+  })
 })

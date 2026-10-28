@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai import Agent, ModelRetry, RunContext, capture_run_messages
 from pydantic_ai.models import Model
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
@@ -13,6 +13,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session
 
 from app.core.config import get_settings
+from app.features.ai_usage import services as ai_usage
+from app.features.ai_usage.models import AIActivity
 from app.features.criteria.models import Criterion
 from app.features.research.models import Article, ScreeningStage
 from app.features.research.schemas import ScreeningResult
@@ -311,6 +313,8 @@ async def screen_article(
     review_question: str,
     session: Session,
     reviewer_id: Optional[int] = None,
+    activity: AIActivity = AIActivity.screening_single,
+    triggered_by: Optional[int] = None,
 ) -> ScreeningDecision:
     """Screen an article using the AI agent against project criteria.
 
@@ -319,7 +323,8 @@ async def screen_article(
     2. Runs the AI screening agent with the review question and criteria
     3. Creates a ScreeningDecision record with the agent's evaluation
     4. Updates the article's AI check status fields
-    5. Returns the screening decision
+    5. Records the run's token usage (``AIUsage``), also when it fails
+    6. Returns the screening decision
 
     Args:
         article: Article to screen
@@ -327,6 +332,8 @@ async def screen_article(
         review_question: The project's research question
         session: Database session for persistence
         reviewer_id: Optional reviewer ID (None for AI agent)
+        activity: What the run is for, recorded with its token usage
+        triggered_by: User who started the run, recorded with its token usage
 
     Returns:
         ScreeningDecision: The created screening decision record
@@ -344,18 +351,28 @@ async def screen_article(
     # Set up agent dependencies
     deps = ScreeningDeps(review_question=review_question, criteria=criteria_list)
 
-    # Run the agent
+    # The recorded stage reflects what the model actually saw.
+    stage = (
+        ScreeningStage.full_text
+        if full_text_provided
+        else ScreeningStage.title_abstract
+    )
+    usage_context = {
+        "activity": activity,
+        "stage": stage.value,
+        "project_id": article.project_id,
+        "article_id": article.id,
+        "user_id": triggered_by,
+    }
+
+    # Run the agent. Captured messages give the token usage, also of failed runs.
+    messages: list = []
+    usage_row = None
     try:
         agent = get_screening_agent()
-        result = await agent.run(article_text, deps=deps)
+        with capture_run_messages() as messages:
+            result = await agent.run(article_text, deps=deps)
         screening_result: ScreeningResult = result.output
-
-        # The recorded stage reflects what the model actually saw.
-        stage = (
-            ScreeningStage.full_text
-            if full_text_provided
-            else ScreeningStage.title_abstract
-        )
 
         # Map decision string to enum
         decision_map = {
@@ -393,6 +410,14 @@ async def screen_article(
         )
 
         session.add(screening_decision)
+        session.flush()  # decision id for the usage row
+        usage_row = ai_usage.add_usage(
+            session,
+            messages,
+            succeeded=True,
+            decision_id=screening_decision.id,
+            **usage_context,
+        )
 
         # Update article's AI check fields. AI decisions are advisory: article
         # status / current_stage / final_decision are changed by humans only.
@@ -425,5 +450,7 @@ async def screen_article(
         }
         article.last_ai_check = datetime.now(timezone.utc)
         session.add(article)
+        if usage_row is None or usage_row not in session:  # not kept by a rollback
+            ai_usage.add_usage(session, messages, succeeded=False, **usage_context)
         session.commit()
         raise

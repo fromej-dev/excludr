@@ -10,6 +10,7 @@ const links = computed(() =>
     { name: 'admin-users', label: 'Users', also: ['admin-user'] },
     { name: 'admin-projects', label: 'Projects' },
     { name: 'admin-payments', label: 'Payments' },
+    { name: 'admin-ai-usage', label: 'AI usage' },
   ].map((l) => ({ ...l, active: route.name === l.name || (l.also ?? []).includes(route.name as string) }))
 )
 </script>
