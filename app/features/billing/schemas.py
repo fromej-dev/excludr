@@ -30,6 +30,7 @@ class BillingStatus(BaseModel):
     dual_screening_allowed: bool
     currency: str
     options: list[PassOption]
+    online_payment: bool
 
 
 class PublicTier(BaseModel):

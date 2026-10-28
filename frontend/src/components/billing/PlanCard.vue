@@ -98,6 +98,15 @@ const optionText = (o: PassOption) => {
   return `${size} · ${price}`
 }
 
+// Shown only when configured, so no placeholder address ships
+const contactEmail = import.meta.env.VITE_CONTACT_EMAIL
+const contactHref = computed(
+  () =>
+    `mailto:${contactEmail}?subject=${encodeURIComponent(
+      `Review pass for project ${props.projectId}`
+    )}`
+)
+
 const buy = async (tier: string) => {
   const ok = await billing.startCheckout(props.projectId, tier)
   if (!ok) wsStore.addNotification(billing.error ?? 'Could not start the payment', 'error')
@@ -140,7 +149,7 @@ const buy = async (tier: string) => {
 
     <div v-if="status.options.length" class="space-y-2">
       <p class="text-sm font-medium">
-        {{ status.active ? 'Need more?' : status.read_only ? 'Renew this review' : 'Buy a review pass' }}
+        {{ status.active ? 'Need more?' : status.read_only ? 'Renew this review' : 'Get a review pass' }}
         <span class="font-normal text-muted-foreground">
           {{
             status.active
@@ -149,7 +158,19 @@ const buy = async (tier: string) => {
           }}
         </span>
       </p>
-      <div v-if="canBuy" class="flex flex-wrap gap-2">
+      <template v-if="!status.online_payment">
+        <ul class="text-sm text-muted-foreground" data-testid="pass-prices">
+          <li v-for="option in status.options" :key="option.tier">{{ optionText(option) }}</li>
+        </ul>
+        <p class="text-sm" data-testid="contact-for-pass">
+          <template v-if="contactEmail">
+            <a :href="contactHref" class="font-medium text-primary hover:underline">Contact us</a>
+            to get a pass for this review; we'll activate it for you.
+          </template>
+          <template v-else>Contact the Excludr team to get a pass for this review; we'll activate it for you.</template>
+        </p>
+      </template>
+      <div v-else-if="canBuy" class="flex flex-wrap gap-2">
         <Button
           v-for="option in status.options"
           :key="option.tier"

@@ -89,6 +89,11 @@ To sell review passes, turn it on with these environment variables:
 | `STRIPE_AUTOMATIC_TAX=true` | Optional; needs Stripe Tax set up in the Stripe dashboard first |
 | `VITE_CONTACT_EMAIL` | Optional, at frontend build time; shows contact links on the home page |
 
+**Before Stripe is set up**, `BILLING_ENABLED=true` alone already enforces the free
+allowance, passes and read-only expiry. Owners then see the pass prices and a "Contact us"
+link (set `VITE_CONTACT_EMAIL`) instead of buy buttons, and an admin grants passes in the
+admin area. Adding the Stripe keys later switches the buttons on.
+
 In Stripe, add a webhook endpoint at `<PUBLIC_APP_URL>/api/v1/billing/webhook` for the
 events `checkout.session.completed`, `checkout.session.async_payment_succeeded` and
 `charge.refunded`.

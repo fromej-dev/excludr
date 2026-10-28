@@ -161,7 +161,7 @@ def _quota_message(allowance: Allowance) -> str:
     if allowance.scope == "account":
         return (
             f"Your free AI allowance of {allowance.limit} {stage} articles is used "
-            "up. Buy a review pass for this project to keep screening with AI."
+            "up. Get a review pass for this project to keep screening with AI."
         )
     return (
         f"This review pass covers AI screening of {allowance.limit} {stage} "
@@ -238,7 +238,7 @@ def split_by_allowance(
 def ensure_dual_screening_allowed(session: Session, project: Project) -> None:
     if billing_enabled() and not is_active(get_plan(session, project.id)):
         raise PlanRequiredError(
-            "Dual screening needs a review pass. Buy one for this project first."
+            "Dual screening needs a review pass. Get one for this project first."
         )
 
 
@@ -304,6 +304,8 @@ def get_status(session: Session, project: Project) -> dict[str, Any]:
         "dual_screening_allowed": not enabled or is_active(plan),
         "currency": plans.CURRENCY,
         "options": upgrade_options(session, project) if enabled else [],
+        # Without Stripe keys passes are granted by an admin instead of bought here
+        "online_payment": enabled and bool(get_settings().stripe_secret_key),
     }
 
 

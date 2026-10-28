@@ -225,6 +225,36 @@ def test_status_when_billing_disabled(auth_as, a_project, monkeypatch):
     body = client.get(f"{BASE}/{project.id}/billing").json()
     assert body["billing_enabled"] is False
     assert body["dual_screening_allowed"] is True and body["options"] == []
+    assert body["online_payment"] is False
+
+
+def test_status_offers_online_payment_with_stripe_key(auth_as, a_project):
+    client, user = auth_as()
+    project = a_project(user)
+    assert client.get(f"{BASE}/{project.id}/billing").json()["online_payment"] is True
+
+
+def test_limits_apply_without_stripe(auth_as, a_project, session, monkeypatch):
+    """Billing on, Stripe not set up: limits hold, passes come from admins."""
+    monkeypatch.setattr(
+        "app.features.billing.services.get_settings",
+        lambda: _settings(stripe_secret_key=None, stripe_webhook_secret=None),
+    )
+    client, user = auth_as()
+    used, project = a_project(user), a_project(user)
+    _full_text_articles(session, used, 50, ai_screened=True)
+    _criterion(session, project)
+    _full_text_articles(session, project, 1)
+
+    status = client.get(f"{BASE}/{project.id}/billing").json()
+    assert status["online_payment"] is False
+    assert status["options"]  # prices are still shown, to ask an admin for
+    assert client.post(f"{BASE}/{project.id}/screening/run-ai").status_code == 402
+    res = client.patch(f"{BASE}/{project.id}", json={"required_reviewers": 2})
+    assert res.status_code == 402
+
+    _give_plan(session, project)
+    assert client.post(f"{BASE}/{project.id}/screening/run-ai").status_code == 200
 
 
 def test_status_needs_membership(auth_as, a_project):

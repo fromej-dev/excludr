@@ -549,6 +549,8 @@ export interface BillingStatus {
   dual_screening_allowed: boolean
   currency: string
   options: PassOption[]
+  /** False until Stripe is set up: passes are then granted by an admin */
+  online_payment: boolean
 }
 
 export interface PublicPlans {
