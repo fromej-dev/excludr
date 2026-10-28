@@ -51,10 +51,10 @@ const handleSubmit = async () => {
 <template>
   <div class="flex min-h-dvh flex-col bg-background text-foreground">
     <PublicHeader />
-    <main class="flex flex-1 items-center justify-center px-4 py-12">
-      <Card class="w-full max-w-md p-8">
-        <div class="mb-8 text-center">
-          <h1 class="text-3xl font-bold">Create your account</h1>
+    <main class="flex flex-1 items-center justify-center px-4 py-4 sm:py-12">
+      <Card class="w-full max-w-md p-6 sm:p-8">
+        <div class="mb-6 text-center sm:mb-8">
+          <h1 class="text-2xl font-bold sm:text-3xl">Create your account</h1>
           <p class="mt-2 text-muted-foreground">Start your first review with Excludr</p>
         </div>
 
