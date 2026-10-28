@@ -312,6 +312,58 @@ export interface FullTextUploadResponse {
   text_length: number
 }
 
+// Bulk PDF upload: stage + match, then confirm
+
+export type PdfMatchConfidence = 'high' | 'medium' | 'low'
+
+export interface PdfMatchCandidate {
+  article_id: number
+  title: string | null
+  year: number | null
+  first_author: string | null
+  has_full_text: boolean
+  /** e.g. doi_metadata, doi_filename, doi_text, pmid_filename, title_text, title_filename */
+  method: string
+  confidence: PdfMatchConfidence
+}
+
+/** The article a PDF will be attached to: a match candidate or a search result. */
+export interface PdfArticleChoice {
+  article_id: number
+  title: string | null
+  year: number | null
+  has_full_text: boolean
+}
+
+export interface PdfMatchResult {
+  /** Staged upload to confirm or discard; null when the file was rejected. */
+  upload_id: string | null
+  filename: string
+  error: string | null
+  text_extracted: boolean
+  match: PdfMatchCandidate | null
+  candidates: PdfMatchCandidate[]
+}
+
+export interface PdfAttachItem {
+  upload_id: string
+  article_id: number
+  replace?: boolean
+}
+
+export interface PdfAttachResult {
+  upload_id: string
+  article_id: number
+  status: 'attached' | 'skipped' | 'error'
+  detail: string | null
+  text_extracted: boolean
+}
+
+export interface PdfBulkConfirmResponse {
+  attached: number
+  results: PdfAttachResult[]
+}
+
 // Screening: next article, AI batch, conflicts
 export interface NextArticleResponse {
   message?: string
