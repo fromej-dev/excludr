@@ -208,3 +208,5 @@ __marimo__/
 
 # SQLite
 *.db
+# Homepage screenshot run (frontend/playwright.screenshots.config.ts)
+.screenshots_pdfs/

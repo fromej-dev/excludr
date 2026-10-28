@@ -85,6 +85,13 @@ ruff check --fix .
 ruff format .
 ```
 
+### Homepage Screenshots
+```bash
+# Seeds a fictional demo review on a fresh database and rewrites frontend/src/assets/screenshots/
+cd frontend && npm run screenshots
+```
+Re-run after UI changes to the screening, conflicts or reports pages; never capture real project data.
+
 ### Database Migrations
 ```bash
 # Create a new migration
