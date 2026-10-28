@@ -296,6 +296,17 @@ async def screen_article_with_ai(
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
 
+    # Without extracted text the agent would only see the title and abstract and
+    # record a title/abstract verdict for an article that is at full text.
+    if (
+        article.current_stage == ScreeningStage.full_text
+        and not (article.full_text_content or "").strip()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="This article has no full text yet. Retrieve or upload it before screening with AI.",
+        )
+
     # Fetch active criteria
     criteria = session.exec(
         select(Criterion).where(
@@ -351,27 +362,32 @@ def get_ai_decision(
     access: ViewerAccess,
     session: SessionDep,
     article_service: ArticleServiceDep,
+    stage: Annotated[ScreeningStage | None, Query()] = None,
 ):
     """Get the latest AI screening decision for an article.
+
+    Args:
+        stage: Only consider AI decisions made at this stage. The screening view
+            passes its stage so a title/abstract verdict is never shown as the
+            AI's opinion on the full text.
 
     Returns:
         The most recent AI-generated screening decision, or 404 if none exists.
     """
-    # Verify project ownership
-
     # Verify article belongs to project
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
 
     # Get latest AI decision
+    query = select(ScreeningDecision).where(
+        ScreeningDecision.article_id == article_id,
+        ScreeningDecision.source == DecisionSource.ai_agent,
+    )
+    if stage is not None:
+        query = query.where(ScreeningDecision.stage == stage)
     ai_decision = session.exec(
-        select(ScreeningDecision)
-        .where(
-            ScreeningDecision.article_id == article_id,
-            ScreeningDecision.source == DecisionSource.ai_agent,
-        )
-        .order_by(ScreeningDecision.created_at.desc(), ScreeningDecision.id.desc())
+        query.order_by(ScreeningDecision.created_at.desc(), ScreeningDecision.id.desc())
     ).first()
 
     if ai_decision is None:

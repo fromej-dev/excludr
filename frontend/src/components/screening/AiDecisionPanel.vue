@@ -31,6 +31,11 @@ const confidencePercent = computed(() => {
 
 const confidenceVariant = computed(() => confidenceVariantFor(confidencePercent.value))
 
+/** Which stage the verdict was made at: a title/abstract verdict says nothing about the full text. */
+const stageLabel = computed(() =>
+  props.decision?.stage === 'full_text' ? 'Full text' : props.decision ? 'Title/abstract' : null
+)
+
 const criteriaEvaluations = computed(() => normalizeEvaluations(props.decision?.criteria_evaluations))
 
 const inclusionEvaluations = computed(() =>
@@ -48,6 +53,9 @@ const exclusionEvaluations = computed(() =>
       <div class="flex items-center gap-2">
         <h3 class="text-lg font-semibold">AI Screening Result</h3>
         <Badge variant="ai" class="text-xs">AI-Generated</Badge>
+        <Badge v-if="stageLabel && !loading" variant="outline" class="text-xs" data-testid="ai-decision-stage">
+          {{ stageLabel }}
+        </Badge>
       </div>
 
       <!-- Loading State -->

@@ -803,3 +803,72 @@ def test_subset_requires_reviewer_role(auth_as, a_project, a_article, a_criterio
     res = _run_ai_subset(stranger_client, project.id, [art.id])
 
     assert res.status_code in (403, 404)
+
+
+def _ai_decision_at(session, article_id, stage, decision):
+    session.add(
+        ScreeningDecision(
+            article_id=article_id,
+            stage=stage,
+            decision=decision,
+            source=DecisionSource.ai_agent,
+        )
+    )
+    session.commit()
+
+
+def test_get_ai_decision_filters_by_stage(auth_as, a_project, a_article, session):
+    """A title/abstract verdict is not returned when the full-text one is asked for."""
+    client, user = auth_as()
+    project = a_project(user)
+    article = a_article(
+        project.id,
+        current_stage=ScreeningStage.full_text,
+        status=ArticleStatus.full_text_retrieved,
+    )
+    _ai_decision_at(
+        session,
+        article.id,
+        ScreeningStage.title_abstract,
+        ScreeningDecisionType.include,
+    )
+    url = f"{BASE_API}/{project.id}/screening/articles/{article.id}/ai-decision"
+
+    assert client.get(url, params={"stage": "full_text"}).status_code == 404
+    assert (
+        client.get(url, params={"stage": "title_abstract"}).json()["decision"]
+        == "include"
+    )
+
+    _ai_decision_at(
+        session, article.id, ScreeningStage.full_text, ScreeningDecisionType.exclude
+    )
+    res = client.get(url, params={"stage": "full_text"})
+    assert res.json()["decision"] == "exclude"
+    assert res.json()["stage"] == "full_text"
+    # Without a stage the latest decision of any stage is returned
+    assert client.get(url).json()["decision"] == "exclude"
+
+
+def test_screen_ai_refuses_full_text_article_without_text(
+    auth_as, a_project, a_article, a_criterion, monkeypatch
+):
+    """Screening would otherwise record a title/abstract verdict at full text."""
+    client, user = auth_as()
+    project = a_project(user)
+    a_criterion(project.id)
+    article = a_article(
+        project.id,
+        current_stage=ScreeningStage.full_text,
+        status=ArticleStatus.awaiting_full_text,
+    )
+    screen = AsyncMock()
+    monkeypatch.setattr("app.features.screening.routers.screen_article", screen)
+
+    res = client.post(
+        f"{BASE_API}/{project.id}/screening/articles/{article.id}/screen-ai"
+    )
+
+    assert res.status_code == 400
+    assert "no full text" in res.json()["detail"]
+    screen.assert_not_called()

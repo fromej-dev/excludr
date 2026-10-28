@@ -27,6 +27,8 @@ export const useScreeningStore = defineStore('screening', () => {
   const aiQueuedIds = ref<Set<number>>(new Set())
   // Articles the batch reported on while their run-ai request was still in flight
   const aiSettledIds = new Set<number>()
+  // Stage the screening view asked the AI verdict for; websocket refreshes keep to it
+  let aiStage: ScreeningStage | undefined
   const currentAiQueued = computed(
     () => currentArticle.value !== null && aiQueuedIds.value.has(currentArticle.value.id)
   )
@@ -60,7 +62,7 @@ export const useScreeningStore = defineStore('screening', () => {
         if (typeof data.article_id === 'number') settleAiQueued([data.article_id])
         // The AI batch just screened the article on screen: show its verdict
         if (data.type === 'ai_screening_progress' && isCurrent) {
-          await fetchAiDecision(data.project_id, data.article_id as number)
+          await fetchAiDecision(data.project_id, data.article_id as number, aiStage)
         }
       } else if (data.type === 'ai_screening_complete' && Array.isArray(data.article_ids)) {
         // Safety net: whatever a finished lookahead batch did not report on is no longer queued
@@ -214,13 +216,19 @@ export const useScreeningStore = defineStore('screening', () => {
     }
   }
 
-  const fetchAiDecision = async (projectId: number, articleId: number) => {
+  /**
+   * Load the latest AI decision for an article. With `stage`, only a decision made at that stage
+   * counts (a title/abstract verdict must not pass for the AI's view of the full text).
+   */
+  const fetchAiDecision = async (projectId: number, articleId: number, stage?: ScreeningStage) => {
+    aiStage = stage
     aiScreeningLoading.value = true
     error.value = null
 
     try {
       const decision = await get<ScreeningDecision>(
-        `/projects/${projectId}/screening/articles/${articleId}/ai-decision`
+        `/projects/${projectId}/screening/articles/${articleId}/ai-decision`,
+        stage ? { params: { stage } } : undefined
       )
       aiDecision.value = decision
       return decision

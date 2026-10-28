@@ -86,7 +86,7 @@ const afterArticleLoaded = async () => {
     return
   }
   await Promise.all([
-    screeningStore.fetchAiDecision(projectId.value, a.id),
+    screeningStore.fetchAiDecision(projectId.value, a.id, stage.value),
     loadMyDecision(),
   ])
 }
@@ -246,7 +246,7 @@ const refreshArticle = () => {
 
 // Stats are refreshed by ProjectView when a batch completes; only the open article's AI verdict is ours
 const onBatchFinished = async () => {
-  if (article.value) await screeningStore.fetchAiDecision(projectId.value, article.value.id)
+  if (article.value) await screeningStore.fetchAiDecision(projectId.value, article.value.id, stage.value)
 }
 
 // Keyboard shortcuts; ignored while typing or with modifier keys
