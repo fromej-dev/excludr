@@ -371,7 +371,7 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
 
 <template>
   <div
-    class="flex flex-col gap-3 lg:h-[calc(100vh-7rem)] lg:min-h-[32rem] lg:pb-0"
+    class="flex flex-col gap-3 lg:h-[calc(100vh-3rem)] lg:min-h-[32rem] lg:pb-0"
     :class="
       mobileNoteOpen
         ? 'pb-[calc(13rem+env(safe-area-inset-bottom))]'
@@ -436,8 +436,8 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
         <FullTextPanel
           v-if="article.current_stage === 'full_text' || article.full_text_content"
           :article="article"
-          height-class="max-h-[70vh] lg:max-h-[calc(100vh-17rem)]"
-          pdf-height-class="h-[70vh] lg:h-[calc(100vh-17rem)]"
+          height-class="max-h-[70vh] lg:max-h-[calc(100vh-13rem)]"
+          pdf-height-class="h-[70vh] lg:h-[calc(100vh-13rem)]"
           @uploaded="refreshArticle"
         />
       </div>

@@ -68,10 +68,14 @@ watch(
 
 <template>
   <AppLayout :full-width="isScreening">
-    <div class="space-y-3 lg:flex lg:items-start lg:gap-8 lg:space-y-0">
-      <ProjectSidebar />
+    <template #sidebar>
+      <ProjectSidebar variant="sidebar" />
+    </template>
 
-      <div class="min-w-0 flex-1" :class="isScreening ? 'space-y-3' : 'space-y-6'">
+    <div class="space-y-3 lg:space-y-0">
+      <ProjectSidebar variant="pills" />
+
+      <div class="min-w-0" :class="isScreening ? 'space-y-3' : 'space-y-6'">
         <h1
           v-if="!isOverview"
           :class="isScreening ? 'sr-only' : 'max-lg:sr-only text-3xl font-bold'"
