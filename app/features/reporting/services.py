@@ -279,7 +279,8 @@ class ReportingService:
             if ex is not None and ex[0] == ScreeningStage.full_text:
                 reasons[self._reason_of(ex[1], codes) or UNSPECIFIED_REASON] += 1
 
-        screened = stats.title_abstract_total
+        # Records screened elsewhere skip this box and go straight to retrieval.
+        screened = stats.title_abstract_total - stats.title_abstract_skipped
         excluded_ta = stats.excluded_title_abstract
         sought = stats.full_text_eligible
         not_retrieved = stats.awaiting_full_text
@@ -304,7 +305,9 @@ class ReportingService:
                 records_after_duplicates_removed=identified - duplicates,
             ),
             screening=PrismaScreening(
-                records_screened=screened, records_excluded=excluded_ta
+                records_screened=screened,
+                records_excluded=excluded_ta,
+                records_screened_elsewhere=stats.title_abstract_skipped,
             ),
             retrieval=PrismaRetrieval(
                 reports_sought=sought, reports_not_retrieved=not_retrieved

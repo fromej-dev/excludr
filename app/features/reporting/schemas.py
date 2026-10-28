@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlmodel import SQLModel
+from sqlmodel import Field, SQLModel
 
 
 class PrismaSource(SQLModel):
@@ -23,6 +23,11 @@ class PrismaIdentification(SQLModel):
 class PrismaScreening(SQLModel):
     records_screened: int
     records_excluded: int
+    records_screened_elsewhere: int = Field(
+        default=0,
+        description="Records that skipped title/abstract screening here because "
+        "they were screened elsewhere (not part of records_screened)",
+    )
 
 
 class PrismaRetrieval(SQLModel):

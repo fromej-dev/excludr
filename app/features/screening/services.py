@@ -601,6 +601,7 @@ class ScreeningService:
                 has_decision(ft, False).label("ft_any"),
                 has_decision(ta, True).label("ta_human"),
                 has_decision(ft, True).label("ft_human"),
+                Article.title_abstract_skipped.label("skipped"),
             )
             .where(Article.project_id == project_id)
             .subquery()
@@ -609,7 +610,7 @@ class ScreeningService:
         rows = self.session.exec(select(*cols, func.count()).group_by(*cols)).all()
 
         stats = ScreeningStats()
-        for status, stage, ta_any, ft_any, ta_human, ft_human, n in rows:
+        for status, stage, ta_any, ft_any, ta_human, ft_human, skipped, n in rows:
             status, stage = ArticleStatus(status), ScreeningStage(stage)
             stats.total_articles += n
             stats.screened_title_abstract += n if ta_any else 0
@@ -651,6 +652,8 @@ class ScreeningService:
             )
             if eligible:
                 stats.full_text_eligible += n
+                if skipped:
+                    stats.title_abstract_skipped += n
                 if status != ArticleStatus.awaiting_full_text:
                     stats.full_text_retrieved += n
                 if ft_human:

@@ -4,6 +4,7 @@ from typing import Optional, List
 
 from pydantic import computed_field
 from sqlalchemy import DateTime, UniqueConstraint, event, func, insert
+from sqlalchemy import false as sa_false
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -111,6 +112,11 @@ class ImportBatch(SQLModel, table=True):
     imported: int = Field(default=0, description="New articles created")
     duplicates: int = Field(
         default=0, description="Records matching an article already in the project"
+    )
+    title_abstract_screened: bool = Field(
+        default=False,
+        description="Records already passed title/abstract screening elsewhere",
+        sa_column_kwargs={"server_default": sa_false(), "nullable": False},
     )
     created_at: datetime = Field(
         default_factory=_utcnow, sa_type=DateTime(timezone=True), nullable=False

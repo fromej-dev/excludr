@@ -7,6 +7,7 @@ import type {
   PaginatedResponse,
   ArticleListOptions,
   RetrieveFullTextBulkResponse,
+  SkipTitleAbstractResponse,
   WebSocketResponse,
 } from '@/types'
 import { useWebSocketStore } from './websocket'
@@ -138,6 +139,19 @@ export const useArticlesStore = defineStore('articles', () => {
     }
   }
 
+  /** Send articles that were screened at title/abstract elsewhere to full text. */
+  const skipTitleAbstract = async (projectId: number, articleIds: number[]) => {
+    try {
+      return await post<SkipTitleAbstractResponse>(
+        `/projects/${projectId}/articles/skip-title-abstract`,
+        { article_ids: articleIds },
+      )
+    } catch (err: any) {
+      error.value = err.response?.data?.detail || 'Failed to move articles to full text'
+      return null
+    }
+  }
+
   const fetchArticle = async (projectId: number, articleId: number) => {
     loading.value = true
     error.value = null
@@ -178,6 +192,7 @@ export const useArticlesStore = defineStore('articles', () => {
     error,
     fetchArticles,
     retrieveFulltext,
+    skipTitleAbstract,
     fetchArticle,
     fetchStats,
     setupWebSocketListeners,

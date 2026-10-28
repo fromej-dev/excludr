@@ -98,6 +98,30 @@ const retrieveSelected = async () => {
   }
 }
 
+const skipSelected = async () => {
+  const ids = [...selected.value]
+  if (ids.length === 0) return
+  if (
+    !window.confirm(
+      'Move the selected articles past title/abstract screening to full text? ' +
+        'Use this for articles already screened elsewhere; it cannot be undone.',
+    )
+  )
+    return
+  retrieving.value = true
+  const res = await articlesStore.skipTitleAbstract(projectId.value, ids)
+  retrieving.value = false
+  if (!res) {
+    wsStore.addNotification(error.value ?? 'Failed to move articles to full text', 'error')
+  } else if (res.moved === 0) {
+    wsStore.addNotification('None of the selected articles are waiting for title/abstract screening', 'info')
+  } else {
+    wsStore.addNotification(`Moved ${res.moved} of ${ids.length} selected articles to full text`, 'success')
+    selected.value = new Set()
+    await fetchArticles()
+  }
+}
+
 const isEmpty = computed(() => hasFetched.value && !loading.value && !error.value && articles.value.length === 0)
 </script>
 
@@ -127,6 +151,7 @@ const isEmpty = computed(() => hasFetched.value && !loading.value && !error.valu
       :count="selected.size"
       :busy="retrieving"
       @retrieve="retrieveSelected"
+      @skip-title-abstract="skipSelected"
       @clear="selected = new Set()"
     />
 

@@ -9,6 +9,7 @@ interface Props {
 defineProps<Props>()
 defineEmits<{
   retrieve: []
+  'skip-title-abstract': []
   clear: []
 }>()
 </script>
@@ -24,6 +25,16 @@ defineEmits<{
     <div class="flex items-center gap-2">
       <Button size="sm" :disabled="busy" data-testid="bulk-retrieve" @click="$emit('retrieve')">
         {{ busy ? 'Starting...' : 'Retrieve full text' }}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        :disabled="busy"
+        title="For articles already screened at title/abstract elsewhere"
+        data-testid="bulk-skip-title-abstract"
+        @click="$emit('skip-title-abstract')"
+      >
+        Move to full text
       </Button>
       <Button size="sm" variant="ghost" @click="$emit('clear')">Deselect</Button>
     </div>

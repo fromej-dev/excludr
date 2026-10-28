@@ -123,6 +123,8 @@ export interface Article {
   full_text_source?: string | null
   /** Last automatic retrieval failure, if any. */
   full_text_retrieval_error?: string | null
+  /** Sent to full text without title/abstract screening here (screened elsewhere). */
+  title_abstract_skipped?: boolean
   status: ArticleStatus
   current_stage: ScreeningStage
   final_decision: FinalDecision
@@ -285,6 +287,7 @@ export interface ImportBatch {
   records_found: number
   imported: number
   duplicates: number
+  title_abstract_screened: boolean
   created_at: string
   created_by: number | null
 }
@@ -299,6 +302,7 @@ export interface ImportResult {
   duplicates?: number
   duplicates_by_title_year?: number
   abstracts_fetched?: number
+  title_abstract_skipped?: number
 }
 
 export interface UploadResponse {
@@ -475,7 +479,11 @@ export interface PrismaFlow {
     duplicates_removed: number
     records_after_duplicates_removed: number
   }
-  screening: { records_screened: number; records_excluded: number }
+  screening: {
+    records_screened: number
+    records_excluded: number
+    records_screened_elsewhere: number
+  }
   retrieval: { reports_sought: number; reports_not_retrieved: number }
   eligibility: {
     reports_assessed: number
@@ -565,6 +573,11 @@ export interface FullTextRetrievalResult {
 export interface RetrieveFullTextBulkResponse {
   message: string
   count: number
+}
+
+export interface SkipTitleAbstractResponse {
+  moved: number
+  retrieval_queued: number
 }
 
 export interface MyProjectRole {

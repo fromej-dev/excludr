@@ -19,6 +19,7 @@ from app.features.projects.parsers import (
     ris_pmid,
 )
 from app.features.research.pubmed_service import PubMedRecord, PubMedService
+from app.features.research.services import skip_title_abstract
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ def record_import_batch(
     file_format: str,
     result: dict[str, Any],
     user_id: int | None,
+    title_abstract_screened: bool = False,
 ) -> None:
     """Persist an :class:`ImportBatch` (and its audit event) for a finished import."""
     from app.features.audit import services as audit
@@ -55,6 +57,7 @@ def record_import_batch(
             records_found=result["records_found"],
             imported=result["articles_created"],
             duplicates=result["duplicates"],
+            title_abstract_screened=title_abstract_screened,
             created_by=user_id,
         )
         session.add(batch)
@@ -72,21 +75,35 @@ def record_import_batch(
                 "records_found": batch.records_found,
                 "imported": batch.imported,
                 "duplicates": batch.duplicates,
+                "title_abstract_screened": title_abstract_screened,
+                "title_abstract_skipped": len(result.get("skipped_article_ids", [])),
             },
         )
 
 
 @task(name="parse_ris_entries")
-def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -> dict:
+def parse_ris_entries(
+    file_path: str,
+    project_id: int,
+    original_filename: str,
+    title_abstract_screened: bool = False,
+) -> dict:
     """Parse RIS entries and save to database.
 
-    This task handles the actual parsing and database operations.
+    This task handles the actual parsing and database operations. With
+    ``title_abstract_screened`` every record of the file (new or matching an
+    article still at title/abstract) goes straight to full text.
     """
     articles_created = 0
     articles_updated = 0
     duplicates = 0
     duplicates_by_title_year = 0
     pmids_needing_abstracts: list[str] = []
+    skipped: list[Article] = []
+
+    def skip(article: Article) -> None:
+        if title_abstract_screened and skip_title_abstract(article):
+            skipped.append(article)
 
     with open(file_path, "r", encoding="utf-8") as file:
         entries = rispy.load(file)
@@ -125,6 +142,8 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                     duplicates += 1
                     if match_kind == "title_year":
                         duplicates_by_title_year += 1
+                        skip(existing_article)
+                        session.add(existing_article)
                         continue
 
                 # Construct a page range string if start and end pages are available.
@@ -184,8 +203,12 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                     index.add(article)
                     articles_created += 1
 
+                skip(article)
                 if not article.abstract and pmid:
                     pmids_needing_abstracts.append(pmid)
+
+            session.flush()
+            skipped_ids = [a.id for a in skipped]
 
     return {
         "records_found": records_found,
@@ -194,6 +217,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
         "duplicates": duplicates,
         "duplicates_by_title_year": duplicates_by_title_year,
         "pmids_needing_abstracts": pmids_needing_abstracts,
+        "skipped_article_ids": skipped_ids,
     }
 
 
@@ -203,6 +227,7 @@ def parse_ris_file_flow(
     project_id: int,
     original_filename: str | None = None,
     user_id: int | None = None,
+    title_abstract_screened: bool = False,
 ) -> dict:
     """Prefect flow to parse a RIS file and save/update entries in the database.
 
@@ -211,6 +236,8 @@ def parse_ris_file_flow(
         project_id: ID of the project to associate articles with.
         original_filename: Client-supplied display name (metadata only, never a path).
         user_id: User who uploaded the file (recorded on the import batch).
+        title_abstract_screened: The records already passed title/abstract
+            screening elsewhere; send them straight to full text.
 
     Returns:
         Dictionary with status, articles_created, and articles_updated counts.
@@ -220,8 +247,17 @@ def parse_ris_file_flow(
     logger.info(f"Starting to parse file: {file_path} (from {original_filename})")
 
     try:
-        result = parse_ris_entries(file_path, project_id, original_filename)
-        record_import_batch(project_id, original_filename, "ris", result, user_id)
+        result = parse_ris_entries(
+            file_path, project_id, original_filename, title_abstract_screened
+        )
+        record_import_batch(
+            project_id,
+            original_filename,
+            "ris",
+            result,
+            user_id,
+            title_abstract_screened,
+        )
 
         # Fill in missing abstracts from PubMed; the record must match the article,
         # because an accession number is not always a PMID.
@@ -246,6 +282,8 @@ def parse_ris_file_flow(
             "duplicates": result["duplicates"],
             "duplicates_by_title_year": result["duplicates_by_title_year"],
             "abstracts_fetched": abstracts_fetched,
+            "title_abstract_skipped": len(result["skipped_article_ids"]),
+            "skipped_article_ids": result["skipped_article_ids"],
         }
 
     except FileNotFoundError:
@@ -262,7 +300,11 @@ def parse_ris_file_flow(
 
 @task(name="parse_pubmed_entries")
 def parse_pubmed_entries(
-    file_path: str, project_id: int, original_filename: str, file_format: str
+    file_path: str,
+    project_id: int,
+    original_filename: str,
+    file_format: str,
+    title_abstract_screened: bool = False,
 ) -> dict[str, Any]:
     """Parse PubMed entries and save to database.
 
@@ -273,6 +315,8 @@ def parse_pubmed_entries(
         project_id: ID of the project to associate articles with.
         original_filename: Original name of the uploaded file.
         file_format: Either 'txt' or 'csv'.
+        title_abstract_screened: Send every record of the file (new or matching
+            an article still at title/abstract) straight to full text.
 
     Returns:
         Dictionary with created/updated counts and PMIDs needing abstracts.
@@ -281,6 +325,11 @@ def parse_pubmed_entries(
     articles_updated = 0
     duplicates = 0
     pmids_needing_abstracts: list[str] = []
+    skipped: list[Article] = []
+
+    def skip(article: Article) -> None:
+        if title_abstract_screened and skip_title_abstract(article):
+            skipped.append(article)
 
     # Parse the file based on format
     if file_format == "txt":
@@ -343,6 +392,7 @@ def parse_pubmed_entries(
                             setattr(existing_article, key, value)
                         elif isinstance(value, list) and value:
                             setattr(existing_article, key, value)
+                skip(existing_article)
                 session.add(existing_article)
                 articles_updated += 1
 
@@ -352,6 +402,7 @@ def parse_pubmed_entries(
             else:
                 # Create new article
                 new_article = new_screening_article(article_data)
+                skip(new_article)
                 session.add(new_article)
                 index.add(new_article)
                 articles_created += 1
@@ -360,12 +411,16 @@ def parse_pubmed_entries(
                 if entry.get("needs_abstract_fetch"):
                     pmids_needing_abstracts.append(pmid)
 
+        session.flush()
+        skipped_ids = [a.id for a in skipped]
+
     return {
         "records_found": len(entries),
         "articles_created": articles_created,
         "articles_updated": articles_updated,
         "duplicates": duplicates,
         "pmids_needing_abstracts": pmids_needing_abstracts,
+        "skipped_article_ids": skipped_ids,
     }
 
 
@@ -433,6 +488,7 @@ def parse_pubmed_file_flow(
     project_id: int,
     original_filename: str | None = None,
     user_id: int | None = None,
+    title_abstract_screened: bool = False,
 ) -> dict[str, Any]:
     """Prefect flow to parse a PubMed export file and save entries to the database.
 
@@ -444,6 +500,8 @@ def parse_pubmed_file_flow(
         project_id: ID of the project to associate articles with.
         original_filename: Client-supplied display name (metadata only, never a path).
         user_id: User who uploaded the file (recorded on the import batch).
+        title_abstract_screened: The records already passed title/abstract
+            screening elsewhere; send them straight to full text.
 
     Returns:
         Dictionary with status and article counts.
@@ -467,10 +525,19 @@ def parse_pubmed_file_flow(
     try:
         # Parse entries and save to database
         result = parse_pubmed_entries(
-            file_path, project_id, original_filename, file_format
+            file_path,
+            project_id,
+            original_filename,
+            file_format,
+            title_abstract_screened,
         )
         record_import_batch(
-            project_id, original_filename, f"pubmed_{file_format}", result, user_id
+            project_id,
+            original_filename,
+            f"pubmed_{file_format}",
+            result,
+            user_id,
+            title_abstract_screened,
         )
 
         logger.info(
@@ -497,6 +564,8 @@ def parse_pubmed_file_flow(
             "articles_updated": result["articles_updated"],
             "duplicates": result["duplicates"],
             "abstracts_fetched": abstracts_fetched,
+            "title_abstract_skipped": len(result["skipped_article_ids"]),
+            "skipped_article_ids": result["skipped_article_ids"],
         }
 
     except FileNotFoundError:
