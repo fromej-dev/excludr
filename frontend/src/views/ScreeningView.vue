@@ -1,24 +1,30 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useScreeningStore } from '@/stores/screening'
 import { useCriteriaStore } from '@/stores/criteria'
 import { useMembersStore } from '@/stores/members'
 import { useAuthStore } from '@/stores/auth'
+import { useProjectNavStore } from '@/stores/projectNav'
+import { useProjectStatsStore } from '@/stores/projectStats'
 import { useWebSocketStore } from '@/stores/websocket'
 import type { ScreeningDecisionType, ScreeningStage } from '@/types'
 import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
-import Textarea from '@/components/ui/Textarea.vue'
-import Label from '@/components/ui/Label.vue'
-import AiDecisionPanel from '@/components/screening/AiDecisionPanel.vue'
-import AiBatchCard from '@/components/screening/AiBatchCard.vue'
+import ScreeningToolbar from '@/components/screening/ScreeningToolbar.vue'
+import AiVerdict from '@/components/screening/AiVerdict.vue'
+import CriteriaEvaluationList from '@/components/screening/CriteriaEvaluationList.vue'
 import ShortcutLegend from '@/components/screening/ShortcutLegend.vue'
 import FullTextPanel from '@/components/articles/FullTextPanel.vue'
+import { decisionVariant, normalizeEvaluations } from '@/utils/criteriaEvaluations'
+import { useAiLookahead } from '@/composables/useAiLookahead'
 
 const route = useRoute()
+const router = useRouter()
+const navStore = useProjectNavStore()
 const screeningStore = useScreeningStore()
+const statsStore = useProjectStatsStore()
 const criteriaStore = useCriteriaStore()
 const membersStore = useMembersStore()
 const authStore = useAuthStore()
@@ -31,12 +37,12 @@ const aiScreeningLoading = computed(() => screeningStore.aiScreeningLoading)
 const canReview = computed(() => membersStore.canReview)
 const roleKnown = computed(() => membersStore.role !== null)
 
-const stage = ref<Exclude<ScreeningStage, 'completed'>>('title_abstract')
-const stageTabs: Array<{ value: 'title_abstract' | 'full_text'; label: string }> = [
-  { value: 'title_abstract', label: 'Title / abstract' },
-  { value: 'full_text', label: 'Full text' },
-]
+type ActiveStage = Exclude<ScreeningStage, 'completed'>
+const stageFromQuery = (): ActiveStage => (route.query.stage === 'full_text' ? 'full_text' : 'title_abstract')
+const stage = ref<ActiveStage>(stageFromQuery())
 const reasoning = ref('')
+// Phones: the note field lives in the fixed action bar, folded away until asked for
+const mobileNoteOpen = ref(false)
 const submitting = ref(false)
 const myDecision = ref<ScreeningDecisionType | null>(null)
 
@@ -44,7 +50,20 @@ const myDecision = ref<ScreeningDecisionType | null>(null)
 const history = ref<number[]>([])
 const pos = ref(-1)
 
-const stats = computed(() => screeningStore.stats)
+const stats = computed(() => statsStore.stats)
+const evaluations = computed(() => normalizeEvaluations(aiDecision.value?.criteria_evaluations))
+
+const articlePane = ref<HTMLElement | null>(null)
+
+/** The last decision this session, so it can be undone (re-opened for a new decision). */
+interface LastDecision {
+  articleId: number
+  toastId: string
+}
+const lastDecision = ref<LastDecision | null>(null)
+
+const TITLE_MAX = 60
+const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text)
 
 /** Load the reviewer's own previous decision for the current article (never anyone else's). */
 const loadMyDecision = async () => {
@@ -60,6 +79,7 @@ const loadMyDecision = async () => {
 
 const afterArticleLoaded = async () => {
   reasoning.value = ''
+  mobileNoteOpen.value = false
   const a = screeningStore.currentArticle
   if (!a) {
     myDecision.value = null
@@ -133,13 +153,57 @@ const submitDecision = async (decision: ScreeningDecisionType) => {
     wsStore.addNotification(screeningStore.error ?? 'Failed to save decision', 'error')
     return
   }
-  await screeningStore.fetchStats(projectId.value)
+  const decidedId = article.value.id
+  const decidedTitle = article.value.title || 'Untitled'
+  await Promise.all([statsStore.fetch(projectId.value), navStore.refreshScreening(projectId.value)])
+  const toastId = wsStore.addNotification(
+    `${decisionPast[decision]}: ${truncate(decidedTitle, TITLE_MAX)}`,
+    'success',
+    8000,
+    { label: 'Undo', onClick: () => void undoDecision(decidedId) }
+  )
+  lastDecision.value = { articleId: decidedId, toastId }
   if (pos.value < history.value.length - 1) {
     await goTo(pos.value + 1)
   } else {
     await loadNextUnscreened()
   }
 }
+
+const decisionPast: Record<ScreeningDecisionType, string> = {
+  include: 'Included',
+  exclude: 'Excluded',
+  uncertain: 'Marked uncertain',
+}
+
+/**
+ * Decisions are append-only on the backend, so "undo" navigates back to the article so it can
+ * be re-decided; the newest human decision replaces the old one.
+ */
+const undoDecision = async (articleId?: number) => {
+  if (submitting.value) return
+  const target = articleId ?? lastDecision.value?.articleId
+  if (target === undefined) return
+  const index = history.value.lastIndexOf(target)
+  if (index === -1) {
+    wsStore.addNotification('That article is no longer in this session', 'info', 2500)
+    return
+  }
+  if (lastDecision.value?.articleId === target) {
+    wsStore.removeNotification(lastDecision.value.toastId)
+    lastDecision.value = null
+  }
+  await goTo(index)
+}
+
+// Keep the AI verdict of the current article and the next two in the queue ready
+const { enabled: autoAhead, unavailable: aiUnavailable } = useAiLookahead({
+  projectId,
+  stage,
+  currentArticleId: computed(() => article.value?.id),
+  canRun: canReview,
+})
+const aiQueued = computed(() => screeningStore.currentAiQueued)
 
 const triggerAiScreening = async () => {
   if (!article.value) return
@@ -157,18 +221,31 @@ const resetQueue = async () => {
   if (canReview.value) await loadNextUnscreened()
 }
 
-const setStage = async (value: 'title_abstract' | 'full_text') => {
+const setStage = async (value: ActiveStage) => {
+  if (route.query.stage !== value) {
+    // Keep the URL in step with the stage without adding history entries
+    await router.replace({ query: { ...route.query, stage: value } })
+  }
   if (stage.value === value) return
   stage.value = value
+  lastDecision.value = null
   await resetQueue()
 }
+
+// Sidebar links (and back/forward) change the stage via the query string
+watch(
+  () => route.query.stage,
+  () => {
+    if (route.name === 'project-screening') void setStage(stageFromQuery())
+  }
+)
 
 const refreshArticle = () => {
   if (article.value) void screeningStore.loadArticle(projectId.value, article.value.id)
 }
 
+// Stats are refreshed by ProjectView when a batch completes; only the open article's AI verdict is ours
 const onBatchFinished = async () => {
-  await screeningStore.fetchStats(projectId.value)
   if (article.value) await screeningStore.fetchAiDecision(projectId.value, article.value.id)
 }
 
@@ -200,6 +277,9 @@ const onKeydown = (event: KeyboardEvent) => {
     case 'p':
       void previousArticle()
       break
+    case 'z':
+      void undoDecision()
+      break
   }
 }
 
@@ -218,91 +298,114 @@ watch(
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
   await criteriaStore.fetchCriteria(projectId.value)
-  await screeningStore.fetchStats(projectId.value)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
 })
 
+// Start each article at the top of the reading pane
+watch(
+  () => article.value?.id,
+  async () => {
+    await nextTick()
+    articlePane.value?.scrollTo({ top: 0 })
+  }
+)
+
+const mobileNote = ref<HTMLTextAreaElement | null>(null)
+const toggleMobileNote = async () => {
+  mobileNoteOpen.value = !mobileNoteOpen.value
+  if (mobileNoteOpen.value) {
+    await nextTick()
+    mobileNote.value?.focus()
+  }
+}
+
+// Compact note field: one line until focused or filled
+const noteFocused = ref(false)
+const noteExpanded = computed(() => noteFocused.value || reasoning.value.length > 0)
+
+// Shortcut legend is collapsed by default; remember the choice
+const SHORTCUTS_KEY = 'excludr_shortcuts_open'
+const readShortcutsOpen = (): boolean => {
+  try {
+    return localStorage.getItem(SHORTCUTS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const showShortcuts = ref(readShortcutsOpen())
+watch(showShortcuts, (open) => {
+  try {
+    localStorage.setItem(SHORTCUTS_KEY, open ? '1' : '0')
+  } catch {
+    /* storage unavailable */
+  }
+})
+
+// Fade cue when the criteria list overflows its scroll area
+const criteriaScroll = ref<HTMLElement | null>(null)
+const moreBelow = ref(false)
+const updateOverflow = () => {
+  const el = criteriaScroll.value
+  moreBelow.value = !!el && el.scrollHeight - el.scrollTop - el.clientHeight > 4
+}
+let resizeObserver: ResizeObserver | null = null
+watch(
+  criteriaScroll,
+  (el) => {
+    resizeObserver?.disconnect()
+    if (!el) return
+    resizeObserver ??= new ResizeObserver(updateOverflow)
+    resizeObserver.observe(el)
+    if (el.firstElementChild) resizeObserver.observe(el.firstElementChild)
+    updateOverflow()
+  },
+  { flush: 'post' }
+)
+onUnmounted(() => resizeObserver?.disconnect())
+
 const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + d.slice(1)
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="grid gap-4 lg:grid-cols-3">
-      <!-- Stats Card -->
-      <Card v-if="stats" class="p-6 lg:col-span-2">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-          <h2 class="text-lg font-semibold">Screening Progress</h2>
-          <div class="inline-flex rounded-md bg-muted p-1" role="tablist" aria-label="Screening stage">
-            <button
-              v-for="t in stageTabs"
-              :key="t.value"
-              type="button"
-              role="tab"
-              :aria-selected="stage === t.value"
-              :class="[
-                'rounded-sm px-3 py-1 text-xs font-medium transition-all',
-                stage === t.value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-              ]"
-              @click="setStage(t.value)"
-            >
-              {{ t.label }}
-            </button>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div>
-            <p class="text-2xl font-bold">{{ stats.total_articles }}</p>
-            <p class="text-sm text-muted-foreground">Total</p>
-          </div>
-          <div>
-            <p class="text-2xl font-bold">{{ stats.screened_title_abstract }}</p>
-            <p class="text-sm text-muted-foreground">Screened</p>
-          </div>
-          <div>
-            <p class="text-2xl font-bold text-green-600">{{ stats.included }}</p>
-            <p class="text-sm text-muted-foreground">Included</p>
-          </div>
-          <div>
-            <p class="text-2xl font-bold text-red-600">{{ stats.excluded }}</p>
-            <p class="text-sm text-muted-foreground">Excluded</p>
-          </div>
-        </div>
-      </Card>
-
-      <AiBatchCard :project-id="projectId" :can-run="canReview" @finished="onBatchFinished" />
-    </div>
+  <div
+    class="flex flex-col gap-3 lg:h-[calc(100vh-7rem)] lg:min-h-[32rem] lg:pb-0"
+    :class="
+      mobileNoteOpen
+        ? 'pb-[calc(13rem+env(safe-area-inset-bottom))]'
+        : 'pb-[calc(7rem+env(safe-area-inset-bottom))]'
+    "
+  >
+    <ScreeningToolbar
+      :project-id="projectId"
+      :stage="stage"
+      :stats="stats"
+      :can-run="canReview"
+      class="shrink-0"
+      @update:stage="setStage"
+      @finished="onBatchFinished"
+    />
 
     <Card v-if="roleKnown && !canReview" class="p-6 text-center text-sm text-muted-foreground">
       You have view-only access to this project. Ask the owner for the reviewer role to screen articles.
     </Card>
 
-    <!-- Screening workspace -->
-    <div v-else-if="article" class="grid gap-4 lg:grid-cols-5">
-      <!-- Left: the article -->
-      <div class="space-y-4 lg:col-span-3 min-w-0">
+    <!-- Screening workspace: article on the left, decision rail on the right -->
+    <div
+      v-else-if="article"
+      class="grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_28rem]"
+    >
+      <!-- Left: the article (scrolls on its own on large screens) -->
+      <div ref="articlePane" class="min-w-0 space-y-4 lg:h-full lg:overflow-y-auto lg:pr-1">
         <Card class="p-6">
           <div class="space-y-4">
             <div class="flex flex-wrap items-start justify-between gap-4">
-              <h1 class="text-2xl font-bold flex-1 min-w-0 break-words" data-testid="article-title">
+              <h1 class="min-w-0 flex-1 break-words text-2xl font-bold" data-testid="article-title">
                 {{ article.title || 'Untitled' }}
               </h1>
-              <div class="flex items-center gap-2">
-                <Badge>{{ article.current_stage }}</Badge>
-                <Badge v-if="myDecision" variant="secondary" data-testid="my-decision">
-                  Your decision: {{ decisionLabel(myDecision) }}
-                </Badge>
-                <Button
-                  v-if="!aiDecision && !aiScreeningLoading"
-                  variant="outline"
-                  size="sm"
-                  @click="triggerAiScreening"
-                >
-                  Screen with AI
-                </Button>
-              </div>
+              <Badge>{{ article.current_stage }}</Badge>
             </div>
 
             <div v-if="article.authors.length > 0" class="text-muted-foreground">
@@ -315,12 +418,12 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
             </div>
 
             <div v-if="article.abstract" class="mt-4">
-              <h2 class="text-lg font-semibold mb-2">Abstract</h2>
-              <p class="text-muted-foreground leading-relaxed">{{ article.abstract }}</p>
+              <h2 class="mb-2 text-lg font-semibold">Abstract</h2>
+              <p class="max-w-4xl leading-relaxed text-muted-foreground">{{ article.abstract }}</p>
             </div>
 
             <div v-if="article.keywords.length > 0" class="mt-4">
-              <h2 class="text-lg font-semibold mb-2">Keywords</h2>
+              <h2 class="mb-2 text-lg font-semibold">Keywords</h2>
               <div class="flex flex-wrap gap-2">
                 <Badge v-for="keyword in article.keywords" :key="keyword" variant="outline">
                   {{ keyword }}
@@ -333,85 +436,172 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
         <FullTextPanel
           v-if="article.current_stage === 'full_text' || article.full_text_content"
           :article="article"
-          height-class="max-h-96"
+          height-class="max-h-[70vh] lg:max-h-[calc(100vh-17rem)]"
+          pdf-height-class="h-[70vh] lg:h-[calc(100vh-17rem)]"
           @uploaded="refreshArticle"
         />
-
-        <!-- Criteria Reference -->
-        <div class="grid gap-4 md:grid-cols-2">
-          <Card class="p-4">
-            <h3 class="font-semibold mb-3 text-green-600">Inclusion Criteria</h3>
-            <div class="space-y-2">
-              <div v-for="criterion in criteriaStore.inclusionCriteria" :key="criterion.id" class="text-sm">
-                <Badge variant="outline" class="mr-2">{{ criterion.code }}</Badge>
-                <span>{{ criterion.description }}</span>
-              </div>
-            </div>
-          </Card>
-
-          <Card class="p-4">
-            <h3 class="font-semibold mb-3 text-red-600">Exclusion Criteria</h3>
-            <div class="space-y-2">
-              <div v-for="criterion in criteriaStore.exclusionCriteria" :key="criterion.id" class="text-sm">
-                <Badge variant="outline" class="mr-2">{{ criterion.code }}</Badge>
-                <span>{{ criterion.description }}</span>
-              </div>
-            </div>
-          </Card>
-        </div>
       </div>
 
-      <!-- Right: AI panel and decision (sticky on large screens) -->
-      <div class="space-y-4 lg:col-span-2 min-w-0">
-        <Card class="p-6 lg:sticky lg:top-20">
-          <div class="space-y-4">
-            <div class="space-y-2">
-              <Label for="reasoning">Reasoning (Optional)</Label>
-              <Textarea
-                id="reasoning"
-                v-model="reasoning"
-                placeholder="Add notes about your decision"
-                :rows="3"
-              />
-            </div>
+      <!-- Right: decision rail. Verdict and criteria scroll; the decision controls stay in view. -->
+      <Card class="flex min-w-0 flex-col overflow-hidden lg:h-full" data-testid="decision-rail">
+        <div class="shrink-0 space-y-2 border-b px-4 py-3">
+          <AiVerdict
+            :decision="aiDecision"
+            :loading="aiScreeningLoading"
+            :can-run="canReview"
+            :queued="aiQueued && !aiScreeningLoading"
+            :unavailable="aiUnavailable"
+            v-model:auto-ahead="autoAhead"
+            @screen="triggerAiScreening"
+          />
+          <div v-if="myDecision" class="flex items-center gap-2 text-sm">
+            <Badge :variant="decisionVariant(myDecision)" data-testid="my-decision">
+              Your decision: {{ decisionLabel(myDecision) }}
+            </Badge>
+          </div>
+        </div>
 
-            <div class="flex flex-wrap gap-3 justify-center">
-              <Button
-                :disabled="submitting"
-                class="bg-green-600 hover:bg-green-700 text-white px-6"
-                @click="submitDecision('include')"
-              >
-                Include (I)
-              </Button>
-              <Button :disabled="submitting" variant="outline" class="px-6" @click="submitDecision('uncertain')">
-                Uncertain (U)
-              </Button>
-              <Button :disabled="submitting" variant="destructive" class="px-6" @click="submitDecision('exclude')">
-                Exclude (E)
-              </Button>
-            </div>
+        <div class="relative lg:min-h-0 lg:flex-1">
+          <div
+            ref="criteriaScroll"
+            class="px-4 py-3 lg:h-full lg:overflow-y-auto"
+            data-testid="criteria-scroll"
+            @scroll.passive="updateOverflow"
+          >
+            <CriteriaEvaluationList
+              :inclusion="criteriaStore.inclusionCriteria"
+              :exclusion="criteriaStore.exclusionCriteria"
+              :evaluations="evaluations"
+            />
+          </div>
+          <div
+            v-show="moreBelow"
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-x-0 bottom-0 hidden h-8 bg-gradient-to-t from-card to-transparent shadow-[0_8px_8px_-8px_rgba(0,0,0,0.25)_inset] lg:block"
+          />
+        </div>
 
-            <div class="flex justify-between gap-2">
-              <Button variant="ghost" size="sm" :disabled="pos <= 0 || submitting" @click="previousArticle">
-                Previous (P)
-              </Button>
-              <Button variant="ghost" size="sm" :disabled="submitting" @click="nextArticle">Next (N)</Button>
-            </div>
+        <div class="shrink-0 space-y-1.5 border-t bg-card px-3 py-2">
+          <label for="reasoning" class="sr-only">Reasoning (Optional)</label>
+          <textarea
+            id="reasoning"
+            v-model="reasoning"
+            :rows="noteExpanded ? 3 : 1"
+            placeholder="+ Add a note (optional)"
+            class="block w-full resize-none rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            @focus="noteFocused = true"
+            @blur="noteFocused = false"
+          />
 
+          <div class="hidden grid-cols-3 gap-2 lg:grid">
+            <Button
+              :disabled="submitting"
+              variant="include"
+              class="gap-1 whitespace-nowrap px-1"
+              @click="submitDecision('include')"
+            >
+              <span aria-hidden="true" class="font-bold">✓</span>
+              Include (I)
+            </Button>
+            <Button :disabled="submitting" variant="uncertain"
+              class="gap-1 whitespace-nowrap px-1"
+              @click="submitDecision('uncertain')"
+            >
+              <span aria-hidden="true" class="font-bold">?</span>
+              Uncertain (U)
+            </Button>
+            <Button :disabled="submitting" variant="exclude"
+              class="gap-1 whitespace-nowrap px-1"
+              @click="submitDecision('exclude')"
+            >
+              <span aria-hidden="true" class="font-bold">✕</span>
+              Exclude (E)
+            </Button>
+          </div>
+
+          <div class="hidden items-center justify-between gap-2 lg:flex">
+            <Button variant="ghost" size="sm" class="h-7" :disabled="pos <= 0 || submitting" @click="previousArticle">
+              Previous (P)
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              class="h-7 text-muted-foreground"
+              :aria-expanded="showShortcuts"
+              aria-controls="shortcut-legend-panel"
+              @click="showShortcuts = !showShortcuts"
+            >
+              Shortcuts
+            </Button>
+            <Button variant="ghost" size="sm" class="h-7" :disabled="submitting" @click="nextArticle">Next (N)</Button>
+          </div>
+
+          <div v-if="showShortcuts" id="shortcut-legend-panel" class="hidden lg:block">
             <ShortcutLegend />
           </div>
-        </Card>
+        </div>
+      </Card>
 
-        <AiDecisionPanel :decision="aiDecision" :loading="aiScreeningLoading" />
+      <!-- Mobile: fixed action bar (the rail controls are shown from lg up) -->
+      <div
+        class="fixed inset-x-0 bottom-0 z-40 border-t bg-card/95 px-3 pt-2 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] backdrop-blur lg:hidden"
+        style="padding-bottom: calc(0.5rem + env(safe-area-inset-bottom))"
+        data-testid="mobile-action-bar"
+      >
+        <div class="mx-auto max-w-xl space-y-1">
+          <div v-if="mobileNoteOpen" id="mobile-note-panel" class="pb-1">
+            <label for="mobile-reasoning" class="sr-only">Note (optional)</label>
+            <textarea
+              id="mobile-reasoning"
+              ref="mobileNote"
+              v-model="reasoning"
+              rows="3"
+              placeholder="Add a note (optional)"
+              class="block w-full resize-none rounded-md border border-input bg-background px-3 py-1.5 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              data-testid="mobile-note"
+            />
+          </div>
+          <div class="grid grid-cols-3 gap-2">
+            <Button :disabled="submitting" variant="include" class="gap-1 whitespace-nowrap px-1" @click="submitDecision('include')">
+              <span aria-hidden="true" class="font-bold">✓</span>
+              Include
+            </Button>
+            <Button :disabled="submitting" variant="uncertain" class="gap-1 whitespace-nowrap px-1" @click="submitDecision('uncertain')">
+              <span aria-hidden="true" class="font-bold">?</span>
+              Uncertain
+            </Button>
+            <Button :disabled="submitting" variant="exclude" class="gap-1 whitespace-nowrap px-1" @click="submitDecision('exclude')">
+              <span aria-hidden="true" class="font-bold">✕</span>
+              Exclude
+            </Button>
+          </div>
+          <div class="flex items-center justify-between">
+            <Button variant="ghost" size="sm" :disabled="pos <= 0 || submitting" @click="previousArticle">Previous</Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              :aria-expanded="mobileNoteOpen"
+              aria-controls="mobile-note-panel"
+              data-testid="mobile-note-toggle"
+              @click="toggleMobileNote"
+            >
+              {{ mobileNoteOpen ? 'Hide note' : 'Note' }}
+              <span v-if="!mobileNoteOpen && reasoning" class="ml-1 text-primary">
+                <span aria-hidden="true">•</span><span class="sr-only">(has text)</span>
+              </span>
+            </Button>
+            <Button variant="ghost" size="sm" :disabled="submitting" @click="nextArticle">Next</Button>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div v-else-if="screeningStore.loading" class="text-center py-12">
+    <div v-else-if="screeningStore.loading" class="py-12 text-center">
       <p class="text-muted-foreground">Loading next article...</p>
     </div>
 
     <Card v-else-if="roleKnown" class="p-12 text-center">
-      <h2 class="text-2xl font-bold mb-2">No more articles to screen</h2>
+      <h2 class="mb-2 text-2xl font-bold">No more articles to screen</h2>
       <p class="text-muted-foreground">
         You've completed screening all available articles at this stage.
       </p>

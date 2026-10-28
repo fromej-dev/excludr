@@ -13,8 +13,8 @@ withDefaults(defineProps<Props>(), { tone: 'default' })
     class="rounded-md border p-3 text-sm shadow-sm"
     :class="{
       'bg-card': tone === 'default',
-      'bg-destructive/5 border-destructive/30': tone === 'exclude',
-      'bg-green-600/10 border-green-600/40': tone === 'include',
+      'bg-exclude-soft text-exclude-soft-foreground border-exclude/60': tone === 'exclude',
+      'bg-include-soft text-include-soft-foreground border-include/40': tone === 'include',
     }"
   >
     <p class="font-medium leading-snug">

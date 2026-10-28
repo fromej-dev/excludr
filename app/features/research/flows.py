@@ -81,7 +81,10 @@ async def retrieve_fulltext_flow(
     with Session(engine) as session:
         async with build_client() as client:
             for article_id in article_ids:
-                data: dict[str, Any] = {"article_id": article_id}
+                data: dict[str, Any] = {
+                    "project_id": project_id,
+                    "article_id": article_id,
+                }
                 try:
                     article = session.get(Article, article_id)
                     if article is None or article.project_id != project_id:
@@ -139,6 +142,7 @@ async def retrieve_fulltext_flow(
         f"Full-text retrieval complete: {retrieved} retrieved, {failed} failed",
         {
             "type": "fulltext_complete",
+            "project_id": project_id,
             "retrieved": retrieved,
             "errors": failed,
             **summary,

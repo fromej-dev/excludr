@@ -28,12 +28,9 @@ test.describe('Screening Workflow', () => {
       type: 'exclusion',
     })
 
-    // Upload articles (generates 5 articles in "imported" status)
+    // Upload articles (5 articles, straight into title/abstract screening)
     const risContent = generateRisContent(5)
     await api.uploadRisFile(testUser.token, projectId, risContent)
-
-    // Start screening (moves articles from "imported" to "screening" status)
-    await api.startScreening(testUser.token, projectId)
   })
 
   test('should display first article for screening', async ({ page, pageHelper, testUser }) => {
@@ -98,18 +95,73 @@ test.describe('Screening Workflow', () => {
 
     await page.getByTestId('article-title').waitFor({ timeout: 10000 })
 
-    // Assert stats card shows total articles count
-    const totalLabel = page.getByText('Total', { exact: true })
-    await expect(totalLabel).toBeVisible()
-
-    // Check that we have the expected number of articles (5)
-    const totalCount = page.locator('p.text-2xl', { hasText: /^5$/ })
-    await expect(totalCount.first()).toBeVisible()
-
-    // Assert other stat labels are visible
-    await expect(page.getByText('Screened', { exact: true })).toBeVisible()
+    // Toolbar shows progress for the current stage (nothing screened yet, 5 articles total)
+    await expect(page.getByTestId('screening-progress')).toContainText('0 / 5 screened')
     await expect(page.getByText('Included', { exact: true })).toBeVisible()
     await expect(page.getByText('Excluded', { exact: true })).toBeVisible()
+  })
+
+  test('should show per-stage progress (full text out of articles that passed title/abstract)', async ({
+    page,
+    pageHelper,
+    testUser,
+  }) => {
+    await pageHelper.loginDirect(testUser.token)
+    // Stats are mocked so the two stages report different counts and denominators
+    await page.route('**/screening/stats', async (route) => {
+      const res = await route.fetch()
+      const body = await res.json()
+      const data = {
+        ...(body.data ?? body),
+        title_abstract_total: 5,
+        title_abstract_completed: 2,
+        full_text_eligible: 3,
+        full_text_completed: 1,
+      }
+      await route.fulfill({ response: res, json: body.data ? { ...body, data } : data })
+    })
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
+
+    await expect(page.getByTestId('screening-progress')).toContainText('2 / 5 screened')
+    await page.getByRole('tab', { name: 'Full text' }).click()
+    await expect(page.getByRole('tab', { name: 'Full text' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByTestId('screened-count')).toHaveText('1')
+    await expect(page.getByTestId('stage-total')).toHaveText('3')
+    await expect(page.getByTestId('screening-progress')).toContainText('1 / 3 screened')
+  })
+
+  test('should undo the last decision via the toast', async ({ page, pageHelper, testUser }) => {
+    await pageHelper.loginDirect(testUser.token)
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
+
+    const firstTitle = (await page.getByTestId('article-title').first().textContent())!.trim()
+    await page.getByRole('button', { name: /include \(i\)/i }).click()
+
+    const toast = page.getByRole('alert').filter({ hasText: 'Included:' })
+    await expect(toast).toBeVisible()
+    await expect(page.getByTestId('article-title')).not.toHaveText(firstTitle)
+
+    await toast.getByRole('button', { name: 'Undo' }).click()
+
+    await expect(page.getByTestId('article-title')).toHaveText(firstTitle)
+    await expect(page.getByTestId('my-decision')).toContainText('Include')
+    await expect(toast).toHaveCount(0)
+  })
+
+  test('should undo the last decision with the Z shortcut', async ({ page, pageHelper, testUser }) => {
+    await pageHelper.loginDirect(testUser.token)
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
+
+    const firstTitle = (await page.getByTestId('article-title').first().textContent())!.trim()
+    await page.keyboard.press('e')
+    await expect(page.getByTestId('article-title')).not.toHaveText(firstTitle)
+
+    await page.keyboard.press('z')
+    await expect(page.getByTestId('article-title')).toHaveText(firstTitle)
+    await expect(page.getByTestId('my-decision')).toContainText('Exclude')
   })
 
   test('should submit include decision and load next article', async ({ page, pageHelper, testUser }) => {
@@ -190,6 +242,24 @@ test.describe('Screening Workflow', () => {
     expect(secondTitle).not.toBe(firstTitle)
   })
 
+  test('mobile bottom bar Include button records a decision', async ({ page, pageHelper, testUser }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await pageHelper.loginDirect(testUser.token)
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
+
+    const bar = page.getByTestId('mobile-action-bar')
+    await expect(bar).toBeVisible()
+    // Only one set of decision buttons is displayed below lg
+    await expect(page.getByRole('button', { name: /include/i })).toHaveCount(1)
+
+    const firstTitle = (await page.getByTestId('article-title').first().textContent())!.trim()
+    await bar.getByRole('button', { name: 'Include' }).click()
+
+    await expect(page.getByRole('alert').filter({ hasText: 'Included:' })).toBeVisible()
+    await expect(page.getByTestId('article-title')).not.toHaveText(firstTitle)
+  })
+
   test('should use keyboard shortcut for include', async ({ page, pageHelper, testUser }) => {
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(projectId, 'screening')
@@ -201,13 +271,11 @@ test.describe('Screening Workflow', () => {
     // Press 'i' key for include
     await page.keyboard.press('i')
 
-    // Wait for next article to load
-    await page.waitForTimeout(1000)
+    // Assert the next article loads (auto-retrying instead of a fixed sleep)
+    await expect(page.getByTestId('article-title').first()).not.toHaveText(firstTitle ?? '', { timeout: 10000 })
 
-    // Assert next article loaded
-    const secondTitle = await page.getByTestId('article-title').first().textContent()
-    expect(secondTitle).not.toBe(firstTitle)
-
+    // The legend is collapsed behind a toggle
+    await page.getByRole('button', { name: 'Shortcuts' }).click()
     // Verify keyboard shortcut hint is visible
     const shortcutHint = page.getByTestId('shortcut-legend').getByText(/use keyboard shortcuts/i)
     await expect(shortcutHint).toBeVisible()
@@ -234,5 +302,35 @@ test.describe('Screening Workflow', () => {
 
     const completionMessage = page.getByText(/you've completed screening all available articles/i)
     await expect(completionMessage).toBeVisible()
+  })
+
+  test('sidebar shows the pending count, which drops after a decision', async ({ page, pageHelper, testUser }) => {
+    await pageHelper.loginDirect(testUser.token)
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await page.getByTestId('article-title').waitFor({ timeout: 10000 })
+
+    const sidebar = page.getByTestId('project-sidebar')
+    const count = sidebar.getByTestId('nav-count-title_abstract')
+    await expect(count).toHaveText('5')
+    await expect(sidebar.getByRole('link', { name: /^Title\/abstract/ })).toHaveAttribute('aria-current', 'page')
+
+    await page.keyboard.press('i')
+    await expect(count).toHaveText('4')
+  })
+
+  test('the stage query param selects the Full text stage and stays in sync', async ({ page, pageHelper, testUser }) => {
+    await pageHelper.loginDirect(testUser.token)
+    await page.goto(`/projects/${projectId}/screening?stage=full_text`)
+    await expect(page.getByRole('tab', { name: 'Full text' })).toHaveAttribute('aria-selected', 'true')
+    const sidebar = page.getByTestId('project-sidebar')
+    await expect(sidebar.getByRole('link', { name: /^Full text/ })).toHaveAttribute('aria-current', 'page')
+    await expect(sidebar.getByRole('link', { name: /^Title\/abstract/ })).not.toHaveAttribute('aria-current', 'page')
+
+    // Switching the toolbar tab updates the URL; the sidebar link switches the tab
+    await page.getByRole('tab', { name: 'Title / abstract' }).click()
+    await expect(page).toHaveURL(/stage=title_abstract/)
+    await sidebar.getByRole('link', { name: /^Full text/ }).click()
+    await expect(page).toHaveURL(/stage=full_text/)
+    await expect(page.getByRole('tab', { name: 'Full text' })).toHaveAttribute('aria-selected', 'true')
   })
 })

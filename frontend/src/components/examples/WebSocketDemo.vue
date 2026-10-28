@@ -84,10 +84,10 @@ const getConnectionStateBadge = () => {
         <Badge :variant="getConnectionStateBadge()">
           {{ connectionState }}
         </Badge>
-        <span v-if="isConnected" class="text-sm text-gray-600">
+        <span v-if="isConnected" class="text-sm text-muted-foreground">
           Connected and ready to send/receive messages
         </span>
-        <span v-else class="text-sm text-gray-600">
+        <span v-else class="text-sm text-muted-foreground">
           Not connected to WebSocket server
         </span>
       </div>
@@ -100,18 +100,18 @@ const getConnectionStateBadge = () => {
         <div
           v-for="room in userRooms"
           :key="room"
-          class="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1"
+          class="flex items-center gap-2 bg-ai-soft text-ai-soft-foreground border border-ai/40 rounded-lg px-3 py-1"
         >
           <span class="text-sm font-medium">{{ room }}</span>
           <button
             @click="leaveRoom(room)"
-            class="text-blue-600 hover:text-blue-800 text-sm"
+            class="underline hover:no-underline text-sm"
           >
             ✕
           </button>
         </div>
       </div>
-      <p v-else class="text-sm text-gray-500">Not in any rooms yet</p>
+      <p v-else class="text-sm text-muted-foreground">Not in any rooms yet</p>
     </Card>
 
     <!-- Send Message -->
@@ -151,18 +151,18 @@ const getConnectionStateBadge = () => {
     <!-- Message Log -->
     <Card class="p-6">
       <h2 class="text-xl font-semibold mb-4">Message Log</h2>
-      <div class="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+      <div class="bg-muted rounded-lg p-4 max-h-96 overflow-y-auto">
         <div v-if="messageLog.length > 0" class="space-y-2">
           <div
             v-for="(msg, index) in messageLog"
             :key="index"
-            class="text-sm font-mono border-b border-gray-200 pb-2"
+            class="text-sm font-mono border-b border-border pb-2"
           >
-            <span class="text-gray-500">[{{ msg.time }}]</span>
+            <span class="text-muted-foreground">[{{ msg.time }}]</span>
             {{ msg.message }}
           </div>
         </div>
-        <p v-else class="text-sm text-gray-500">No messages yet</p>
+        <p v-else class="text-sm text-muted-foreground">No messages yet</p>
       </div>
     </Card>
   </div>

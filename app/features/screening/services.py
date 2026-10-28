@@ -571,51 +571,115 @@ class ScreeningService:
         )
 
     def get_screening_stats(self, project_id: int) -> ScreeningStats:
-        """Get screening statistics for a project."""
-        stats = ScreeningStats()
+        """Exact screening statistics for a project (see ``ScreeningStats``).
 
-        # Total articles
-        stats.total_articles = self.session.exec(
-            select(func.count(Article.id)).where(Article.project_id == project_id)
-        ).one()
+        Two queries: one grouped count of articles by status, stage and which
+        kinds of decisions they have, and one for open articles with a current
+        ``uncertain`` vote.
 
-        # Count by status
-        status_counts = self.session.exec(
-            select(Article.status, func.count(Article.id))
+        An article excluded at full text is told apart from one excluded at
+        title/abstract by having a human full-text decision: a human decision can
+        only be recorded at the article's current stage, so an article only gets
+        one after it passed title/abstract, and only human decisions move it.
+        """
+
+        def has_decision(stage: ScreeningStage, human_only: bool):
+            cond = [
+                ScreeningDecision.article_id == Article.id,
+                ScreeningDecision.stage == stage,
+            ]
+            if human_only:
+                cond.append(ScreeningDecision.source == DecisionSource.human)
+            return select(ScreeningDecision.id).where(*cond).exists()
+
+        ta, ft = ScreeningStage.title_abstract, ScreeningStage.full_text
+        flags = (
+            select(
+                Article.status.label("status"),
+                Article.current_stage.label("stage"),
+                has_decision(ta, False).label("ta_any"),
+                has_decision(ft, False).label("ft_any"),
+                has_decision(ta, True).label("ta_human"),
+                has_decision(ft, True).label("ft_human"),
+            )
             .where(Article.project_id == project_id)
-            .group_by(Article.status)
-        ).all()
+            .subquery()
+        )
+        cols = [flags.c[name] for name in flags.c.keys()]
+        rows = self.session.exec(select(*cols, func.count()).group_by(*cols)).all()
 
-        for status, count in status_counts:
-            if status == ArticleStatus.included:
-                stats.included = count
+        stats = ScreeningStats()
+        for status, stage, ta_any, ft_any, ta_human, ft_human, n in rows:
+            status, stage = ArticleStatus(status), ScreeningStage(stage)
+            stats.total_articles += n
+            stats.screened_title_abstract += n if ta_any else 0
+            stats.screened_full_text += n if ft_any else 0
+            stats.title_abstract_decided += n if ta_human else 0
+
+            if status == ArticleStatus.imported:
+                stats.imported_not_started += n
+                continue
+            stats.title_abstract_total += n
+            if stage != ScreeningStage.title_abstract:
+                stats.title_abstract_completed += n
+
+            excluded_ft = status == ArticleStatus.excluded and bool(ft_human)
+            if status == ArticleStatus.screening:
+                stats.awaiting_screening += n
+            elif status == ArticleStatus.included:
+                stats.included += n
+                stats.full_text_completed += n
             elif status == ArticleStatus.excluded:
-                stats.excluded = count
-            elif status == ArticleStatus.screening:
-                stats.awaiting_screening = count
+                stats.excluded += n
+                if excluded_ft:
+                    stats.excluded_full_text += n
+                    stats.full_text_completed += n
+                else:
+                    stats.excluded_title_abstract += n
             elif status == ArticleStatus.awaiting_full_text:
-                stats.awaiting_full_text = count
+                stats.awaiting_full_text += n
+            elif (
+                status == ArticleStatus.full_text_retrieved
+                and stage == ScreeningStage.full_text
+            ):
+                stats.awaiting_full_text_screening += n
 
-        # Count decisions by stage
-        stats.screened_title_abstract = self.session.exec(
-            select(func.count(func.distinct(ScreeningDecision.article_id)))
-            .join(Article, ScreeningDecision.article_id == Article.id)
-            .where(
-                Article.project_id == project_id,
-                ScreeningDecision.stage == ScreeningStage.title_abstract,
+            eligible = (
+                stage == ScreeningStage.full_text
+                or status == ArticleStatus.included
+                or excluded_ft
             )
-        ).one()
+            if eligible:
+                stats.full_text_eligible += n
+                if status != ArticleStatus.awaiting_full_text:
+                    stats.full_text_retrieved += n
+                if ft_human:
+                    stats.full_text_decided += n
 
-        stats.screened_full_text = self.session.exec(
-            select(func.count(func.distinct(ScreeningDecision.article_id)))
-            .join(Article, ScreeningDecision.article_id == Article.id)
-            .where(
-                Article.project_id == project_id,
-                ScreeningDecision.stage == ScreeningStage.full_text,
-            )
-        ).one()
-
+        stats.uncertain = self._count_open_uncertain(project_id)
         return stats
+
+    def _count_open_uncertain(self, project_id: int) -> int:
+        """Open articles where some reviewer's latest vote at the current stage is
+        ``uncertain`` (owner resolutions are not reviewer votes)."""
+        latest_per_reviewer = (
+            select(func.max(ScreeningDecision.id))
+            .join(Article, ScreeningDecision.article_id == Article.id)
+            .where(
+                Article.project_id == project_id,
+                Article.current_stage.in_(SCREENING_STAGES),
+                ScreeningDecision.stage == Article.current_stage,
+                ScreeningDecision.source == DecisionSource.human,
+                ScreeningDecision.is_resolution.is_(False),
+            )
+            .group_by(ScreeningDecision.article_id, ScreeningDecision.reviewer_id)
+        )
+        return self.session.exec(
+            select(func.count(func.distinct(ScreeningDecision.article_id))).where(
+                ScreeningDecision.id.in_(latest_per_reviewer),
+                ScreeningDecision.decision == ScreeningDecisionType.uncertain,
+            )
+        ).one()
 
 
 def get_screening_service(session: SessionDep) -> ScreeningService:

@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ScreeningDecision, CriterionEvaluation } from '@/types'
+import type { ScreeningDecision } from '@/types'
 import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Progress from '@/components/ui/Progress.vue'
+import {
+  normalizeEvaluations,
+  getMetStatus as getMetStatusBadge,
+  decisionVariant,
+  confidenceVariant as confidenceVariantFor,
+} from '@/utils/criteriaEvaluations'
 
 interface Props {
   decision: ScreeningDecision | null
@@ -14,63 +20,26 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
 })
 
-const decisionBadgeClass = computed(() => {
-  if (!props.decision) return ''
-  switch (props.decision.decision) {
-    case 'include':
-      return 'bg-green-600 text-white'
-    case 'exclude':
-      return 'bg-red-600 text-white'
-    case 'uncertain':
-      return 'bg-yellow-600 text-white'
-    default:
-      return ''
-  }
-})
+const decisionBadgeVariant = computed(() =>
+  props.decision ? decisionVariant(props.decision.decision) : 'outline'
+)
 
 const confidencePercent = computed(() => {
   if (!props.decision?.confidence_score) return 0
   return Math.round(props.decision.confidence_score * 100)
 })
 
-const confidenceVariant = computed(() => {
-  const percent = confidencePercent.value
-  if (percent >= 80) return 'success'
-  if (percent >= 60) return 'warning'
-  return 'destructive'
-})
+const confidenceVariant = computed(() => confidenceVariantFor(confidencePercent.value))
 
-const criteriaEvaluations = computed(() => {
-  if (!props.decision?.criteria_evaluations) return []
+const criteriaEvaluations = computed(() => normalizeEvaluations(props.decision?.criteria_evaluations))
 
-  // Handle both array and object formats
-  if (Array.isArray(props.decision.criteria_evaluations)) {
-    return props.decision.criteria_evaluations as CriterionEvaluation[]
-  }
+const inclusionEvaluations = computed(() =>
+  criteriaEvaluations.value.filter((e) => e.criterion_type === 'inclusion')
+)
 
-  // Convert object format to array
-  return Object.entries(props.decision.criteria_evaluations).map(([code, evaluation]) => ({
-    criterion_code: code,
-    criterion_type: evaluation.criterion_type,
-    met: evaluation.met,
-    confidence: evaluation.confidence,
-    reasoning: evaluation.reasoning,
-  })) as CriterionEvaluation[]
-})
-
-const getMetStatusBadge = (met: boolean | null) => {
-  if (met === null) return { text: 'Uncertain', class: 'bg-yellow-600 text-white' }
-  if (met) return { text: 'Met', class: 'bg-green-600 text-white' }
-  return { text: 'Not Met', class: 'bg-red-600 text-white' }
-}
-
-const inclusionEvaluations = computed(() => {
-  return criteriaEvaluations.value.filter((e) => e.criterion_type === 'inclusion')
-})
-
-const exclusionEvaluations = computed(() => {
-  return criteriaEvaluations.value.filter((e) => e.criterion_type === 'exclusion')
-})
+const exclusionEvaluations = computed(() =>
+  criteriaEvaluations.value.filter((e) => e.criterion_type === 'exclusion')
+)
 </script>
 
 <template>
@@ -78,7 +47,7 @@ const exclusionEvaluations = computed(() => {
     <div class="space-y-4">
       <div class="flex items-center gap-2">
         <h3 class="text-lg font-semibold">AI Screening Result</h3>
-        <Badge variant="outline" class="text-xs">AI-Generated</Badge>
+        <Badge variant="ai" class="text-xs">AI-Generated</Badge>
       </div>
 
       <!-- Loading State -->
@@ -95,7 +64,7 @@ const exclusionEvaluations = computed(() => {
       <div v-else class="space-y-4">
         <!-- Decision Badge and Confidence -->
         <div class="flex items-center justify-between">
-          <Badge :class="decisionBadgeClass" class="text-sm px-3 py-1 capitalize">
+          <Badge :variant="decisionBadgeVariant" class="text-sm px-3 py-1 capitalize">
             {{ decision.decision }}
           </Badge>
 
@@ -116,7 +85,7 @@ const exclusionEvaluations = computed(() => {
 
         <!-- Primary Exclusion Reason -->
         <div v-if="decision.primary_exclusion_reason && decision.decision === 'exclude'" class="space-y-2">
-          <h4 class="text-sm font-semibold text-red-600">Primary Exclusion Reason</h4>
+          <h4 class="text-sm font-semibold text-exclude-soft-foreground">Primary Exclusion Reason</h4>
           <p class="text-sm text-muted-foreground">{{ decision.primary_exclusion_reason }}</p>
         </div>
 
@@ -126,7 +95,7 @@ const exclusionEvaluations = computed(() => {
 
           <!-- Inclusion Criteria -->
           <div v-if="inclusionEvaluations.length > 0" class="space-y-2">
-            <h5 class="text-xs font-semibold text-green-600 uppercase tracking-wide">
+            <h5 class="text-xs font-semibold text-include-soft-foreground uppercase tracking-wide">
               Inclusion Criteria
             </h5>
             <div class="space-y-2">
@@ -141,7 +110,7 @@ const exclusionEvaluations = computed(() => {
                   </Badge>
 
                   <div class="flex items-center gap-2">
-                    <Badge :class="getMetStatusBadge(evaluation.met).class" class="text-xs">
+                    <Badge :variant="getMetStatusBadge(evaluation.met).variant" class="text-xs">
                       {{ getMetStatusBadge(evaluation.met).text }}
                     </Badge>
                     <span class="text-xs text-muted-foreground">
@@ -159,7 +128,7 @@ const exclusionEvaluations = computed(() => {
 
           <!-- Exclusion Criteria -->
           <div v-if="exclusionEvaluations.length > 0" class="space-y-2">
-            <h5 class="text-xs font-semibold text-red-600 uppercase tracking-wide">
+            <h5 class="text-xs font-semibold text-exclude-soft-foreground uppercase tracking-wide">
               Exclusion Criteria
             </h5>
             <div class="space-y-2">
@@ -174,7 +143,7 @@ const exclusionEvaluations = computed(() => {
                   </Badge>
 
                   <div class="flex items-center gap-2">
-                    <Badge :class="getMetStatusBadge(evaluation.met).class" class="text-xs">
+                    <Badge :variant="getMetStatusBadge(evaluation.met).variant" class="text-xs">
                       {{ getMetStatusBadge(evaluation.met).text }}
                     </Badge>
                     <span class="text-xs text-muted-foreground">

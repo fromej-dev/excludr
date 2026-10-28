@@ -87,13 +87,100 @@ class ScreeningDecision(ScreeningDecisionBase, table=True):
 
 
 class ScreeningStats(SQLModel):
-    """Response schema for screening statistics."""
+    """Response schema for screening statistics.
 
-    total_articles: int = 0
-    screened_title_abstract: int = 0
-    screened_full_text: int = 0
-    included: int = 0
-    excluded: int = 0
-    uncertain: int = 0
-    awaiting_screening: int = 0
-    awaiting_full_text: int = 0
+    Every count is a number of articles. Human decisions are the ones that count
+    (AI decisions never advance an article); "decided" fields count articles with
+    at least one human vote, "completed" fields count articles whose stage is
+    settled. Invariants (for consistent data)::
+
+        title_abstract_total = awaiting_screening + title_abstract_completed
+        title_abstract_completed = excluded_title_abstract + full_text_eligible
+        full_text_eligible = awaiting_full_text + awaiting_full_text_screening
+                             + full_text_completed
+        full_text_retrieved = full_text_eligible - awaiting_full_text
+        full_text_completed = included + excluded_full_text
+    """
+
+    # --- Legacy fields (kept for compatibility) -----------------------------
+    total_articles: int = Field(default=0, description="All articles in the project")
+    screened_title_abstract: int = Field(
+        default=0,
+        description="Articles with at least one title/abstract decision of any "
+        "source (AI included). Prefer title_abstract_completed for progress.",
+    )
+    screened_full_text: int = Field(
+        default=0,
+        description="Articles with at least one full-text decision of any source "
+        "(AI included). Prefer full_text_completed for progress.",
+    )
+    included: int = Field(default=0, description="Articles finally included")
+    excluded: int = Field(
+        default=0, description="Articles finally excluded (at either stage)"
+    )
+    uncertain: int = Field(
+        default=0,
+        description="Open articles (at title/abstract or full text) where at least "
+        "one reviewer's current human decision at that stage is 'uncertain'",
+    )
+    awaiting_screening: int = Field(
+        default=0,
+        description="Articles in title/abstract screening (status 'screening')",
+    )
+    awaiting_full_text: int = Field(
+        default=0,
+        description="Articles that passed title/abstract and still need a full "
+        "text (status 'awaiting_full_text')",
+    )
+
+    # --- Exact per-stage fields -------------------------------------------
+    imported_not_started: int = Field(
+        default=0,
+        description="Imported articles not yet released for screening "
+        "(status 'imported')",
+    )
+    title_abstract_total: int = Field(
+        default=0,
+        description="Articles that entered title/abstract screening "
+        "(every status except 'imported')",
+    )
+    title_abstract_decided: int = Field(
+        default=0,
+        description="Articles with at least one human title/abstract decision "
+        "(includes articles still waiting for a second reviewer or in conflict)",
+    )
+    title_abstract_completed: int = Field(
+        default=0,
+        description="Articles whose title/abstract stage is settled: advanced to "
+        "full text or excluded at title/abstract",
+    )
+    excluded_title_abstract: int = Field(
+        default=0, description="Articles excluded at title/abstract"
+    )
+    full_text_eligible: int = Field(
+        default=0,
+        description="Articles that passed title/abstract (at the full-text stage "
+        "or later included/excluded at full text)",
+    )
+    full_text_retrieved: int = Field(
+        default=0,
+        description="Eligible articles past full-text retrieval "
+        "(full_text_eligible minus awaiting_full_text)",
+    )
+    awaiting_full_text_screening: int = Field(
+        default=0,
+        description="Articles with a full text waiting for a full-text decision "
+        "(status 'full_text_retrieved')",
+    )
+    full_text_decided: int = Field(
+        default=0,
+        description="Eligible articles with at least one human full-text decision",
+    )
+    full_text_completed: int = Field(
+        default=0,
+        description="Articles whose full-text stage is settled (included or "
+        "excluded at full text)",
+    )
+    excluded_full_text: int = Field(
+        default=0, description="Articles excluded at full text"
+    )

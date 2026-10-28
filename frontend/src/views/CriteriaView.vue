@@ -80,7 +80,7 @@ const handleConfirmDelete = async () => {
       <!-- Inclusion Criteria -->
       <div class="space-y-4" data-testid="inclusion-column">
         <div class="flex items-center justify-between">
-          <h2 class="text-xl font-bold text-green-600">Inclusion Criteria</h2>
+          <h2 class="text-xl font-bold text-include-soft-foreground">Inclusion Criteria</h2>
           <Button size="sm" data-testid="add-inclusion" @click="handleAddClick('inclusion')">
             Add
           </Button>
@@ -111,7 +111,7 @@ const handleConfirmDelete = async () => {
       <!-- Exclusion Criteria -->
       <div class="space-y-4" data-testid="exclusion-column">
         <div class="flex items-center justify-between">
-          <h2 class="text-xl font-bold text-red-600">Exclusion Criteria</h2>
+          <h2 class="text-xl font-bold text-exclude-soft-foreground">Exclusion Criteria</h2>
           <Button size="sm" data-testid="add-exclusion" @click="handleAddClick('exclusion')">
             Add
           </Button>

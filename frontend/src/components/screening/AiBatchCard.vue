@@ -11,9 +11,14 @@ interface Props {
   projectId: number
   /** Reviewer role or higher. */
   canRun: boolean
+  /**
+   * Join the project room and listen for batch progress while mounted. Disable when a parent
+   * (e.g. the screening toolbar) owns the subscription and this card is only shown on demand.
+   */
+  manageSubscription?: boolean
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), { manageSubscription: true })
 const emit = defineEmits<{ finished: [] }>()
 
 const aiBatch = useAiBatchStore()
@@ -23,11 +28,13 @@ const { running, starting, screened, errors, total, staleCount, percent, error }
 const rescreenStale = ref(false)
 
 onMounted(() => {
+  if (!props.manageSubscription) return
   aiBatch.subscribe(props.projectId, () => emit('finished'))
   aiBatch.fetchStale(props.projectId)
 })
 
 onUnmounted(() => {
+  if (!props.manageSubscription) return
   aiBatch.unsubscribe()
 })
 

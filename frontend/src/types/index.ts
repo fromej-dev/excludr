@@ -130,6 +130,24 @@ export interface Article {
   updated_at: string
 }
 
+/** Columns the articles list can be sorted by (server-side). */
+export type ArticleSortField = 'title' | 'year' | 'status'
+
+export type SortOrder = 'asc' | 'desc'
+
+/** Server-side query for the articles list (search, filters, sort, pagination). */
+export interface ArticleListOptions {
+  status?: ArticleStatus
+  final_decision?: FinalDecision
+  has_full_text?: boolean
+  /** Case-insensitive match on title, authors and journal. */
+  search?: string
+  sort_by?: ArticleSortField
+  order?: SortOrder
+  page?: number
+  per_page?: number
+}
+
 export interface ArticleStats {
   total: number
   by_status: Record<ArticleStatus, number>
@@ -183,15 +201,42 @@ export interface ScreeningDecisionCreate {
   criteria_evaluations?: Record<string, CriteriaEvaluation>
 }
 
+/** Article counts from GET /screening/stats (field definitions live in the backend `ScreeningStats`). */
 export interface ScreeningStats {
   total_articles: number
+  /** Legacy: ≥1 title/abstract decision of any source, AI included. Use title_abstract_completed for progress. */
   screened_title_abstract: number
+  /** Legacy: ≥1 full-text decision of any source, AI included. Use full_text_completed for progress. */
   screened_full_text: number
   included: number
+  /** Excluded at either stage. */
   excluded: number
+  /** Open articles where a reviewer's current decision at the article's stage is "uncertain". */
   uncertain: number
+  /** In title/abstract screening (status `screening`). */
   awaiting_screening: number
+  /** Passed title/abstract, still needs a full text. */
   awaiting_full_text: number
+  /** Imported but not released for screening yet. */
+  imported_not_started: number
+  /** Entered title/abstract screening (everything but `imported`). */
+  title_abstract_total: number
+  /** ≥1 human title/abstract decision (incl. waiting for a second reviewer / in conflict). */
+  title_abstract_decided: number
+  /** Title/abstract stage settled: advanced to full text or excluded there. */
+  title_abstract_completed: number
+  excluded_title_abstract: number
+  /** Passed title/abstract (at full text, or included/excluded at full text). */
+  full_text_eligible: number
+  /** Eligible and past retrieval (= full_text_eligible − awaiting_full_text). */
+  full_text_retrieved: number
+  /** Has a full text and waits for a full-text decision. */
+  awaiting_full_text_screening: number
+  /** Eligible with ≥1 human full-text decision. */
+  full_text_decided: number
+  /** Full-text stage settled (included + excluded_full_text). */
+  full_text_completed: number
+  excluded_full_text: number
 }
 
 // Pagination types (fastapi-fsp structure)
@@ -281,6 +326,8 @@ export interface StaleAiResponse {
 export interface RunAiResponse {
   message: string
   article_count: number
+  /** Ids actually queued (ineligible, already screened or already queued ids are skipped). */
+  article_ids?: number[]
 }
 
 export interface AiBatchProgress {
@@ -437,6 +484,13 @@ export interface ToastNotification {
   level: NotificationLevel
   duration?: number
   timestamp: number
+  /** Optional button rendered in the toast (e.g. "Undo"). */
+  action?: ToastAction
+}
+
+export interface ToastAction {
+  label: string
+  onClick: () => void
 }
 
 // Full-text retrieval

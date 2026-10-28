@@ -1,7 +1,7 @@
 import { test, expect, generateRisContent } from './fixtures'
 
 test.describe.serial('Complete Systematic Review Workflow', () => {
-  test('complete systematic review workflow', async ({ page, api }) => {
+  test('complete systematic review workflow', async ({ page }) => {
     const uid = Math.random().toString(36).slice(2, 10)
     const userEmail = `researcher_${uid}@example.com`
     const userPassword = 'SecurePass123!'
@@ -53,8 +53,8 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     const projectId = Number(match![1])
 
     // Verify project overview loaded
-    for (const name of ['Overview', 'Criteria', 'Articles', 'Screening']) {
-      await expect(page.getByRole('tab', { name, exact: true })).toBeVisible()
+    for (const name of ['Overview', 'Criteria', 'Articles', 'Title/abstract']) {
+      await expect(page.getByRole('link', { name: new RegExp(`^${name.replace('/', '\\/')}`) })).toBeVisible()
     }
 
     // ========================================
@@ -76,7 +76,7 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     // ========================================
     // 5. DEFINE CRITERIA
     // ========================================
-    await page.getByRole('tab', { name: 'Criteria', exact: true }).click()
+    await page.getByRole('link', { name: /^Criteria/ }).click()
     await page.waitForLoadState('networkidle')
 
     // Add inclusion criterion
@@ -105,21 +105,15 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     // ========================================
     // 6. VIEW ARTICLES
     // ========================================
-    await page.getByRole('tab', { name: 'Articles', exact: true }).click()
+    await page.getByRole('link', { name: /^Articles/ }).click()
 
     // Wait for articles to appear
     await expect(page.getByTestId('article-card')).toHaveCount(3, { timeout: 10_000 })
 
     // ========================================
-    // 7. START SCREENING (via API — no UI button for this)
+    // 7. SCREEN ARTICLES (imports go straight to title/abstract screening)
     // ========================================
-    const token = await api.login(userEmail, userPassword)
-    await api.startScreening(token, projectId)
-
-    // ========================================
-    // 8. SCREEN ARTICLES
-    // ========================================
-    await page.getByRole('tab', { name: 'Screening', exact: true }).click()
+    await page.getByRole('link', { name: /^Title\/abstract/ }).click()
 
     // Wait for first article to load
     const articleTitle = page.getByTestId('article-title')
@@ -149,16 +143,16 @@ test.describe.serial('Complete Systematic Review Workflow', () => {
     await expect(page.getByRole('heading', { name: /no more articles to screen/i })).toBeVisible({ timeout: 10_000 })
 
     // ========================================
-    // 9. VERIFY STATS
+    // 8. VERIFY STATS
     // ========================================
     // After screening all articles, stats should show counts
     await expect(page.getByText('Included', { exact: true })).toBeVisible()
     await expect(page.getByText('Excluded', { exact: true })).toBeVisible()
 
     // ========================================
-    // 10. VIEW ARTICLE DETAIL
+    // 9. VIEW ARTICLE DETAIL
     // ========================================
-    await page.getByRole('tab', { name: 'Articles', exact: true }).click()
+    await page.getByRole('link', { name: /^Articles/ }).click()
     await expect(page.getByTestId('article-card')).toHaveCount(3, { timeout: 10_000 })
 
     // Click on first article to view detail

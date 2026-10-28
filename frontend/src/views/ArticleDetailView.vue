@@ -45,8 +45,17 @@ const refreshArticle = () => {
   articlesStore.fetchArticle(projectId.value, articleId.value)
 }
 
+// Return to the list exactly as the user left it: when the previous history entry is this project's
+// articles list (including its filter/sort/page query) step back to it, otherwise (deep link, other
+// page) open the plain list.
 const goBack = () => {
-  router.push({ name: 'project-articles', params: { id: projectId.value } })
+  const listPath = router.resolve({ name: 'project-articles', params: { id: projectId.value } }).path
+  const previous = (window.history.state as { back?: string | null } | null)?.back
+  if (previous && previous.split('?')[0] === listPath) {
+    router.back()
+  } else {
+    router.push({ name: 'project-articles', params: { id: projectId.value } })
+  }
 }
 </script>
 
@@ -67,7 +76,7 @@ const goBack = () => {
             <h1 class="text-2xl font-bold flex-1" data-testid="article-detail-title">{{ article.title || 'Untitled' }}</h1>
             <div class="flex gap-2 flex-shrink-0">
               <Badge>{{ article.status }}</Badge>
-              <Badge>{{ article.final_decision }}</Badge>
+              <Badge :variant="article.final_decision === 'included' ? 'include' : article.final_decision === 'excluded' ? 'exclude' : 'outline'">{{ article.final_decision }}</Badge>
             </div>
           </div>
 
@@ -121,7 +130,7 @@ const goBack = () => {
               <div class="space-y-2">
                 <div class="flex items-center justify-between">
                   <Badge>{{ decision.stage }}</Badge>
-                  <Badge :variant="decision.decision === 'include' ? 'default' : decision.decision === 'exclude' ? 'destructive' : 'outline'">
+                  <Badge :variant="decision.decision === 'include' ? 'include' : decision.decision === 'exclude' ? 'exclude' : 'uncertain'">
                     {{ decision.decision }}
                   </Badge>
                 </div>

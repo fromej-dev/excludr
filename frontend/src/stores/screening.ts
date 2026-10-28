@@ -1,14 +1,14 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useApi } from '@/composables/useApi'
 import type {
   Article,
   ScreeningDecision,
   ScreeningDecisionCreate,
-  ScreeningStats,
   ScreeningStage,
   NextArticleResponse,
   PaginatedResponse,
+  RunAiResponse,
   WebSocketResponse,
 } from '@/types'
 import { useWebSocketStore } from './websocket'
@@ -19,11 +19,26 @@ export const useScreeningStore = defineStore('screening', () => {
 
   const currentArticle = ref<Article | null>(null)
   const decisions = ref<ScreeningDecision[]>([])
-  const stats = ref<ScreeningStats | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
   const aiDecision = ref<ScreeningDecision | null>(null)
   const aiScreeningLoading = ref(false)
+  /** Articles queued for AI screening by the lookahead (`run-ai` with `article_ids`), not yet done. */
+  const aiQueuedIds = ref<Set<number>>(new Set())
+  // Articles the batch reported on while their run-ai request was still in flight
+  const aiSettledIds = new Set<number>()
+  const currentAiQueued = computed(
+    () => currentArticle.value !== null && aiQueuedIds.value.has(currentArticle.value.id)
+  )
+
+  const settleAiQueued = (ids: number[]) => {
+    const next = new Set(aiQueuedIds.value)
+    for (const id of ids) {
+      next.delete(id)
+      aiSettledIds.add(id)
+    }
+    aiQueuedIds.value = next
+  }
 
   // WebSocket integration
   let wsUnsubscribe: (() => void) | null = null
@@ -31,20 +46,21 @@ export const useScreeningStore = defineStore('screening', () => {
   const setupWebSocketListeners = () => {
     const wsStore = useWebSocketStore()
 
+    // Stats are kept live by ProjectView (see useProjectLiveUpdates); here only the open article matters
     wsUnsubscribe = wsStore.onMessage('*', async (response: WebSocketResponse) => {
-      // Handle screening decision updates
-      if (response.data?.event === 'screening_decision' && response.data?.project_id) {
-        await fetchStats(response.data.project_id)
-      }
-
-      // Handle AI screening completion
-      if (response.data?.event === 'ai_screening_complete' && response.data?.project_id) {
-        await fetchStats(response.data.project_id)
-
-        // If the completed article is the current one, refresh AI decision
-        if (response.data?.article_id && currentArticle.value?.id === response.data.article_id) {
-          await fetchAiDecision(response.data.project_id, response.data.article_id)
+      const data = response.data
+      if (!data || typeof data.project_id !== 'number') return
+      const isCurrent =
+        data.project_id === currentArticle.value?.project_id && data.article_id === currentArticle.value?.id
+      if (data.type === 'ai_screening_progress' || data.type === 'ai_screening_error') {
+        if (typeof data.article_id === 'number') settleAiQueued([data.article_id])
+        // The AI batch just screened the article on screen: show its verdict
+        if (data.type === 'ai_screening_progress' && isCurrent) {
+          await fetchAiDecision(data.project_id, data.article_id as number)
         }
+      } else if (data.type === 'ai_screening_complete' && Array.isArray(data.article_ids)) {
+        // Safety net: whatever a finished lookahead batch did not report on is no longer queued
+        settleAiQueued(data.article_ids.filter((id): id is number => typeof id === 'number'))
       }
     })
   }
@@ -147,19 +163,6 @@ export const useScreeningStore = defineStore('screening', () => {
     }
   }
 
-  const fetchStats = async (projectId: number) => {
-    loading.value = true
-    error.value = null
-
-    try {
-      stats.value = await get<ScreeningStats>(`/projects/${projectId}/screening/stats`)
-    } catch (err: unknown) {
-      error.value = getErrorMessage(err, 'Failed to fetch screening stats')
-    } finally {
-      loading.value = false
-    }
-  }
-
   const triggerAiScreening = async (projectId: number, articleId: number) => {
     aiScreeningLoading.value = true
     error.value = null
@@ -175,6 +178,34 @@ export const useScreeningStore = defineStore('screening', () => {
       return null
     } finally {
       aiScreeningLoading.value = false
+    }
+  }
+
+  /**
+   * Queue AI screening of specific articles in the background (the screening lookahead).
+   * The server skips articles that are not eligible, already screened, or already queued.
+   * Never throws: 400/503 come back as `unavailable` so the caller can stop asking.
+   */
+  const queueAiScreening = async (
+    projectId: number,
+    articleIds: number[]
+  ): Promise<
+    { status: 'queued'; ids: number[] } | { status: 'unavailable'; reason: string } | { status: 'error' }
+  > => {
+    for (const id of articleIds) aiSettledIds.delete(id)
+    try {
+      const res = await post<RunAiResponse>(`/projects/${projectId}/screening/run-ai`, {
+        article_ids: articleIds,
+      })
+      const queued = (res.article_ids ?? []).filter((id) => !aiSettledIds.has(id))
+      if (queued.length) aiQueuedIds.value = new Set([...aiQueuedIds.value, ...queued])
+      return { status: 'queued', ids: queued }
+    } catch (err: unknown) {
+      const status = getErrorStatus(err)
+      if (status === 503) return { status: 'unavailable', reason: 'no AI provider is configured' }
+      if (status === 400) return { status: 'unavailable', reason: 'add active criteria first' }
+      if (status === 403) return { status: 'unavailable', reason: 'reviewer role required' }
+      return { status: 'error' }
     }
   }
 
@@ -207,15 +238,16 @@ export const useScreeningStore = defineStore('screening', () => {
   return {
     currentArticle,
     decisions,
-    stats,
     loading,
     error,
     aiDecision,
     aiScreeningLoading,
+    aiQueuedIds,
+    currentAiQueued,
+    queueAiScreening,
     fetchNextArticle,
     submitDecision,
     fetchDecisions,
-    fetchStats,
     triggerAiScreening,
     loadArticle,
     fetchQueueIds,

@@ -21,7 +21,8 @@ const emit = defineEmits<{
     <div class="space-y-3">
       <div class="flex items-start justify-between">
         <div class="flex items-center gap-2">
-          <Badge data-testid="criterion-code" :variant="criterion.type === 'inclusion' ? 'default' : 'secondary'">
+          <Badge data-testid="criterion-code" :variant="criterion.type === 'inclusion' ? 'include' : 'exclude'"
+            :glyph="false">
             {{ criterion.code }}
           </Badge>
           <Badge v-if="!criterion.is_active" variant="outline">Inactive</Badge>

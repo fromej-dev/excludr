@@ -104,7 +104,7 @@ onMounted(() => {
     <!-- Result summary -->
     <div
       v-if="state === 'done' && result"
-      class="rounded-md border border-green-600/30 bg-green-600/10 p-4 text-sm space-y-1"
+      class="rounded-md border border-include/40 bg-include-soft text-include-soft-foreground p-4 text-sm space-y-1"
       data-testid="import-result"
     >
       <p class="font-medium">Import complete: {{ resultFilename }}</p>

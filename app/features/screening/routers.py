@@ -27,6 +27,7 @@ from .schemas import (
     AgreementRead,
     ConflictRead,
     ResolveRequest,
+    RunAIRequest,
 )
 from .models import (
     ScreeningDecision,
@@ -37,6 +38,7 @@ from .models import (
 )
 from .services import ScreeningError, ScreeningServiceDep, ScreeningService
 from .flows import batch_ai_screening_flow
+from . import inflight
 from sqlmodel import and_, or_, select
 
 logger = logging.getLogger(__name__)
@@ -363,6 +365,16 @@ def get_ai_decision(
     return ai_decision
 
 
+async def _run_batch_and_release(
+    keys: list[inflight.InFlightKey], flow_fn, *args
+) -> None:
+    """Run the batch flow, then free its in-flight claims (also when it fails)."""
+    try:
+        await run_flow_in_background(flow_fn, *args)
+    finally:
+        inflight.release(keys)
+
+
 @router.post("/run-ai")
 async def run_batch_ai_screening(
     project_id: int,
@@ -372,6 +384,7 @@ async def run_batch_ai_screening(
     stage: Annotated[ScreeningStage | None, Query()] = None,
     limit: Annotated[int | None, Query(ge=1, le=1000)] = None,
     rescreen_stale: Annotated[bool, Query()] = False,
+    body: RunAIRequest | None = None,
 ):
     """Run AI screening on multiple articles in the background.
 
@@ -381,11 +394,20 @@ async def run_batch_ai_screening(
         limit: Optional maximum number of articles to screen
         rescreen_stale: Also screen articles whose latest AI decision was made
             against criteria that have since changed
+        body: Optional ``{"article_ids": [...]}`` (at most 10) to screen only that
+            subset; ids outside the project or not eligible are skipped silently
+
+    Articles already queued or being screened by another running batch (see
+    ``inflight``) are never queued twice.
 
     Returns:
-        A message indicating screening has started and the number of articles queued
+        A message, the number of articles queued and their ids
     """
     from app.features.research.models import Article, ArticleStatus
+
+    requested_ids = (
+        list(dict.fromkeys(body.article_ids)) if body and body.article_ids else None
+    )
 
     has_criteria = session.exec(
         select(Criterion.id)
@@ -432,7 +454,7 @@ async def run_batch_ai_screening(
         if stale_ids:
             eligible_unscreened = or_(eligible_unscreened, Article.id.in_(stale_ids))
     query = (
-        select(Article.id)
+        select(Article.id, Article.current_stage)
         .where(
             Article.project_id == project_id,
             Article.status.in_(
@@ -449,44 +471,59 @@ async def run_batch_ai_screening(
         )
         .order_by(Article.id)
     )
+    if requested_ids is not None:
+        query = query.where(Article.id.in_(requested_ids))
     if stage:
         query = query.where(Article.current_stage == stage)
     if limit:
         query = query.limit(limit)
 
-    article_ids = list(session.exec(query).all())
+    candidates = session.exec(query).all()
+    # Skip articles another running batch already has queued at this stage
+    keys = inflight.claim(
+        (project_id, article_id, ScreeningStage(article_stage).value)
+        for article_id, article_stage in candidates
+    )
+    article_ids = [article_id for _, article_id, _ in keys]
     article_count = len(article_ids)
 
     if article_count == 0:
         return {
             "message": "No eligible articles to screen",
             "article_count": 0,
+            "article_ids": [],
         }
 
-    audit.record_event(
-        session,
-        project_id,
-        audit.AI_BATCH_STARTED,
-        "ai_batch",
-        None,
-        access.user.id,
-        {
-            "article_count": article_count,
-            "stage": stage.value if stage else None,
-            "rescreen_stale": rescreen_stale,
-        },
-    )
+    try:
+        audit.record_event(
+            session,
+            project_id,
+            audit.AI_BATCH_STARTED,
+            "ai_batch",
+            None,
+            access.user.id,
+            {
+                "article_count": article_count,
+                "stage": stage.value if stage else None,
+                "rescreen_stale": rescreen_stale,
+                **({"article_ids": article_ids} if requested_ids is not None else {}),
+            },
+        )
 
-    # Schedule the flow with primitive ids only: it opens its own session.
-    background_tasks.add_task(
-        run_flow_in_background,
-        batch_ai_screening_flow,
-        project_id,
-        article_ids,
-        access.user.id,
-    )
+        # Schedule the flow with primitive ids only: it opens its own session.
+        # A caller-picked subset is "targeted" (its events are tagged for the UI).
+        flow_args: tuple = (project_id, article_ids, access.user.id)
+        if requested_ids is not None:
+            flow_args += (True,)
+        background_tasks.add_task(
+            _run_batch_and_release, keys, batch_ai_screening_flow, *flow_args
+        )
+    except BaseException:
+        inflight.release(keys)
+        raise
 
     return {
         "message": "AI screening started",
         "article_count": article_count,
+        "article_ids": article_ids,
     }

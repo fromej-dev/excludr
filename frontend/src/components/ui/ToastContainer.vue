@@ -10,6 +10,12 @@ const { notifications } = storeToRefs(wsStore)
 const sortedNotifications = computed(() => {
   return [...notifications.value].sort((a, b) => b.timestamp - a.timestamp)
 })
+
+const runAction = (id: string) => {
+  const action = notifications.value.find((n) => n.id === id)?.action
+  wsStore.removeNotification(id)
+  action?.onClick()
+}
 </script>
 
 <template>
@@ -20,6 +26,8 @@ const sortedNotifications = computed(() => {
         :key="notification.id"
         :message="notification.message"
         :level="notification.level"
+        :action-label="notification.action?.label"
+        @action="runAction(notification.id)"
         @close="wsStore.removeNotification(notification.id)"
       />
     </TransitionGroup>
