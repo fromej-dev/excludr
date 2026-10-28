@@ -1,7 +1,7 @@
 """ai usage: tokens and estimated cost of every AI run
 
 Revision ID: c4d8a2f6e1b9
-Revises: b3e7f1a9c2d4
+Revises: c4f8a2d6e1b9
 Create Date: 2026-10-28 18:00:00.000000
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "c4d8a2f6e1b9"
-down_revision: str | Sequence[str] | None = "b3e7f1a9c2d4"
+down_revision: str | Sequence[str] | None = "c4f8a2d6e1b9"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
