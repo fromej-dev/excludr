@@ -91,6 +91,27 @@ test.describe('Authentication Flow', () => {
     expect(page.url()).toContain('/login')
   })
 
+  test('should show the site header on the sign-in page', async ({ page }) => {
+    await page.goto('/login')
+    await expect(page.getByRole('banner').getByRole('link', { name: 'Excludr' })).toHaveAttribute('href', '/')
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+  })
+
+  test('should log out without a connection error', async ({ page, pageHelper, testUser }) => {
+    const socket = page.waitForEvent('websocket')
+    await pageHelper.loginViaUI(testUser.email, testUser.password)
+    // Let the live-updates socket open so logout closes an open connection
+    await socket
+    await page.waitForTimeout(500)
+    await page.getByTestId('logout').click()
+    await page.waitForURL('/login')
+
+    // A deliberate close must not be reported as a lost connection
+    await page.waitForTimeout(1000)
+    // Counted once: a retrying assertion would just wait for the toast to fade
+    expect(await page.getByText(/WebSocket connection lost|not connected/i).count()).toBe(0)
+  })
+
   test('should persist auth across page reload', async ({ page, pageHelper, testUser }) => {
     // Login using helper
     await pageHelper.loginViaUI(testUser.email, testUser.password)
