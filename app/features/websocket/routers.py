@@ -36,9 +36,9 @@ def can_join_room(user: User, room: str, session: Session) -> bool:
     return project is not None and get_user_role(session, project, user) is not None
 
 
-async def _send_error(user_id: int, text: str) -> None:
+async def _send_error(websocket: WebSocket, text: str) -> None:
     error = WebSocketResponse(type=MessageType.ERROR, message=text)
-    await manager.send_personal_message(error.model_dump_json(), user_id)
+    await manager.send(websocket, error.model_dump_json())
 
 
 @router.websocket("")
@@ -85,9 +85,12 @@ async def websocket_endpoint(
     welcome_response = WebSocketResponse(
         type=MessageType.INFO,
         message=f"Connected successfully. You are in room: user_{user.id}",
-        data={"user_id": user.id, "rooms": list(manager.get_user_rooms(user.id))},
+        data={
+            "user_id": user.id,
+            "rooms": list(manager.get_connection_rooms(websocket)),
+        },
     )
-    await websocket.send_text(welcome_response.model_dump_json())
+    await manager.send(websocket, welcome_response.model_dump_json())
 
     try:
         while True:
@@ -105,46 +108,42 @@ async def websocket_endpoint(
                         type=MessageType.TEXT,
                         message=f"Echo: {message.data}",
                     )
-                    await manager.send_personal_message(
-                        response.model_dump_json(), user.id
-                    )
+                    await manager.send(websocket, response.model_dump_json())
 
                 elif message.type == MessageType.JOIN_ROOM:
                     if not message.room:
                         raise ValueError("Room name is required")
                     if not can_join_room(user, message.room, session):
-                        await _send_error(user.id, "Not authorized to join this room")
+                        await _send_error(websocket, "Not authorized to join this room")
                         continue
-                    await manager.join_room(user.id, message.room)
+                    await manager.join_room(websocket, message.room)
                     response = WebSocketResponse(
                         type=MessageType.INFO,
                         message=f"Joined room: {message.room}",
                         room=message.room,
-                        data={"rooms": list(manager.get_user_rooms(user.id))},
+                        data={"rooms": list(manager.get_connection_rooms(websocket))},
                     )
-                    await manager.send_personal_message(
-                        response.model_dump_json(), user.id
-                    )
+                    await manager.send(websocket, response.model_dump_json())
 
                 elif message.type == MessageType.LEAVE_ROOM:
                     if not message.room:
                         raise ValueError("Room name is required")
-                    manager.leave_room(user.id, message.room)
+                    manager.leave_room(websocket, message.room)
                     response = WebSocketResponse(
                         type=MessageType.INFO,
                         message=f"Left room: {message.room}",
                         room=message.room,
-                        data={"rooms": list(manager.get_user_rooms(user.id))},
+                        data={"rooms": list(manager.get_connection_rooms(websocket))},
                     )
-                    await manager.send_personal_message(
-                        response.model_dump_json(), user.id
-                    )
+                    await manager.send(websocket, response.model_dump_json())
 
                 elif message.type == MessageType.ROOM_MESSAGE:
                     if not message.room:
                         raise ValueError("Room name is required")
-                    if message.room not in manager.get_user_rooms(user.id):
-                        await _send_error(user.id, "You are not a member of this room")
+                    if message.room not in manager.get_connection_rooms(websocket):
+                        await _send_error(
+                            websocket, "You are not a member of this room"
+                        )
                         continue
                     response = WebSocketResponse(
                         type=MessageType.ROOM_MESSAGE,
@@ -158,7 +157,7 @@ async def websocket_endpoint(
 
                 elif message.type == MessageType.BROADCAST:
                     if not user.is_superuser:
-                        await _send_error(user.id, "Broadcast requires superuser")
+                        await _send_error(websocket, "Broadcast requires superuser")
                         continue
                     response = WebSocketResponse(
                         type=MessageType.BROADCAST,
@@ -172,18 +171,17 @@ async def websocket_endpoint(
                         type=MessageType.ERROR,
                         message=f"Unknown message type: {message.type}",
                     )
-                    await manager.send_personal_message(
-                        error_response.model_dump_json(), user.id
-                    )
+                    await manager.send(websocket, error_response.model_dump_json())
 
             except (json.JSONDecodeError, ValueError) as e:
                 error_response = WebSocketResponse(
                     type=MessageType.ERROR,
                     message=f"Invalid message format: {str(e)}",
                 )
-                await manager.send_personal_message(
-                    error_response.model_dump_json(), user.id
-                )
+                await manager.send(websocket, error_response.model_dump_json())
 
     except WebSocketDisconnect:
-        manager.disconnect(user.id)
+        pass
+    finally:
+        # Only this connection: the user's other tabs stay connected
+        manager.disconnect(websocket)

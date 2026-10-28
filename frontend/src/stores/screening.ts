@@ -52,7 +52,11 @@ export const useScreeningStore = defineStore('screening', () => {
       if (!data || typeof data.project_id !== 'number') return
       const isCurrent =
         data.project_id === currentArticle.value?.project_id && data.article_id === currentArticle.value?.id
-      if (data.type === 'ai_screening_progress' || data.type === 'ai_screening_error') {
+      if (
+        data.type === 'ai_screening_progress' ||
+        data.type === 'ai_screening_error' ||
+        data.type === 'ai_screening_skipped'
+      ) {
         if (typeof data.article_id === 'number') settleAiQueued([data.article_id])
         // The AI batch just screened the article on screen: show its verdict
         if (data.type === 'ai_screening_progress' && isCurrent) {

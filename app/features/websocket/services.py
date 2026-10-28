@@ -100,7 +100,7 @@ class NotificationService:
             },
         )
         await manager.broadcast_to_room(response.model_dump_json(), room_name)
-        return len(manager.rooms[room_name])
+        return len(manager.get_room_users(room_name))
 
     @staticmethod
     async def broadcast(
