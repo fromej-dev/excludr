@@ -35,6 +35,8 @@ export const useAiBatchStore = defineStore('aiBatch', () => {
     if (msg.room && msg.room !== `project_${projectId.value}` && !msg.room.startsWith('user_')) return
     // Batch events name their project; the copy sent to the user's own room may be another project's
     if (typeof data.project_id === 'number' && data.project_id !== projectId.value) return
+    // Small lookahead batches of the screening view are not "the" project batch
+    if (data.targeted === true) return
     const kind = data.type
     if (kind === 'ai_screening_progress' || kind === 'ai_screening_error') {
       running.value = true

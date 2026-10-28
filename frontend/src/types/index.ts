@@ -326,6 +326,8 @@ export interface StaleAiResponse {
 export interface RunAiResponse {
   message: string
   article_count: number
+  /** Ids actually queued (ineligible, already screened or already queued ids are skipped). */
+  article_ids?: number[]
 }
 
 export interface AiBatchProgress {

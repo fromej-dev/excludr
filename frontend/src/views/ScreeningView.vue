@@ -18,6 +18,7 @@ import CriteriaEvaluationList from '@/components/screening/CriteriaEvaluationLis
 import ShortcutLegend from '@/components/screening/ShortcutLegend.vue'
 import FullTextPanel from '@/components/articles/FullTextPanel.vue'
 import { decisionVariant, normalizeEvaluations } from '@/utils/criteriaEvaluations'
+import { useAiLookahead } from '@/composables/useAiLookahead'
 
 const route = useRoute()
 const router = useRouter()
@@ -40,6 +41,8 @@ type ActiveStage = Exclude<ScreeningStage, 'completed'>
 const stageFromQuery = (): ActiveStage => (route.query.stage === 'full_text' ? 'full_text' : 'title_abstract')
 const stage = ref<ActiveStage>(stageFromQuery())
 const reasoning = ref('')
+// Phones: the note field lives in the fixed action bar, folded away until asked for
+const mobileNoteOpen = ref(false)
 const submitting = ref(false)
 const myDecision = ref<ScreeningDecisionType | null>(null)
 
@@ -76,6 +79,7 @@ const loadMyDecision = async () => {
 
 const afterArticleLoaded = async () => {
   reasoning.value = ''
+  mobileNoteOpen.value = false
   const a = screeningStore.currentArticle
   if (!a) {
     myDecision.value = null
@@ -192,6 +196,15 @@ const undoDecision = async (articleId?: number) => {
   await goTo(index)
 }
 
+// Keep the AI verdict of the current article and the next two in the queue ready
+const { enabled: autoAhead, unavailable: aiUnavailable } = useAiLookahead({
+  projectId,
+  stage,
+  currentArticleId: computed(() => article.value?.id),
+  canRun: canReview,
+})
+const aiQueued = computed(() => screeningStore.currentAiQueued)
+
 const triggerAiScreening = async () => {
   if (!article.value) return
   const result = await screeningStore.triggerAiScreening(projectId.value, article.value.id)
@@ -300,6 +313,15 @@ watch(
   }
 )
 
+const mobileNote = ref<HTMLTextAreaElement | null>(null)
+const toggleMobileNote = async () => {
+  mobileNoteOpen.value = !mobileNoteOpen.value
+  if (mobileNoteOpen.value) {
+    await nextTick()
+    mobileNote.value?.focus()
+  }
+}
+
 // Compact note field: one line until focused or filled
 const noteFocused = ref(false)
 const noteExpanded = computed(() => noteFocused.value || reasoning.value.length > 0)
@@ -349,7 +371,12 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
 
 <template>
   <div
-    class="flex flex-col gap-3 pb-[calc(7rem+env(safe-area-inset-bottom))] lg:h-[calc(100vh-7rem)] lg:min-h-[32rem] lg:pb-0"
+    class="flex flex-col gap-3 lg:h-[calc(100vh-7rem)] lg:min-h-[32rem] lg:pb-0"
+    :class="
+      mobileNoteOpen
+        ? 'pb-[calc(13rem+env(safe-area-inset-bottom))]'
+        : 'pb-[calc(7rem+env(safe-area-inset-bottom))]'
+    "
   >
     <ScreeningToolbar
       :project-id="projectId"
@@ -422,6 +449,9 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
             :decision="aiDecision"
             :loading="aiScreeningLoading"
             :can-run="canReview"
+            :queued="aiQueued && !aiScreeningLoading"
+            :unavailable="aiUnavailable"
+            v-model:auto-ahead="autoAhead"
             @screen="triggerAiScreening"
           />
           <div v-if="myDecision" class="flex items-center gap-2 text-sm">
@@ -519,6 +549,18 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
         data-testid="mobile-action-bar"
       >
         <div class="mx-auto max-w-xl space-y-1">
+          <div v-if="mobileNoteOpen" id="mobile-note-panel" class="pb-1">
+            <label for="mobile-reasoning" class="sr-only">Note (optional)</label>
+            <textarea
+              id="mobile-reasoning"
+              ref="mobileNote"
+              v-model="reasoning"
+              rows="3"
+              placeholder="Add a note (optional)"
+              class="block w-full resize-none rounded-md border border-input bg-background px-3 py-1.5 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              data-testid="mobile-note"
+            />
+          </div>
           <div class="grid grid-cols-3 gap-2">
             <Button :disabled="submitting" variant="include" class="gap-1 whitespace-nowrap px-1" @click="submitDecision('include')">
               <span aria-hidden="true" class="font-bold">✓</span>
@@ -533,8 +575,21 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
               Exclude
             </Button>
           </div>
-          <div class="flex justify-between">
+          <div class="flex items-center justify-between">
             <Button variant="ghost" size="sm" :disabled="pos <= 0 || submitting" @click="previousArticle">Previous</Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              :aria-expanded="mobileNoteOpen"
+              aria-controls="mobile-note-panel"
+              data-testid="mobile-note-toggle"
+              @click="toggleMobileNote"
+            >
+              {{ mobileNoteOpen ? 'Hide note' : 'Note' }}
+              <span v-if="!mobileNoteOpen && reasoning" class="ml-1 text-primary">
+                <span aria-hidden="true">•</span><span class="sr-only">(has text)</span>
+              </span>
+            </Button>
             <Button variant="ghost" size="sm" :disabled="submitting" @click="nextArticle">Next</Button>
           </div>
         </div>

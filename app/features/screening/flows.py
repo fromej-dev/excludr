@@ -46,7 +46,7 @@ async def _notify(
 
 @flow(name="batch_ai_screening", log_prints=True)
 async def batch_ai_screening_flow(
-    project_id: int, article_ids: list[int], user_id: int
+    project_id: int, article_ids: list[int], user_id: int, targeted: bool = False
 ) -> dict[str, int]:
     """Screen many articles with the AI agent, isolating per-article failures.
 
@@ -61,6 +61,9 @@ async def batch_ai_screening_flow(
         project_id: Project whose articles are screened.
         article_ids: Articles to screen, in order.
         user_id: User who started the batch (receives the completion message).
+        targeted: The caller picked these articles (the screening view's lookahead)
+            rather than "everything eligible"; events carry ``targeted: true`` so the
+            UI can keep such small batches out of the project-wide batch progress.
 
     Returns:
         ``{"total", "screened", "errors"}`` counts.
@@ -85,6 +88,8 @@ async def batch_ai_screening_flow(
 
         for article_id in article_ids:
             data: dict[str, Any] = {"project_id": project_id, "article_id": article_id}
+            if targeted:
+                data["targeted"] = True
             try:
                 article = session.get(Article, article_id)
                 if article is None or article.project_id != project_id:
@@ -142,7 +147,12 @@ async def batch_ai_screening_flow(
     await _notify(
         project_id,
         f"AI screening complete: {screened} screened, {errors} failed",
-        {"type": "ai_screening_complete", "project_id": project_id, **summary},
+        {
+            "type": "ai_screening_complete",
+            "project_id": project_id,
+            **({"targeted": True, "article_ids": article_ids} if targeted else {}),
+            **summary,
+        },
         NotificationLevel.WARNING if errors else NotificationLevel.SUCCESS,
         user_id=user_id,
     )

@@ -187,3 +187,37 @@ async def test_flow_without_active_criteria_reports_error(
     )
     assert calls == []
     assert result["screened"] == 0 and result["errors"] == 3
+
+
+@pytest.mark.asyncio
+async def test_targeted_flow_tags_its_events(
+    flow_session, setup, notifier, monkeypatch
+):
+    """Lookahead batches are tagged so the UI keeps them out of the batch progress."""
+    user, project, articles = setup
+    fake, _ = _fake_screen()
+    monkeypatch.setattr(flows, "screen_article", fake)
+    ids = [articles[0].id, articles[1].id]
+
+    await flows.batch_ai_screening_flow.fn(project.id, ids, user.id, True)
+
+    room, _ = notifier
+    events = [c.kwargs["data"] for c in room.await_args_list]
+    assert all(e["targeted"] is True for e in events)
+    assert [e["article_id"] for e in events[:-1]] == ids
+    assert events[-1]["type"] == "ai_screening_complete"
+    assert events[-1]["article_ids"] == ids
+
+
+@pytest.mark.asyncio
+async def test_untargeted_flow_events_are_not_tagged(
+    flow_session, setup, notifier, monkeypatch
+):
+    user, project, articles = setup
+    fake, _ = _fake_screen()
+    monkeypatch.setattr(flows, "screen_article", fake)
+
+    await flows.batch_ai_screening_flow.fn(project.id, [articles[0].id], user.id)
+
+    room, _ = notifier
+    assert all("targeted" not in c.kwargs["data"] for c in room.await_args_list)

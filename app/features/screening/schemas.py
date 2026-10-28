@@ -84,3 +84,19 @@ class AgreementRead(SQLModel):
     required_reviewers: int
     human_vs_human: Optional[HumanAgreementRead]
     ai_vs_human: AIAgreementRead
+
+
+MAX_RUN_AI_ARTICLE_IDS = 10
+
+
+class RunAIRequest(SQLModel):
+    """Optional body of ``POST .../screening/run-ai``.
+
+    ``article_ids`` limits the batch to a small subset (the screening view uses it to
+    keep the AI a few articles ahead of the reviewer). Ids that are not in the
+    project or not eligible are skipped.
+    """
+
+    article_ids: Optional[list[int]] = Field(
+        default=None, min_length=1, max_length=MAX_RUN_AI_ARTICLE_IDS
+    )
