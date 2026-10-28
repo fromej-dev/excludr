@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme, type ThemeMode } from '@/composables/useTheme'
+import ExcludrWordmark from '@/components/brand/ExcludrWordmark.vue'
 
 interface Props {
   /** Drawer state below lg; the sidebar is always shown from lg up. */
@@ -66,14 +67,9 @@ const handleLogout = () => {
     <div class="flex h-14 shrink-0 items-center justify-between gap-2 px-4 lg:h-16">
       <router-link
         to="/dashboard"
-        class="flex items-center gap-2.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        class="rounded-md text-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground" aria-hidden="true">
-          <svg class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 5h18l-7 8.5V19l-4 2v-7.5z" />
-          </svg>
-        </span>
-        <span class="text-lg font-bold tracking-tight">Excludr</span>
+        <ExcludrWordmark />
       </router-link>
       <button
         type="button"

@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { onKeyStroke } from '@vueuse/core'
 import AppSidebar from './AppSidebar.vue'
+import ExcludrWordmark from '@/components/brand/ExcludrWordmark.vue'
 
 interface Props {
   /** Use the full content width instead of the centered column. */
@@ -36,7 +37,7 @@ onKeyStroke('Escape', () => (menuOpen.value = false))
           <path d="M4 6h16M4 12h16M4 18h16" />
         </svg>
       </button>
-      <router-link to="/dashboard" class="text-lg font-bold tracking-tight">Excludr</router-link>
+      <router-link to="/dashboard" class="text-xl"><ExcludrWordmark /></router-link>
     </header>
 
     <Transition
