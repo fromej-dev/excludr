@@ -618,39 +618,3 @@ def test_encode_form_flattens_nested_params():
     assert stripe_client.encode_form(
         {"a": {"b": [{"c": 1}], "d": True}, "e": None}
     ) == [("a[b][0][c]", "1"), ("a[d]", "true")]
-
-
-# --- Admin grants ----------------------------------------------------------------------
-
-
-def test_admin_grants_a_custom_pass(admin_client, a_project, session):
-    project = a_project()
-    res = admin_client.post(
-        f"api/v1/billing/admin/projects/{project.id}/grant",
-        json={"tier": "custom", "fulltext_limit": 3000, "days": 90},
-    )
-    assert res.status_code == 200
-    plan = billing.get_plan(session, project.id)
-    assert (plan.tier, plan.fulltext_limit, plan.source) == (
-        "custom",
-        3000,
-        PlanSource.admin,
-    )
-    assert billing.is_active(plan)
-
-
-def test_custom_grant_needs_a_limit(admin_client, a_project):
-    project = a_project()
-    res = admin_client.post(
-        f"api/v1/billing/admin/projects/{project.id}/grant", json={"tier": "custom"}
-    )
-    assert res.status_code == 400
-
-
-def test_grant_is_superuser_only(auth_as, a_project):
-    client, user = auth_as()
-    project = a_project(user)
-    res = client.post(
-        f"api/v1/billing/admin/projects/{project.id}/grant", json={"tier": "pass_250"}
-    )
-    assert res.status_code == 403

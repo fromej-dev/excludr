@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class Usage(BaseModel):
@@ -57,9 +57,3 @@ class CheckoutRequest(BaseModel):
 
 class CheckoutResponse(BaseModel):
     url: str
-
-
-class GrantRequest(BaseModel):
-    tier: str = Field(description="pass_250 | pass_1000 | custom")
-    fulltext_limit: Optional[int] = Field(default=None, ge=1)
-    days: int = Field(default=365, ge=1, le=3650)

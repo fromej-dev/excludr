@@ -27,7 +27,7 @@ from app.features.screening.models import (
 )
 from app.features.users.models import User
 from . import plans, stripe_client
-from .models import PlanSource, ProjectPlan, StripeEvent
+from .models import Payment, PaymentStatus, PlanSource, ProjectPlan, StripeEvent
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,9 @@ PASS_ACTIVATED = "billing.pass_activated"
 PASS_UPGRADED = "billing.pass_upgraded"
 PASS_EXTENDED = "billing.pass_extended"
 PASS_GRANTED = "billing.pass_granted"
+PASS_CHANGED = "billing.pass_changed"
+PASS_REFUNDED = "billing.pass_refunded"
+PAYMENT_REFUNDED = "billing.payment_refunded"
 
 
 class BillingError(Exception):
@@ -395,10 +398,12 @@ def handle_event(session: Session, event: dict[str, Any]) -> str:
         return "duplicate"
     session.add(StripeEvent(id=event_id, type=str(event.get("type", ""))[:100]))
     outcome = "ignored"
+    obj = (event.get("data") or {}).get("object") or {}
     if event.get("type") in PAID_EVENTS:
-        checkout = (event.get("data") or {}).get("object") or {}
-        if checkout.get("payment_status") == "paid":
-            outcome = _apply_checkout(session, checkout)
+        if obj.get("payment_status") == "paid":
+            outcome = _apply_checkout(session, obj)
+    elif event.get("type") == "charge.refunded":
+        outcome = _apply_refund(session, obj)
     session.commit()
     return outcome
 
@@ -414,10 +419,29 @@ def _apply_checkout(session: Session, checkout: dict[str, Any]) -> str:
     if tier is None or project is None:
         logger.error("Paid checkout %s has unusable metadata", checkout.get("id"))
         return "ignored"
+    existing = session.exec(
+        select(Payment).where(Payment.stripe_checkout_session_id == checkout.get("id"))
+    ).first()
+    if existing is not None:
+        return "duplicate"  # same checkout reported by another event
     amount = int(checkout.get("amount_total") or 0)
     now = _now()
     plan = get_plan(session, project.id)
     active = is_active(plan, now)
+    session.add(
+        Payment(
+            project_id=project.id,
+            project_name=project.name[:100],
+            user_id=user_id,
+            stripe_checkout_session_id=str(checkout.get("id")),
+            stripe_payment_intent=checkout.get("payment_intent"),
+            tier=tier.code,
+            kind=str(metadata.get("kind") or "new")[:20],
+            amount_cents=amount,
+            currency=str(checkout.get("currency") or plans.CURRENCY)[:3],
+            plan_before=_snapshot(plan),
+        )
+    )
     if plan is None:
         plan = ProjectPlan(
             project_id=project.id,
@@ -460,6 +484,121 @@ def _apply_checkout(session: Session, checkout: dict[str, Any]) -> str:
         {"tier": tier.code, "amount_cents": amount, "checkout": checkout.get("id")},
     )
     return action
+
+
+def _snapshot(plan: Optional[ProjectPlan]) -> Optional[dict[str, Any]]:
+    if plan is None:
+        return None
+    return {
+        "tier": plan.tier,
+        "fulltext_limit": plan.fulltext_limit,
+        "activated_at": _aware(plan.activated_at).isoformat(),
+        "expires_at": _aware(plan.expires_at).isoformat(),
+        "source": plan.source,
+    }
+
+
+def _apply_refund(session: Session, charge: dict[str, Any]) -> str:
+    """Record a Stripe refund; a full refund of the latest payment undoes it."""
+    intent = charge.get("payment_intent")
+    payment = (
+        session.exec(
+            select(Payment).where(Payment.stripe_payment_intent == intent)
+        ).first()
+        if intent
+        else None
+    )
+    if payment is None:
+        logger.warning("Refund for unknown payment intent %s", intent)
+        return "ignored"
+    payment.refunded_cents = int(charge.get("amount_refunded") or 0)
+    full = payment.refunded_cents >= payment.amount_cents
+    payment.status = (
+        PaymentStatus.refunded if full else PaymentStatus.partially_refunded
+    )
+    session.add(payment)
+    if payment.project_id is None:
+        return PAYMENT_REFUNDED
+    details = {"payment_id": payment.id, "refunded_cents": payment.refunded_cents}
+    latest_id = session.exec(
+        select(func.max(Payment.id)).where(Payment.project_id == payment.project_id)
+    ).one()
+    if not full or latest_id != payment.id:
+        # Partial refunds, and refunds of a payment later ones built on, leave
+        # the plan alone: an admin adjusts it by hand if needed.
+        details["plan_unchanged"] = True
+        action = PAYMENT_REFUNDED
+    else:
+        _restore_plan(session, payment.project_id, payment.plan_before)
+        action = PASS_REFUNDED
+    audit.record_event(
+        session, payment.project_id, action, "payment", payment.id, None, details
+    )
+    return action
+
+
+def _restore_plan(
+    session: Session, project_id: int, before: Optional[dict[str, Any]]
+) -> None:
+    plan = get_plan(session, project_id)
+    if before is None:
+        if plan is not None:
+            session.delete(plan)  # back to the free tier
+        return
+    if plan is None:
+        plan = ProjectPlan(
+            project_id=project_id, amount_paid_cents=0, **_restored(before)
+        )
+    else:
+        for key, value in _restored(before).items():
+            setattr(plan, key, value)
+    plan.updated_at = _now()
+    session.add(plan)
+
+
+def _restored(before: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "tier": before["tier"],
+        "fulltext_limit": before["fulltext_limit"],
+        "activated_at": datetime.fromisoformat(before["activated_at"]),
+        "expires_at": datetime.fromisoformat(before["expires_at"]),
+        "source": before["source"],
+    }
+
+
+def update_pass(
+    session: Session,
+    project: Project,
+    admin: User,
+    fulltext_limit: Optional[int] = None,
+    expires_at: Optional[datetime] = None,
+) -> ProjectPlan:
+    """Change a project's pass by hand: its limit and/or end date.
+
+    Raises:
+        LookupError: the project has no pass (grant one instead).
+    """
+    plan = get_plan(session, project.id)
+    if plan is None:
+        raise LookupError("This project has no pass; grant one instead")
+    before = _snapshot(plan)
+    if fulltext_limit is not None:
+        plan.fulltext_limit = fulltext_limit
+    if expires_at is not None:
+        plan.expires_at = _aware(expires_at)
+    plan.updated_at = _now()
+    session.add(plan)
+    audit.record_event(
+        session,
+        project.id,
+        PASS_CHANGED,
+        "project_plan",
+        None,
+        admin.id,
+        {"before": before, "after": _snapshot(plan)},
+    )
+    session.refresh(plan)
+    return plan
 
 
 def grant_pass(

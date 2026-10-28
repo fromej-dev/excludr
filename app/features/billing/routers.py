@@ -1,23 +1,17 @@
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
 from app.core.database import SessionDep
-from app.features.auth.services import get_current_admin_user
-from app.features.projects.models import Project
 from app.features.projects.permissions import OwnerAccessAnyState, ViewerAccess
-from app.features.users.models import User
 from . import services as billing
 from . import stripe_client
-from .models import ProjectPlan
 from .schemas import (
     BillingStatus,
     CheckoutRequest,
     CheckoutResponse,
-    GrantRequest,
     PublicPlans,
 )
 
@@ -84,22 +78,3 @@ async def stripe_webhook(request: Request, session: SessionDep):
         session.rollback()  # the same event arrived concurrently
         outcome = "duplicate"
     return {"received": True, "outcome": outcome}
-
-
-@router.post("/billing/admin/projects/{project_id}/grant", response_model=ProjectPlan)
-def grant_pass(
-    project_id: int,
-    data: GrantRequest,
-    admin: Annotated[User, Depends(get_current_admin_user)],
-    session: SessionDep,
-):
-    """Give a project a pass without Stripe (superusers only)."""
-    project = session.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    try:
-        return billing.grant_pass(
-            session, project, admin, data.tier, data.fulltext_limit, data.days
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e

@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
-from sqlalchemy import DateTime
+from sqlalchemy import JSON, Column, DateTime
 from sqlmodel import Field, SQLModel
 
 
@@ -46,5 +46,44 @@ class StripeEvent(SQLModel, table=True):
     id: str = Field(primary_key=True, max_length=255)
     type: str = Field(max_length=100)
     received_at: datetime = Field(
+        default_factory=_utcnow, sa_type=DateTime(timezone=True), nullable=False
+    )
+
+
+class PaymentStatus(str, Enum):
+    paid = "paid"
+    partially_refunded = "partially_refunded"
+    refunded = "refunded"
+
+
+class Payment(SQLModel, table=True):
+    """One completed Stripe Checkout payment for a review pass.
+
+    ``plan_before`` snapshots the project's plan before this payment was applied
+    (null: the project had none), so a full refund can undo exactly this payment.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: Optional[int] = Field(
+        default=None, foreign_key="project.id", index=True, ondelete="SET NULL"
+    )
+    project_name: str = Field(max_length=100, description="Kept if the project goes")
+    user_id: Optional[int] = Field(
+        default=None, foreign_key="user.id", index=True, ondelete="SET NULL"
+    )
+    stripe_checkout_session_id: str = Field(max_length=255, unique=True)
+    stripe_payment_intent: Optional[str] = Field(
+        default=None, max_length=255, index=True
+    )
+    tier: str = Field(max_length=20)
+    kind: str = Field(max_length=20, description="new | renewal | upgrade")
+    amount_cents: int
+    refunded_cents: int = Field(default=0)
+    currency: str = Field(max_length=3)
+    status: str = Field(
+        default=PaymentStatus.paid, max_length=20, description="PaymentStatus"
+    )
+    plan_before: Optional[dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(
         default_factory=_utcnow, sa_type=DateTime(timezone=True), nullable=False
     )
