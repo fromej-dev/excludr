@@ -13,10 +13,13 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 WORKDIR /code
 
+# PREFECT_SERVER_ANALYTICS_ENABLED: Prefect's telemetry heartbeat writes to the temporary
+# server's SQLite file and fails with "database is locked" when several flows start at once.
 ENV UV_COMPILE_BYTECODE=1 \
     PATH="/code/.venv/bin:$PATH" \
     FRONTEND_DIST_PATH=/code/frontend_dist \
-    PDF_STORAGE_PATH=/data/pdfs
+    PDF_STORAGE_PATH=/data/pdfs \
+    PREFECT_SERVER_ANALYTICS_ENABLED=false
 
 # Install dependencies first so this layer is cached until the lockfile changes.
 COPY pyproject.toml uv.lock ./
