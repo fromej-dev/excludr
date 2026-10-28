@@ -1,7 +1,7 @@
 """review passes: projectplan and processed stripe events
 
 Revision ID: a9d4c2e8f1b6
-Revises: f2b8d4e6a1c3
+Revises: a9c4e2f7d1b6
 Create Date: 2026-10-28 10:00:00.000000
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a9d4c2e8f1b6"
-down_revision: str | Sequence[str] | None = "f2b8d4e6a1c3"
+down_revision: str | Sequence[str] | None = "a9c4e2f7d1b6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

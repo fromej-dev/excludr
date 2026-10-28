@@ -205,6 +205,7 @@ export const useScreeningStore = defineStore('screening', () => {
       if (status === 503) return { status: 'unavailable', reason: 'no AI provider is configured' }
       if (status === 400) return { status: 'unavailable', reason: 'add active criteria first' }
       if (status === 403) return { status: 'unavailable', reason: 'reviewer role required' }
+      if (status === 402) return { status: 'unavailable', reason: "this review's plan covers no more AI screening" }
       return { status: 'error' }
     }
   }
