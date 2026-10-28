@@ -182,3 +182,53 @@ def test_ris_import_without_missing_abstracts_makes_no_request(
     assert res.status_code == 200
     assert res.json()["result"]["abstracts_fetched"] == 0
     assert requests == []
+
+
+IDENTIFIERS_RIS = """TY  - JOUR
+TI  - Prefixed PMID with the PMCID in a note
+DO  - 10.3390/ijerph17020603
+AN  - PMID: 31963506
+UR  - https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7014402/
+N1  - PMCID: PMC7014402 (open access, CC BY 4.0)
+AB  - Has an abstract.
+ER  -
+
+TY  - JOUR
+TI  - PMCID only in the link
+UR  - https://pmc.ncbi.nlm.nih.gov/articles/PMC8150277/
+AB  - Has an abstract.
+ER  -
+
+TY  - JOUR
+TI  - PMCID in C2
+C2  - PMC6950277
+AN  - 31835477
+AB  - Has an abstract.
+ER  -
+
+TY  - JOUR
+TI  - Not in PubMed Central
+AN  - WOS:000123456700001
+UR  - https://www.tandfonline.com/doi/full/10.1080/1350293X.2023.2214714
+N1  - Not in PubMed Central; abstract not included
+AB  - Has an abstract.
+ER  -
+"""
+
+
+def test_ris_import_reads_pmid_and_pmcid(auth_as, a_project, session, monkeypatch):
+    _use_test_session(session, monkeypatch)
+    client, user = auth_as()
+    project = a_project(user)
+
+    assert _upload(client, project, IDENTIFIERS_RIS).status_code == 200
+
+    session.expire_all()
+    articles = session.exec(select(Article).where(Article.project_id == project.id))
+    assert {a.title: (a.pmid, a.pmcid) for a in articles} == {
+        "Prefixed PMID with the PMCID in a note": ("31963506", "PMC7014402"),
+        "PMCID only in the link": (None, "PMC8150277"),
+        "PMCID in C2": ("31835477", "PMC6950277"),
+        # Another database's accession number is not stored as a PMID
+        "Not in PubMed Central": (None, None),
+    }

@@ -12,7 +12,12 @@ from app.core.prefect_config import get_prefect_session
 from app.features.projects.dedup import ProjectArticleIndex, normalize_title
 from app.features.projects.models import ImportBatch
 from app.features.research.models import Article, ArticleStatus, ScreeningStage
-from app.features.projects.parsers import parse_pubmed_txt, parse_pubmed_csv
+from app.features.projects.parsers import (
+    parse_pubmed_csv,
+    parse_pubmed_txt,
+    ris_pmcid,
+    ris_pmid,
+)
 from app.features.research.pubmed_service import PubMedRecord, PubMedService
 
 logger = logging.getLogger(__name__)
@@ -114,7 +119,7 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
 
                 # Look for a duplicate within this project only: DOI/PMID first,
                 # then normalized title + year when the entry has no identifiers.
-                pmid = entry.get("accession_number")
+                pmid = ris_pmid(entry.get("accession_number"))
                 existing_article, match_kind = index.find(doi, pmid, title, year)
                 if existing_article is not None:
                     duplicates += 1
@@ -153,7 +158,8 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                     "pages": pages,
                     "publication_type": entry.get("type_of_reference"),
                     "doi": doi,
-                    "pmid": pmid,  # accession_number is often used for PMID.
+                    "pmid": pmid,
+                    "pmcid": ris_pmcid(entry),
                     "issn": entry.get("issn"),
                     "keywords": entry.get("keywords", []),
                     "mesh_terms": entry.get("mesh_terms", []),
@@ -178,10 +184,8 @@ def parse_ris_entries(file_path: str, project_id: int, original_filename: str) -
                     index.add(article)
                     articles_created += 1
 
-                # AN holds the PMID in PubMed and Ovid MEDLINE exports; other
-                # databases put their own accession numbers there.
-                if not article.abstract and pmid and str(pmid).strip().isdigit():
-                    pmids_needing_abstracts.append(str(pmid).strip())
+                if not article.abstract and pmid:
+                    pmids_needing_abstracts.append(pmid)
 
     return {
         "records_found": records_found,

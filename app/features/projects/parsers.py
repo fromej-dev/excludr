@@ -1,9 +1,45 @@
-"""Parsers for PubMed export file formats."""
+"""Parsers for PubMed export file formats and RIS identifier fields."""
 
 import csv
 import re
 from io import StringIO
 from typing import Any
+
+_RIS_PMID = re.compile(r"^\s*(?:PMID\s*:?\s*)?(\d{1,9})\s*$", re.IGNORECASE)
+_PMCID_TOKEN = re.compile(r"\bPMC\s*(\d{4,})\b")
+_PMC_ARTICLE_URL = re.compile(
+    r"(?:ncbi\.nlm\.nih\.gov/pmc/articles|pmc\.ncbi\.nlm\.nih\.gov/articles"
+    r"|europepmc\.org/(?:abstract|article)/PMC)/(?:PMC)?(\d{4,})",
+    re.IGNORECASE,
+)
+
+
+def ris_pmid(accession_number: Any) -> str | None:
+    """The PMID in a RIS ``AN`` value ("31963506" or "PMID: 31963506").
+
+    Other databases put their own accession numbers in ``AN`` (Web of Science
+    ``WOS:...``, Embase ``L...``); those are not PMIDs and give None.
+    """
+    match = _RIS_PMID.match(str(accession_number or ""))
+    return match.group(1) if match else None
+
+
+def ris_pmcid(entry: dict[str, Any]) -> str | None:
+    """The PMCID of a RIS record, from ``C2``, ``N1`` notes or a PMC article URL."""
+
+    def values(key: str) -> list[str]:
+        value = entry.get(key)
+        if isinstance(value, list):
+            return [str(v) for v in value]
+        return [str(value)] if value else []
+
+    for text in values("custom2") + values("notes"):
+        if match := _PMCID_TOKEN.search(text):
+            return f"PMC{match.group(1)}"
+    for url in values("urls") + values("url"):
+        if match := _PMC_ARTICLE_URL.search(url):
+            return f"PMC{match.group(1)}"
+    return None
 
 
 def parse_pubmed_txt(file_path: str) -> list[dict[str, Any]]:

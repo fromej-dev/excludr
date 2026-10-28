@@ -4,8 +4,11 @@ Sources are tried in order and the first that yields a usable full text wins:
 
 1. **Unpaywall** (needs a DOI and ``settings.unpaywall_email``): best open-access
    PDF location, then any other location that advertises a PDF.
-2. **PubMed Central** (needs a PMCID, or a PMID/DOI resolved to one through the
-   NCBI ID converter): the PMC OA service's ``pdf`` link.
+2. **PubMed Central** (needs a PMCID: the article's own, one seen in Unpaywall's
+   locations, or a PMID/DOI resolved through the NCBI ID converter): the PDF in
+   the PMC Cloud Service bucket (``pmc-oa-opendata`` on S3), found through the
+   article version's metadata JSON. It replaced the PMC OA web service, retired
+   in August 2026, and is one of the services PMC allows automated retrieval from.
 3. **Europe PMC** full-text XML (same PMCID): plain text of the body sections.
    No PDF is stored in this case; only ``full_text_content`` is set.
 
@@ -44,7 +47,8 @@ logger = logging.getLogger(__name__)
 
 UNPAYWALL_URL = "https://api.unpaywall.org/v2/"
 IDCONV_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
-PMC_OA_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
+PMC_S3_URL = "https://pmc-oa-opendata.s3.amazonaws.com/"
+PMC_S3_BUCKET = "pmc-oa-opendata"
 EUROPEPMC_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML"
 
 PDF_MAGIC = b"%PDF-"
@@ -59,7 +63,7 @@ _CHUNK = 64 * 1024
 HOST_INTERVALS: dict[str, float] = {
     "api.unpaywall.org": 0.2,
     "www.ncbi.nlm.nih.gov": 0.35,  # NCBI allows 3 requests/second without a key
-    "ftp.ncbi.nlm.nih.gov": 0.35,
+    "pmc-oa-opendata.s3.amazonaws.com": 0.1,
     "www.ebi.ac.uk": 0.2,
 }
 DEFAULT_HOST_INTERVAL = 0.5
@@ -122,6 +126,8 @@ class _Context:
     unpaywall_email: Optional[str]
     pmcid: Optional[str] = None
     pmcid_resolved: bool = False
+    # Why the ID converter could not be asked, if it could not
+    pmcid_problem: Optional[str] = None
 
 
 def build_client() -> httpx.AsyncClient:
@@ -251,18 +257,39 @@ async def _from_unpaywall(ctx: _Context) -> _Fetched:
     locations = [data.get("best_oa_location"), *(data.get("oa_locations") or [])]
     urls: list[str] = []
     for location in locations:
-        url = (location or {}).get("url_for_pdf")
+        location = location or {}
+        url = location.get("url_for_pdf")
         if url and url not in urls:
             urls.append(url)
+        # PMC copies are listed as landing pages; their PMCID helps the next sources
+        if not ctx.pmcid:
+            ctx.pmcid = _pmcid_from_url(location.get("url_for_landing_page") or "")
     if not urls:
         raise SourceError("no open-access PDF location", "not_available")
 
+    problems: list[str] = []
     for url in urls:
         try:
             return _Fetched(pdf=await _download_pdf(ctx, url))
         except SourceError as exc:
             logger.info("Unpaywall candidate failed (%s): %s", url, exc.detail)
-    raise SourceError(f"none of {len(urls)} PDF location(s) could be downloaded")
+            problems.append(f"{urlsplit(url).hostname}: {exc.detail}")
+    raise SourceError(
+        f"none of {len(urls)} PDF location(s) could be downloaded"
+        f" ({'; '.join(problems)})"
+    )
+
+
+_PMC_URL = re.compile(
+    r"(?:ncbi\.nlm\.nih\.gov/pmc/articles|pmc\.ncbi\.nlm\.nih\.gov/articles)"
+    r"/(?:PMC)?(\d+)",
+    re.IGNORECASE,
+)
+
+
+def _pmcid_from_url(url: str) -> Optional[str]:
+    match = _PMC_URL.search(url)
+    return f"PMC{match.group(1)}" if match else None
 
 
 def _json_object(body: bytes) -> dict:
@@ -274,55 +301,97 @@ def _json_object(body: bytes) -> dict:
 
 
 async def _resolve_pmcid(ctx: _Context) -> Optional[str]:
-    """PMCID from the article, else via the NCBI ID converter (PMID, then DOI)."""
+    """PMCID from the article or Unpaywall, else via the NCBI ID converter.
+
+    The converter is asked for the PMID first, then the DOI; a failed request
+    for one does not stop the other. A PMID field holding anything but digits
+    (another database's accession number) is not sent: the converter rejects it.
+    """
     if ctx.article.pmcid:
         return _normalize_pmcid(ctx.article.pmcid)
-    if ctx.pmcid_resolved:
+    if ctx.pmcid or ctx.pmcid_resolved:
         return ctx.pmcid
     ctx.pmcid_resolved = True
-    identifier = ctx.article.pmid or (
-        _clean_doi(ctx.article.doi) if ctx.article.doi else None
-    )
-    if not identifier:
-        return None
-    params = {"ids": identifier, "format": "json", "tool": "excludr"}
-    if ctx.email:
-        params["email"] = ctx.email
-    body = await _fetch(ctx, IDCONV_URL, params)
+    pmid = (ctx.article.pmid or "").strip()
+    identifiers = [pmid] if pmid.isdigit() else []
+    if ctx.article.doi:
+        identifiers.append(_clean_doi(ctx.article.doi))
+    problems: list[str] = []
+    for identifier in identifiers:
+        params = {"ids": identifier, "format": "json", "tool": "excludr"}
+        if ctx.email:
+            params["email"] = ctx.email
+        try:
+            body = await _fetch(ctx, IDCONV_URL, params)
+            records = _json_object(body or b"{}").get("records") or []
+        except SourceError as exc:
+            problems.append(exc.detail)
+            continue
+        except ValueError:
+            problems.append("invalid ID converter response")
+            continue
+        for record in records:
+            if record.get("pmcid"):
+                ctx.pmcid = _normalize_pmcid(str(record["pmcid"]))
+                return ctx.pmcid
+    if problems:
+        ctx.pmcid_problem = f"ID converter: {'; '.join(problems)}"
+    return None
+
+
+def _no_pmcid(ctx: _Context) -> SourceError:
+    if ctx.pmcid_problem:
+        return SourceError(f"no PMCID available ({ctx.pmcid_problem})")
+    return SourceError("no PMCID available", "not_available")
+
+
+def _s3_versions(listing: bytes, pmcid: str) -> list[str]:
+    """Version prefixes (``PMC123.2``) in an S3 listing, highest number first."""
     try:
-        records = _json_object(body or b"{}").get("records") or []
-    except ValueError:
-        return None
-    for record in records:
-        if record.get("pmcid"):
-            ctx.pmcid = _normalize_pmcid(record["pmcid"])
-            break
-    return ctx.pmcid
+        root = ET.fromstring(listing)
+    except ET.ParseError as exc:
+        raise SourceError("invalid PMC dataset listing") from exc
+    pattern = re.compile(rf"^{re.escape(pmcid)}\.(\d+)/$")
+    versions: list[tuple[int, str]] = []
+    for element in root.iter():
+        if _local(element.tag) == "Prefix" and element.text:
+            if match := pattern.match(element.text):
+                versions.append((int(match.group(1)), element.text.rstrip("/")))
+    return [name for _, name in sorted(versions, reverse=True)]
 
 
-def _https(url: str) -> str:
-    """NCBI serves its FTP tree over HTTPS too; ``ftp://`` is not fetchable."""
-    if url.startswith("ftp://ftp.ncbi.nlm.nih.gov/"):
-        return "https://" + url[len("ftp://") :]
-    return url
+def _s3_https(url: str) -> str:
+    """``s3://pmc-oa-opendata/KEY?md5=...`` as a public HTTPS URL."""
+    parts = urlsplit(url)
+    if parts.scheme != "s3" or parts.netloc != PMC_S3_BUCKET or not parts.path:
+        raise SourceError("unexpected PDF location in PMC metadata")
+    return PMC_S3_URL + parts.path.lstrip("/")
 
 
 async def _from_pmc(ctx: _Context) -> _Fetched:
     pmcid = await _resolve_pmcid(ctx)
     if not pmcid:
-        raise SourceError("no PMCID available", "not_available")
-    body = await _fetch(ctx, PMC_OA_URL, {"id": pmcid})
-    try:
-        root = ET.fromstring(body or b"")
-    except ET.ParseError as exc:
-        raise SourceError("invalid PMC OA response") from exc
-    if root.find(".//error") is not None:
-        raise SourceError("not in the PMC open-access subset", "not_available")
-    link = root.find(".//record/link[@format='pdf']")
-    href = link.get("href") if link is not None else None
-    if not href:
-        raise SourceError("PMC offers no direct PDF (tgz only)", "not_available")
-    return _Fetched(pdf=await _download_pdf(ctx, _https(href)))
+        raise _no_pmcid(ctx)
+    listing = await _fetch(
+        ctx,
+        PMC_S3_URL,
+        {"list-type": "2", "prefix": f"{pmcid}.", "delimiter": "/"},
+    )
+    versions = _s3_versions(listing or b"", pmcid)
+    if not versions:
+        raise SourceError("not in the PMC open-access dataset", "not_available")
+    # PDFs exist only where the licence allows; any version's PDF will do
+    for version in versions:
+        body = await _fetch(
+            ctx, f"{PMC_S3_URL}{version}/{version}.json", accept_404=True
+        )
+        try:
+            pdf_url = _json_object(body or b"{}").get("pdf_url")
+        except ValueError:
+            continue
+        if pdf_url:
+            return _Fetched(pdf=await _download_pdf(ctx, _s3_https(str(pdf_url))))
+    raise SourceError("PMC has no PDF for this article", "not_available")
 
 
 _TEXT_TAGS = {"title", "p"}
@@ -360,7 +429,7 @@ def jats_body_text(xml: bytes) -> str:
 async def _from_europepmc(ctx: _Context) -> _Fetched:
     pmcid = await _resolve_pmcid(ctx)
     if not pmcid:
-        raise SourceError("no PMCID available", "not_available")
+        raise _no_pmcid(ctx)
     body = await _fetch(ctx, EUROPEPMC_URL.format(pmcid=pmcid), accept_404=True)
     if body is None:
         raise SourceError("no full text in Europe PMC", "not_available")
