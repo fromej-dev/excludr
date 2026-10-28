@@ -249,9 +249,16 @@ export const useWebSocketStore = defineStore('websocket', () => {
       reconnectTimer.value = null
     }
 
-    reconnectAttempts.value = maxReconnectAttempts // Prevent auto-reconnect
+    // Start the next session (e.g. after logging in again) with a full set of reconnect attempts
+    reconnectAttempts.value = 0
 
     if (ws.value) {
+      // Detach the handlers first: this close is deliberate (e.g. logout), so its close event must
+      // neither schedule a reconnect nor report the connection as lost
+      ws.value.onopen = null
+      ws.value.onmessage = null
+      ws.value.onerror = null
+      ws.value.onclose = null
       ws.value.close(1000, 'User disconnected')
       ws.value = null
     }

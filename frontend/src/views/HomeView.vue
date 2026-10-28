@@ -4,6 +4,7 @@ import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
 import { formatPrice } from '@/stores/billing'
 import type { PublicPlans } from '@/types'
+import PublicHeader from '@/components/layout/PublicHeader.vue'
 
 const authStore = useAuthStore()
 
@@ -155,37 +156,7 @@ const plans = computed<Plan[]>(() => {
 
 <template>
   <div class="min-h-screen bg-background text-foreground">
-    <!-- Navigation -->
-    <header class="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div class="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-        <router-link to="/" class="text-xl font-bold">Excludr</router-link>
-        <nav class="flex items-center gap-2 sm:gap-6">
-          <a href="#how-it-works" class="hidden text-sm font-medium text-muted-foreground hover:text-foreground sm:inline">How it works</a>
-          <a href="#features" class="hidden text-sm font-medium text-muted-foreground hover:text-foreground sm:inline">Features</a>
-          <a href="#pricing" class="hidden text-sm font-medium text-muted-foreground hover:text-foreground sm:inline">Pricing</a>
-          <template v-if="authStore.isAuthenticated">
-            <router-link
-              to="/dashboard"
-              data-testid="home-open-app"
-              class="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              Open app
-            </router-link>
-          </template>
-          <template v-else>
-            <router-link to="/login" class="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium hover:bg-accent">
-              Sign in
-            </router-link>
-            <router-link
-              to="/register"
-              class="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-            >
-              Get started
-            </router-link>
-          </template>
-        </nav>
-      </div>
-    </header>
+    <PublicHeader />
 
     <main>
       <!-- Hero -->
