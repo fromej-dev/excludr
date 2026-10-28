@@ -155,7 +155,7 @@ const plans = computed<Plan[]>(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-background text-foreground">
+  <div class="min-h-dvh bg-background text-foreground">
     <PublicHeader />
 
     <main>

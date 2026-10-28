@@ -83,7 +83,7 @@ const handleLogout = () => {
       </button>
     </div>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-3 py-3">
+    <div class="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain px-3 py-3">
       <nav v-if="authStore.isAuthenticated" aria-label="Main navigation">
         <ul class="space-y-0.5">
           <li v-for="link in links" :key="link.key">
@@ -109,7 +109,8 @@ const handleLogout = () => {
       </div>
     </div>
 
-    <div class="shrink-0 space-y-3 border-t p-3">
+    <!-- Keep the account row clear of the phone's gesture/navigation bar (viewport-fit=cover) -->
+    <div class="shrink-0 space-y-3 border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       <div role="group" aria-label="Colour theme" class="grid grid-cols-3 rounded-md border bg-background p-0.5" data-testid="theme-toggle">
         <button
           v-for="o in themeOptions"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { onKeyStroke } from '@vueuse/core'
+import { onKeyStroke, useScrollLock } from '@vueuse/core'
 import AppSidebar from './AppSidebar.vue'
 import ExcludrWordmark from '@/components/brand/ExcludrWordmark.vue'
 
@@ -18,10 +18,14 @@ const menuOpen = ref(false)
 // Close the mobile drawer on navigation and on Escape
 watch(() => route.fullPath, () => (menuOpen.value = false))
 onKeyStroke('Escape', () => (menuOpen.value = false))
+
+// Don't let the page behind the open drawer scroll
+const bodyLocked = useScrollLock(typeof document !== 'undefined' ? document.body : null)
+watch(menuOpen, (open) => (bodyLocked.value = open))
 </script>
 
 <template>
-  <div class="min-h-screen bg-background lg:flex">
+  <div class="min-h-dvh bg-background lg:flex">
     <!-- Below lg: compact top bar with a menu button that opens the sidebar as a drawer -->
     <header class="sticky top-0 z-40 flex h-14 items-center gap-2 border-b bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:bg-background/70 lg:hidden">
       <button
