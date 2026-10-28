@@ -7,6 +7,12 @@ from app.features.websocket.services import NotificationService
 from app.features.websocket.schemas import NotificationLevel, MessageType
 
 
+async def _join_all(user_id: int, room_name: str) -> None:
+    """Server-side join of every open connection of a user (trusted code path)."""
+    for websocket in list(manager.active_connections.get(user_id, ())):
+        await manager.join_room(websocket, room_name)
+
+
 @pytest.fixture(autouse=True)
 def reset_connection_manager():
     """Reset the connection manager before each test."""
@@ -14,11 +20,13 @@ def reset_connection_manager():
 
     manager.active_connections.clear()
     manager.rooms.clear()
-    manager.user_rooms.clear()
+    manager.connection_rooms.clear()
+    manager.connection_users.clear()
     yield
     manager.active_connections.clear()
     manager.rooms.clear()
-    manager.user_rooms.clear()
+    manager.connection_rooms.clear()
+    manager.connection_users.clear()
 
 
 @pytest.mark.asyncio
@@ -110,8 +118,8 @@ async def test_notify_room(client: TestClient, a_user, token_for):
         # Server-side code (trusted) adds both users to a shared room; clients
         # cannot join arbitrary rooms themselves.
         room_name = "test_room"
-        await manager.join_room(user1.id, room_name)
-        await manager.join_room(user2.id, room_name)
+        await _join_all(user1.id, room_name)
+        await _join_all(user2.id, room_name)
 
         # Send notification to the room
         count = await NotificationService.notify_room(
@@ -286,14 +294,14 @@ async def test_get_room_members(client: TestClient, a_user, token_for):
         assert len(members) == 0
 
         # User 1 joins room (server-side; clients can only join their own rooms)
-        await manager.join_room(user1.id, room_name)
+        await _join_all(user1.id, room_name)
 
         members = NotificationService.get_room_members(room_name)
         assert len(members) == 1
         assert user1.id in members
 
         # User 2 joins room
-        await manager.join_room(user2.id, room_name)
+        await _join_all(user2.id, room_name)
 
         members = NotificationService.get_room_members(room_name)
         assert len(members) == 2

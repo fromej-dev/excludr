@@ -14,11 +14,13 @@ def reset_connection_manager():
 
     manager.active_connections.clear()
     manager.rooms.clear()
-    manager.user_rooms.clear()
+    manager.connection_rooms.clear()
+    manager.connection_users.clear()
     yield
     manager.active_connections.clear()
     manager.rooms.clear()
-    manager.user_rooms.clear()
+    manager.connection_rooms.clear()
+    manager.connection_users.clear()
 
 
 def test_websocket_connect_with_valid_token(client: TestClient, a_user, token_for):
@@ -282,53 +284,124 @@ def test_websocket_join_room_without_room_name(client: TestClient, a_user, token
         assert "Room name is required" in response["message"]
 
 
-def test_connection_manager_disconnect():
-    """Test ConnectionManager disconnect functionality."""
+class _FakeSocket:
+    """Stands in for a WebSocket in ConnectionManager unit tests."""
+
+    def __init__(self, fail: bool = False):
+        self.sent: list[str] = []
+        self.fail = fail
+
+    async def accept(self):
+        pass
+
+    async def send_text(self, text: str):
+        if self.fail:
+            raise RuntimeError("closed")
+        self.sent.append(text)
+
+
+@pytest.mark.asyncio
+async def test_connection_manager_disconnect():
+    """Disconnecting one connection removes only that connection from its rooms."""
     manager = ConnectionManager()
+    tab1, tab2, other = _FakeSocket(), _FakeSocket(), _FakeSocket()
+    await manager.connect(tab1, 1)
+    await manager.connect(tab2, 1)
+    await manager.connect(other, 2)
+    await manager.join_room(tab1, "room1")
+    await manager.join_room(tab2, "room1")
+    await manager.join_room(other, "room1")
+    await manager.join_room(tab2, "room2")
 
-    # Mock user_id and websocket
-    user_id = 1
+    manager.disconnect(tab2)
 
-    # Add user to rooms
-    manager.user_rooms[user_id] = {"room1", "room2"}
-    manager.rooms["room1"] = {user_id, 2}
-    manager.rooms["room2"] = {user_id}
-
-    # Disconnect user
-    manager.disconnect(user_id)
-
-    # Verify user is removed from all rooms
-    assert user_id not in manager.user_rooms
-    assert user_id not in manager.rooms.get("room1", set())
+    assert manager.active_connections[1] == {tab1}
+    assert manager.rooms["room1"] == {tab1, other}
     assert "room2" not in manager.rooms  # Empty room should be deleted
-    assert user_id not in manager.active_connections
+    assert tab2 not in manager.connection_rooms
+
+    manager.disconnect(tab1)
+    assert 1 not in manager.active_connections
+    assert manager.get_room_users("room1") == {2}
 
 
-def test_connection_manager_get_user_rooms():
-    """Test getting user's rooms."""
+@pytest.mark.asyncio
+async def test_connection_manager_get_user_rooms():
+    """A user's rooms are the rooms of all their connections."""
     manager = ConnectionManager()
+    tab1, tab2 = _FakeSocket(), _FakeSocket()
+    await manager.connect(tab1, 1)
+    await manager.connect(tab2, 1)
+    await manager.join_room(tab1, "room1")
+    await manager.join_room(tab2, "room2")
 
-    user_id = 1
-    manager.user_rooms[user_id] = {"room1", "room2"}
-
-    rooms = manager.get_user_rooms(user_id)
-    assert rooms == {"room1", "room2"}
-
-    # Test non-existent user
-    rooms = manager.get_user_rooms(999)
-    assert rooms == set()
+    assert manager.get_user_rooms(1) == {"user_1", "room1", "room2"}
+    assert manager.get_connection_rooms(tab1) == {"user_1", "room1"}
+    assert manager.get_user_rooms(999) == set()
 
 
-def test_connection_manager_get_room_users():
-    """Test getting room's users."""
+@pytest.mark.asyncio
+async def test_connection_manager_get_room_users():
+    """Room users are distinct users, however many tabs each has in the room."""
     manager = ConnectionManager()
+    sockets = {_FakeSocket(): 1, _FakeSocket(): 1, _FakeSocket(): 2}
+    for ws, user_id in sockets.items():
+        await manager.connect(ws, user_id)
+        await manager.join_room(ws, "test_room")
 
-    room_name = "test_room"
-    manager.rooms[room_name] = {1, 2, 3}
+    assert manager.get_room_users("test_room") == {1, 2}
+    assert manager.get_room_users("non_existent") == set()
 
-    users = manager.get_room_users(room_name)
-    assert users == {1, 2, 3}
 
-    # Test non-existent room
-    users = manager.get_room_users("non_existent")
-    assert users == set()
+@pytest.mark.asyncio
+async def test_connection_manager_broadcast_skips_dead_connection():
+    """A connection that fails to send does not stop the rest of the room."""
+    manager = ConnectionManager()
+    dead, alive = _FakeSocket(fail=True), _FakeSocket()
+    await manager.connect(dead, 1)
+    await manager.connect(alive, 2)
+    await manager.join_room(dead, "room")
+    await manager.join_room(alive, "room")
+
+    await manager.broadcast_to_room("hello", "room")
+
+    assert alive.sent == ["hello"]
+
+
+def test_websocket_second_tab_does_not_steal_messages(
+    client: TestClient, a_user, a_project, token_for
+):
+    """With two tabs open, both get project events; closing one keeps the other live."""
+    import asyncio
+
+    from app.features.websocket.services import NotificationService
+
+    user = a_user()
+    project = a_project(user)
+    room = f"project_{project.id}"
+    token = token_for(user)
+
+    def notify(text: str) -> None:
+        asyncio.run(NotificationService.notify_room(room_name=room, message=text))
+
+    with client.websocket_connect(f"/api/v1/ws?token={token}") as tab1:
+        tab1.receive_text()
+        assert _send(tab1, type="join_room", room=room)["type"] == MessageType.INFO
+
+        with client.websocket_connect(f"/api/v1/ws?token={token}") as tab2:
+            tab2.receive_text()
+            # The second tab's own replies go to it alone
+            joined = _send(tab2, type="join_room", room=room)
+            assert joined["type"] == MessageType.INFO
+            notify("both tabs")
+            assert json.loads(tab1.receive_text())["message"] == "both tabs"
+            assert json.loads(tab2.receive_text())["message"] == "both tabs"
+
+            # Leaving in one tab does not take the room away from the other
+            _send(tab2, type="leave_room", room=room)
+            notify("first tab only")
+            assert json.loads(tab1.receive_text())["message"] == "first tab only"
+
+        # The second tab closed: the first is still connected and in its room
+        notify("after close")
+        assert json.loads(tab1.receive_text())["message"] == "after close"
