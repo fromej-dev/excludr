@@ -8,24 +8,14 @@ from app.core.rate_limit import login_rate_limiter
 from app.features.users.services import UserServiceDep
 from .services import (
     REFRESH_TOKEN_TYPE,
-    create_access_token,
-    create_refresh_token,
+    issue_tokens,
     verify_password,
     verify_token_and_get_user,
 )
 from .schemas import RefreshRequest, Token
-from ..users.models import User, UserCreate, UserPublic
+from ..users.models import UserCreate, UserPublic
 
 router = APIRouter(tags=["Auth"], prefix="/auth")
-
-
-def _issue_tokens(user: User) -> Token:
-    data = {"sub": user.email}
-    return Token(
-        access_token=create_access_token(data=data),
-        refresh_token=create_refresh_token(data=data),
-        token_type="bearer",
-    )
 
 
 def _rate_limit_key(request: Request, email: str) -> str:
@@ -57,7 +47,7 @@ def login(
         raise HTTPException(status_code=400, detail="Inactive user")
 
     login_rate_limiter.clear(key)
-    return _issue_tokens(user)
+    return issue_tokens(user)
 
 
 @router.post("/refresh", response_model=Token)
@@ -68,7 +58,7 @@ def refresh(body: RefreshRequest, us: UserServiceDep):
     )
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    return _issue_tokens(user)
+    return issue_tokens(user)
 
 
 @router.post("/register", response_model=UserPublic, status_code=201)

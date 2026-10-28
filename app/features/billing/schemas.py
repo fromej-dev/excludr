@@ -33,6 +33,27 @@ class BillingStatus(BaseModel):
     online_payment: bool
 
 
+class AccountProject(BaseModel):
+    id: int
+    name: str
+    plan: str
+    plan_label: str
+    active: bool
+    read_only: bool
+    expires_at: Optional[datetime]
+    full_text_used: int
+    # None: the project draws on the owner's free allowance
+    full_text_limit: Optional[int]
+
+
+class AccountBilling(BaseModel):
+    billing_enabled: bool
+    currency: str
+    free_full_text: Usage
+    free_title_abstract: Usage
+    projects: list[AccountProject]
+
+
 class PublicTier(BaseModel):
     tier: str
     label: str

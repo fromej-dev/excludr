@@ -1,14 +1,19 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
 from app.core.database import SessionDep
+from app.features.auth.services import get_current_user
 from app.features.projects.permissions import OwnerAccessAnyState, ViewerAccess
+from app.features.users.models import User
 from . import services as billing
 from . import stripe_client
 from .schemas import (
+    AccountBilling,
     BillingStatus,
     CheckoutRequest,
     CheckoutResponse,
@@ -29,6 +34,14 @@ def _require_billing() -> None:
 def get_plans():
     """Public plan limits and prices (used by the pricing page)."""
     return billing.public_plans()
+
+
+@router.get("/billing/account", response_model=AccountBilling)
+def get_account_billing(
+    user: Annotated[User, Depends(get_current_user)], session: SessionDep
+):
+    """The signed-in user's free allowance and the passes of the projects they own."""
+    return billing.get_account_status(session, user)
 
 
 @router.get("/projects/{project_id}/billing", response_model=BillingStatus)

@@ -145,10 +145,14 @@ def get_allowance(
         limit = plan.fulltext_limit if full_text else plans.PASS_TITLE_ABSTRACT_LIMIT
         used = _count_ai_screened(session, [project.id], stage)
         return Allowance(stage, used, limit, "project")
+    return free_allowance(session, project.owner_id, stage)
+
+
+def free_allowance(session: Session, owner_id: int, stage: ScreeningStage) -> Allowance:
+    """The free allowance shared by all of ``owner_id``'s projects without a pass."""
+    full_text = stage == ScreeningStage.full_text
     limit = plans.FREE_FULLTEXT_LIMIT if full_text else plans.FREE_TITLE_ABSTRACT_LIMIT
-    used = _count_ai_screened(
-        session, _unpaid_project_ids(session, project.owner_id), stage
-    )
+    used = _count_ai_screened(session, _unpaid_project_ids(session, owner_id), stage)
     return Allowance(stage, used, limit, "account")
 
 
@@ -280,20 +284,22 @@ def _usage(allowance: Allowance) -> dict[str, Any]:
     return {"used": allowance.used, "limit": allowance.limit, "scope": allowance.scope}
 
 
+def _plan_label(plan: Optional[ProjectPlan]) -> str:
+    if plan is None:
+        return "No review pass yet"
+    tier = plans.TIERS.get(plan.tier)
+    if tier is not None:
+        return tier.label
+    return f"Custom pass, up to {plan.fulltext_limit:,} full texts"
+
+
 def get_status(session: Session, project: Project) -> dict[str, Any]:
     plan = get_plan(session, project.id)
-    tier = plans.TIERS.get(plan.tier) if plan else None
-    if plan is None:
-        label = "No review pass yet"
-    elif tier is not None:
-        label = tier.label
-    else:
-        label = f"Custom pass, up to {plan.fulltext_limit:,} full texts"
     enabled = billing_enabled()
     return {
         "billing_enabled": enabled,
         "plan": plan.tier if plan else "free",
-        "plan_label": label,
+        "plan_label": _plan_label(plan),
         "active": is_active(plan),
         "read_only": enabled and plan is not None and not is_active(plan),
         "expires_at": _aware(plan.expires_at) if plan else None,
@@ -306,6 +312,62 @@ def get_status(session: Session, project: Project) -> dict[str, Any]:
         "options": upgrade_options(session, project) if enabled else [],
         # Without Stripe keys passes are granted by an admin instead of bought here
         "online_payment": enabled and bool(get_settings().stripe_secret_key),
+    }
+
+
+def get_account_status(session: Session, user: User) -> dict[str, Any]:
+    """The user's free allowance and the plan and AI usage of each project they own."""
+    projects = session.exec(
+        select(Project).where(Project.owner_id == user.id).order_by(Project.name)
+    ).all()
+    project_ids = [p.id for p in projects]
+    project_plans = {
+        p.project_id: p
+        for p in session.exec(
+            select(ProjectPlan).where(ProjectPlan.project_id.in_(project_ids))
+        ).all()
+    }
+    full_text_used = dict(
+        session.exec(
+            select(
+                Article.project_id, func.count(distinct(ScreeningDecision.article_id))
+            )
+            .join(Article, Article.id == ScreeningDecision.article_id)
+            .where(
+                Article.project_id.in_(project_ids),
+                ScreeningDecision.source == DecisionSource.ai_agent,
+                ScreeningDecision.stage == ScreeningStage.full_text,
+            )
+            .group_by(Article.project_id)
+        ).all()
+    )
+    enabled = billing_enabled()
+    rows = []
+    for project in projects:
+        plan = project_plans.get(project.id)
+        rows.append(
+            {
+                "id": project.id,
+                "name": project.name,
+                "plan": plan.tier if plan else "free",
+                "plan_label": _plan_label(plan),
+                "active": is_active(plan),
+                "read_only": enabled and plan is not None and not is_active(plan),
+                "expires_at": _aware(plan.expires_at) if plan else None,
+                "full_text_used": full_text_used.get(project.id, 0),
+                "full_text_limit": plan.fulltext_limit if plan else None,
+            }
+        )
+    return {
+        "billing_enabled": enabled,
+        "currency": plans.CURRENCY,
+        "free_full_text": _usage(
+            free_allowance(session, user.id, ScreeningStage.full_text)
+        ),
+        "free_title_abstract": _usage(
+            free_allowance(session, user.id, ScreeningStage.title_abstract)
+        ),
+        "projects": rows,
     }
 
 
