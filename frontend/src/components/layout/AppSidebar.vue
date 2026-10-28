@@ -129,16 +129,25 @@ const handleLogout = () => {
         </button>
       </div>
 
-      <div v-if="authStore.isAuthenticated" class="flex items-center gap-3 px-1">
-        <span
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground"
-          aria-hidden="true"
-          >{{ initials }}</span
+      <div v-if="authStore.isAuthenticated" class="flex items-center gap-1">
+        <router-link
+          to="/account"
+          class="flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 py-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          :class="route.name === 'account' ? 'bg-accent' : ''"
+          :aria-current="route.name === 'account' ? 'page' : undefined"
+          title="Account settings"
+          data-testid="account-link"
         >
-        <div class="min-w-0 flex-1 leading-tight">
-          <p class="truncate text-sm font-medium" :title="authStore.user?.name">{{ authStore.user?.name }}</p>
-          <p class="truncate text-xs text-muted-foreground" :title="authStore.user?.email">{{ authStore.user?.email }}</p>
-        </div>
+          <span
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground"
+            aria-hidden="true"
+            >{{ initials }}</span
+          >
+          <span class="min-w-0 flex-1 leading-tight">
+            <span class="block truncate text-sm font-medium">{{ authStore.user?.name }}</span>
+            <span class="block truncate text-xs text-muted-foreground">{{ authStore.user?.email }}</span>
+          </span>
+        </router-link>
         <button
           type="button"
           class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

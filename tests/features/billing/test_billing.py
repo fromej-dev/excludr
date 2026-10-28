@@ -228,6 +228,41 @@ def test_status_when_billing_disabled(auth_as, a_project, monkeypatch):
     assert body["online_payment"] is False
 
 
+def test_account_billing_lists_owned_projects_and_free_allowance(
+    auth_as, a_project, a_member, session
+):
+    client, user = auth_as()
+    free, paid = a_project(user), a_project(user)
+    free.name, paid.name = "A free review", "B paid review"
+    session.add_all([free, paid])
+    session.commit()
+    _full_text_articles(session, free, 3, ai_screened=True)
+    _full_text_articles(session, paid, 7, ai_screened=True)
+    _give_plan(session, paid, limit=250)
+    a_member(a_project(), user=user)  # member only: not listed
+
+    body = client.get("api/v1/billing/account").json()
+    assert body["billing_enabled"] is True
+    assert body["free_full_text"] == {"used": 3, "limit": 50, "scope": "account"}
+    assert body["free_title_abstract"] == {"used": 0, "limit": 500, "scope": "account"}
+    assert [
+        (p["id"], p["plan"], p["active"], p["full_text_used"], p["full_text_limit"])
+        for p in body["projects"]
+    ] == [(free.id, "free", False, 3, None), (paid.id, "pass_250", True, 7, 250)]
+    assert body["projects"][1]["expires_at"] is not None
+
+
+def test_account_billing_marks_expired_passes_read_only(auth_as, a_project, session):
+    client, user = auth_as()
+    _give_plan(session, a_project(user), expires_in_days=-1)
+    [row] = client.get("api/v1/billing/account").json()["projects"]
+    assert (row["active"], row["read_only"]) == (False, True)
+
+
+def test_account_billing_needs_login(client):
+    assert client.get("api/v1/billing/account").status_code == 401
+
+
 def test_status_offers_online_payment_with_stripe_key(auth_as, a_project):
     client, user = auth_as()
     project = a_project(user)

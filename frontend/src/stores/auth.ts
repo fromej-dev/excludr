@@ -4,7 +4,7 @@ import { useApi } from '@/composables/useApi'
 import type { User, LoginCredentials, RegisterData, TokenResponse } from '@/types'
 
 export const useAuthStore = defineStore('auth', () => {
-  const { get, post, setToken, clearToken, getToken } = useApi()
+  const { get, post, patch, put, setToken, clearToken, getToken } = useApi()
 
   const user = ref<User | null>(null)
   const loading = ref(false)
@@ -66,6 +66,22 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** Rename the signed-in user. Throws on failure. */
+  const updateProfile = async (name: string) => {
+    user.value = await patch<User>('/users/me', { name })
+  }
+
+  /** Change the sign-in email; the API returns new tokens since tokens name the email. */
+  const changeEmail = async (email: string, currentPassword: string) => {
+    const tokens = await put<TokenResponse>('/users/me/email', { email, current_password: currentPassword })
+    setToken(tokens.access_token, tokens.refresh_token)
+    await fetchCurrentUser()
+  }
+
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    await put<void>('/users/me/password', { current_password: currentPassword, new_password: newPassword })
+  }
+
   const logout = () => {
     clearToken()
     user.value = null
@@ -86,5 +102,8 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     logout,
     initialize,
+    updateProfile,
+    changeEmail,
+    changePassword,
   }
 })

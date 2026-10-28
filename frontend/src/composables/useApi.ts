@@ -119,6 +119,10 @@ export function useApi() {
     return api.patch<T>(url, data, config).then((res) => unwrap<T>(res.data))
   }
 
+  const put = <T>(url: string, data?: any, config?: AxiosRequestConfig) => {
+    return api.put<T>(url, data, config).then((res) => unwrap<T>(res.data))
+  }
+
   const del = <T>(url: string, config?: AxiosRequestConfig) => {
     return api.delete<T>(url, config).then((res) => unwrap<T>(res.data))
   }
@@ -144,6 +148,7 @@ export function useApi() {
     getRaw,
     post,
     patch,
+    put,
     delete: del,
     setToken,
     getToken,

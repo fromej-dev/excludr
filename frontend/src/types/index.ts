@@ -553,6 +553,28 @@ export interface BillingStatus {
   online_payment: boolean
 }
 
+export interface AccountProject {
+  id: number
+  name: string
+  plan: string
+  plan_label: string
+  active: boolean
+  read_only: boolean
+  expires_at: string | null
+  full_text_used: number
+  /** null: the project draws on the owner's free allowance */
+  full_text_limit: number | null
+}
+
+/** The signed-in user's free allowance and the passes of the projects they own. */
+export interface AccountBilling {
+  billing_enabled: boolean
+  currency: string
+  free_full_text: BillingUsage
+  free_title_abstract: BillingUsage
+  projects: AccountProject[]
+}
+
 export interface PublicPlans {
   billing_enabled: boolean
   currency: string

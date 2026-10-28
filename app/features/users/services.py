@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import Depends
@@ -61,6 +62,28 @@ class UserService:
         """
         user = User(**data.model_dump())
         user.hashed_password = self.hash_password(data.password)
+        self.session.add(user)
+        self.session.commit()
+        self.session.refresh(user)
+        return user
+
+    def update_name(self, user: User, name: str) -> User:
+        """Rename ``user``."""
+        user.name = name.strip()
+        return self._save(user)
+
+    def update_email(self, user: User, email: str) -> User:
+        """Change the email ``user`` signs in with (callers check it is free)."""
+        user.email = email.strip()
+        return self._save(user)
+
+    def update_password(self, user: User, password: str) -> User:
+        """Replace ``user``'s password."""
+        user.hashed_password = self.hash_password(password)
+        return self._save(user)
+
+    def _save(self, user: User) -> User:
+        user.updated_at = datetime.now(timezone.utc)
         self.session.add(user)
         self.session.commit()
         self.session.refresh(user)

@@ -9,7 +9,7 @@ from app.core.security import verify_password as _verify_password
 from starlette import status
 
 from app.core.config import get_settings
-from .schemas import TokenData
+from .schemas import Token, TokenData
 from ..users.models import User
 from ..users.services import UserServiceDep
 
@@ -46,6 +46,16 @@ def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> 
         data,
         REFRESH_TOKEN_TYPE,
         expires_delta or timedelta(days=settings.refresh_token_expire_days),
+    )
+
+
+def issue_tokens(user: User) -> Token:
+    """A fresh access/refresh token pair for ``user`` (tokens identify it by email)."""
+    data = {"sub": user.email}
+    return Token(
+        access_token=create_access_token(data=data),
+        refresh_token=create_refresh_token(data=data),
+        token_type="bearer",
     )
 
 
