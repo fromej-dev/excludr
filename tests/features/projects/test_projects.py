@@ -92,14 +92,15 @@ def test_create_project(auth_as, a_user, faker):
 def test_update_project(auth_as, a_project, faker):
     client, user = auth_as()
     project = a_project(user)
-    data = {"name": faker.word(), "description": faker.text()}
+    # Suffixed: faker.word() can be shorter than the 3-character minimum name length
+    data = {"name": f"{faker.word()} review", "description": faker.text()}
     res = client.patch(f"{BASE_API}/{project.id}", json=data)
     assert res.status_code == 200
     assert res.json()["name"] == data["name"]
     assert res.json()["description"] == data["description"]
 
     # update only name
-    data1 = {"name": faker.word()}
+    data1 = {"name": f"{faker.word()} study"}
     res = client.patch(f"{BASE_API}/{project.id}", json=data1)
     assert res.status_code == 200
     assert res.json()["name"] == data1["name"]
@@ -116,7 +117,7 @@ def test_update_project(auth_as, a_project, faker):
 def test_update_project_not_owner(auth_as, a_project, faker):
     client, user = auth_as()
     project = a_project()
-    data = {"name": faker.word(), "description": faker.text()}
+    data = {"name": f"{faker.word()} review", "description": faker.text()}
     res = client.patch(f"{BASE_API}/{project.id}", json=data)
     assert res.status_code == 403
     assert res.json()["detail"] == "You are not the owner of the project"
