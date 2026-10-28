@@ -75,3 +75,68 @@ class RetrieveFullTextRequest(BaseModel):
         default=None,
         description="Articles to retrieve; default: all awaiting full text",
     )
+
+
+MatchConfidence = Literal["high", "medium", "low"]
+
+
+class PdfMatchCandidate(BaseModel):
+    """An article an uploaded PDF may belong to."""
+
+    article_id: int
+    title: str | None = None
+    year: int | None = None
+    first_author: str | None = None
+    has_full_text: bool = False
+    method: str = Field(
+        description="How it matched, e.g. doi_metadata, doi_filename, doi_text, "
+        "pmid_filename, pmcid_text, title_text, title_filename, article_id_filename"
+    )
+    confidence: MatchConfidence
+
+
+class PdfMatchResult(BaseModel):
+    """One staged PDF and its proposed article."""
+
+    upload_id: str | None = Field(
+        default=None, description="Staged upload to confirm or discard; None on error"
+    )
+    filename: str
+    error: str | None = None
+    text_extracted: bool = False
+    match: PdfMatchCandidate | None = None
+    candidates: list[PdfMatchCandidate] = Field(default_factory=list)
+
+
+class PdfAttachItem(BaseModel):
+    """Attach a staged PDF to an article."""
+
+    upload_id: str
+    article_id: int
+    replace: bool = Field(
+        default=False, description="Replace a full text the article already has"
+    )
+
+
+class PdfBulkConfirmRequest(BaseModel):
+    """Attach staged PDFs and drop the ones not wanted."""
+
+    attach: list[PdfAttachItem] = Field(default_factory=list)
+    discard: list[str] = Field(default_factory=list)
+
+
+class PdfAttachResult(BaseModel):
+    """Outcome of attaching one staged PDF."""
+
+    upload_id: str
+    article_id: int
+    status: Literal["attached", "skipped", "error"]
+    detail: str | None = None
+    text_extracted: bool = False
+
+
+class PdfBulkConfirmResponse(BaseModel):
+    """Per-file outcomes of a bulk confirm."""
+
+    attached: int
+    results: list[PdfAttachResult]

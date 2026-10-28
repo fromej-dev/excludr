@@ -78,7 +78,10 @@ const groups = computed<NavGroup[]>(() => {
         link('project-overview', 'overview', 'Overview'),
         link('project-criteria', 'criteria', 'Criteria', { count: criteria.value }),
         link('project-articles', 'articles', 'Articles', {
-          active: name.value === 'project-articles' || name.value === 'article-detail',
+          active:
+            name.value === 'project-articles' ||
+            name.value === 'article-detail' ||
+            name.value === 'project-pdf-upload',
           count: projectsStore.currentProject?.number_of_articles ?? null,
         }),
         link('project-members', 'members', 'Members'),

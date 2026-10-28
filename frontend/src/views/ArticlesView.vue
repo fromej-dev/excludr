@@ -112,6 +112,16 @@ const isEmpty = computed(() => hasFetched.value && !loading.value && !error.valu
       @clear="clearFilters"
     />
 
+    <div v-if="isOwner" class="flex justify-end">
+      <router-link
+        :to="{ name: 'project-pdf-upload', params: { id: projectId } }"
+        class="text-sm font-medium text-primary hover:underline"
+        data-testid="upload-pdfs-link"
+      >
+        Upload full-text PDFs
+      </router-link>
+    </div>
+
     <ArticlesBulkBar
       v-if="isOwner && selected.size > 0"
       :count="selected.size"

@@ -41,19 +41,28 @@ const run = async () => {
       <div>
         <h3 class="font-semibold">Full-text retrieval</h3>
         <p class="text-xs text-muted-foreground">
-          Fetches open-access PDFs (Unpaywall, PMC, Europe PMC) for articles awaiting full text.
+          Fetches open-access PDFs (Unpaywall, PMC, Europe PMC) for articles awaiting full text, or upload
+          your own PDFs in bulk.
         </p>
       </div>
-      <Button
-        v-if="canRun"
-        size="sm"
-        variant="outline"
-        :disabled="starting || running"
-        data-testid="retrieve-fulltexts"
-        @click="run"
-      >
-        {{ starting ? 'Starting...' : running ? 'Retrieving...' : 'Retrieve full texts' }}
-      </Button>
+      <div v-if="canRun" class="flex flex-wrap gap-2">
+        <router-link
+          :to="{ name: 'project-pdf-upload', params: { id: projectId } }"
+          class="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+          data-testid="upload-pdfs-link"
+        >
+          Upload PDFs
+        </router-link>
+        <Button
+          size="sm"
+          variant="outline"
+          :disabled="starting || running"
+          data-testid="retrieve-fulltexts"
+          @click="run"
+        >
+          {{ starting ? 'Starting...' : running ? 'Retrieving...' : 'Retrieve full texts' }}
+        </Button>
+      </div>
     </div>
 
     <div v-if="running || total > 0" class="space-y-1" data-testid="fulltext-progress">

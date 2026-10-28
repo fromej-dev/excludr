@@ -87,6 +87,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/ArticlesView.vue'),
       },
       {
+        path: 'articles/upload-pdfs',
+        name: 'project-pdf-upload',
+        component: () => import('@/views/PdfUploadView.vue'),
+      },
+      {
         path: 'articles/:articleId',
         name: 'article-detail',
         component: () => import('@/views/ArticleDetailView.vue'),

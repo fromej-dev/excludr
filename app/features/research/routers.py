@@ -20,7 +20,14 @@ from app.features.projects.permissions import OwnerAccess, ViewerAccess
 from .models import Article, ArticleStatus, ScreeningStage
 from .flows import retrieve_fulltext_flow
 from .fulltext_retrieval import retrieve_full_text
-from .schemas import FullTextRetrievalResult, RetrieveFullTextRequest
+from . import pdf_bulk_upload
+from .schemas import (
+    FullTextRetrievalResult,
+    PdfBulkConfirmRequest,
+    PdfBulkConfirmResponse,
+    PdfMatchResult,
+    RetrieveFullTextRequest,
+)
 from .services import ArticleServiceDep
 from app.features.screening.services import ScreeningServiceDep
 
@@ -111,6 +118,39 @@ def get_article_stats(
         "by_status": {s.value: c for s, c in status_counts},
         "by_stage": {s.value: c for s, c in stage_counts},
     }
+
+
+@router.post("/fulltext/bulk/match", response_model=list[PdfMatchResult])
+async def bulk_pdf_match(
+    project_id: int,
+    files: list[UploadFile],
+    access: OwnerAccess,
+    session: SessionDep,
+):
+    """Stage full-text PDFs and propose the article each one belongs to.
+
+    Nothing is attached yet: confirm the matches with ``/fulltext/bulk/confirm``.
+    Matching uses the DOI/PMID/PMCID in the PDF metadata, filename or first pages,
+    then the article title (confirmed by first author and year). Files that are
+    not PDFs are reported per file. Staged files expire after 24 hours.
+    """
+    return await pdf_bulk_upload.stage_and_match(session, project_id, files)
+
+
+@router.post("/fulltext/bulk/confirm", response_model=PdfBulkConfirmResponse)
+def bulk_pdf_confirm(
+    project_id: int,
+    body: PdfBulkConfirmRequest,
+    access: OwnerAccess,
+    session: SessionDep,
+):
+    """Attach staged PDFs to articles and discard the rest.
+
+    An article that already has a full text is skipped unless ``replace`` is set.
+    """
+    return pdf_bulk_upload.confirm(
+        session, project_id, access.user.id, body.attach, body.discard
+    )
 
 
 @router.get("/{article_id}", response_model=Article)
