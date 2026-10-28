@@ -12,7 +12,7 @@ export default defineConfig({
   testMatch: 'capture.spec.ts',
   workers: 1,
   reporter: 'list',
-  timeout: 300_000,
+  timeout: 180_000,
 
   use: {
     baseURL: 'http://localhost:5173',

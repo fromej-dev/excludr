@@ -1,6 +1,6 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { test, expect, type APIRequestContext, type Browser, type Page } from '@playwright/test'
+import { test, expect, type APIRequestContext, type Browser, type Locator, type Page } from '@playwright/test'
 import {
   articles,
   criteria,
@@ -21,6 +21,7 @@ import {
 const API = '/api/v1'
 const OUT_DIR = fileURLToPath(new URL('../src/assets/screenshots/', import.meta.url))
 const VIEWPORT = { width: 1440, height: 900 }
+const CROP_WIDTH = 1024
 const THEMES = ['light', 'dark'] as const
 type Theme = (typeof THEMES)[number]
 
@@ -184,11 +185,33 @@ async function seed(request: APIRequestContext, browser: Browser) {
     if (theirs) await vote(reviewerApi, aid, 'full_text', theirs, a.ftNotes?.[1], a.ftReason)
   }
 
-  return { pid, token: ownerApi.token, heroId: idOf.get(heroTitle)! }
+  return { pid, token: ownerApi.token }
+}
+
+interface Box {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** CSS-pixel size of each image, read by HomeView for its width/height attributes. */
+const manifest: Record<string, { width: number; height: number }> = {}
+
+/** Capture the area around the given elements (with a margin of page background) as WebP. */
+async function capture(page: Page, targets: Locator[], name: string, theme: Theme, pad = 16) {
+  const boxes = (await Promise.all(targets.map((t) => t.boundingBox()))) as Box[]
+  const left = Math.max(0, Math.min(...boxes.map((b) => b.x)) - pad)
+  const top = Math.max(0, Math.min(...boxes.map((b) => b.y)) - pad)
+  const right = Math.max(...boxes.map((b) => b.x + b.width)) + pad
+  const bottom = Math.max(...boxes.map((b) => b.y + b.height)) + pad
+  const clip = { x: left, y: top, width: Math.round(right - left), height: Math.round(bottom - top) }
+  await saveWebp(page, await page.screenshot({ clip }), `${name}-${theme}`)
+  manifest[name] = { width: clip.width, height: clip.height }
 }
 
 /** Save a PNG screenshot as WebP, encoded by the browser so no image tooling is needed. */
-async function saveWebp(page: Page, png: Buffer, name: string) {
+async function saveWebp(page: Page, png: Buffer, file: string) {
   const dataUrl = await page.evaluate(async (b64) => {
     const img = new Image()
     img.src = `data:image/png;base64,${b64}`
@@ -199,8 +222,11 @@ async function saveWebp(page: Page, png: Buffer, name: string) {
     canvas.getContext('2d')!.drawImage(img, 0, 0)
     return canvas.toDataURL('image/webp', 0.86)
   }, png.toString('base64'))
-  writeFileSync(`${OUT_DIR}${name}.webp`, Buffer.from(dataUrl.split(',')[1], 'base64'))
+  writeFileSync(`${OUT_DIR}${file}.webp`, Buffer.from(dataUrl.split(',')[1], 'base64'))
 }
+
+/** The Card a heading or element sits in. */
+const cardOf = (el: Locator) => el.locator('xpath=ancestor-or-self::div[contains(concat(" ", @class, " "), " bg-card ")][1]')
 
 async function openAs(browser: Browser, token: string, theme: Theme): Promise<Page> {
   const context = await browser.newContext({
@@ -229,13 +255,14 @@ async function settle(page: Page) {
 }
 
 test('capture homepage screenshots', async ({ request, browser }) => {
+  rmSync(OUT_DIR, { recursive: true, force: true })
   mkdirSync(OUT_DIR, { recursive: true })
   const { pid, token } = await seed(request, browser)
 
   for (const theme of THEMES) {
     const page = await openAs(browser, token, theme)
 
-    // 1. Full-text screening: the article, the AI verdict and per-criterion reasoning
+    // Full-text screening: the wide workspace shot (sidebar cropped out) and the AI verdict rail
     await page.goto(`/projects/${pid}/screening?stage=full_text`)
     await expect(page.getByTestId('article-title')).toHaveText(heroTitle)
     await expect(page.getByTestId('ai-verdict')).toContainText('94%')
@@ -243,24 +270,36 @@ test('capture homepage screenshots', async ({ request, browser }) => {
       await page.getByTestId(`criterion-${code}`).getByRole('button', { name: 'Show AI reasoning' }).click()
     }
     await settle(page)
-    await saveWebp(page, await page.screenshot(), `screening-${theme}`)
+    await capture(page, [page.locator('main')], 'workspace', theme, 0)
+    await capture(page, [page.getByTestId('decision-rail')], 'ai-verdict', theme, 10)
 
-    // 2. Reviewer conflicts at full text
+    // The remaining crops are shown at about half the page width on the homepage; a narrower
+    // window lays them out at roughly that size, so their text stays readable
+    await page.setViewportSize({ width: CROP_WIDTH, height: 1400 })
+
+    // One reviewer conflict
     await page.goto(`/projects/${pid}/conflicts`)
     await expect(page.getByTestId('conflict-card')).toHaveCount(2)
     await settle(page)
-    await saveWebp(page, await page.screenshot(), `conflicts-${theme}`)
+    await capture(page, [page.getByTestId('conflict-card').first()], 'conflict', theme)
 
-    // 3. PRISMA flow and agreement statistics
+    // PRISMA flow and agreement statistics (the window is tall enough to hold both)
     await page.goto(`/projects/${pid}/reports`)
     await expect(page.getByTestId('prisma-diagram')).toBeVisible()
+    await expect(page.getByText("Cohen's kappa").first()).toBeVisible()
     await settle(page)
-    // Grow the window to the whole report (a full-page capture would cut the sidebar short)
-    const height = await page.evaluate(() => document.documentElement.scrollHeight)
-    await page.setViewportSize({ width: VIEWPORT.width, height })
-    await settle(page)
-    await saveWebp(page, await page.screenshot(), `reports-${theme}`)
+    await capture(
+      page,
+      [
+        cardOf(page.getByRole('heading', { name: 'PRISMA flow' })),
+        cardOf(page.getByRole('heading', { name: 'Agreement', exact: true })),
+      ],
+      'reports',
+      theme
+    )
 
     await page.context().close()
   }
+
+  writeFileSync(`${OUT_DIR}manifest.json`, `${JSON.stringify(manifest, null, 2)}\n`)
 })

@@ -3,10 +3,13 @@ import { computed, onMounted, ref } from 'vue'
 import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
 import { formatPrice } from '@/stores/billing'
+import { useTheme } from '@/composables/useTheme'
 import type { PublicPlans } from '@/types'
 import PublicHeader from '@/components/layout/PublicHeader.vue'
+import screenshotSizes from '@/assets/screenshots/manifest.json'
 
 const authStore = useAuthStore()
+const { isDark } = useTheme()
 
 // Shown only when configured, so no placeholder address ships
 const contactEmail = import.meta.env.VITE_CONTACT_EMAIL
@@ -30,22 +33,41 @@ const steps = [
   },
 ]
 
-const features = [
+// Generated with `npm run screenshots` from a fictional demo review; one per theme
+const screenshotFiles = import.meta.glob<string>('../assets/screenshots/*.webp', { eager: true, import: 'default' })
+type ScreenshotName = keyof typeof screenshotSizes
+
+const screenshot = (name: ScreenshotName) => ({
+  src: screenshotFiles[`../assets/screenshots/${name}-${isDark.value ? 'dark' : 'light'}.webp`],
+  ...screenshotSizes[name],
+})
+
+const showcase: { image: ScreenshotName; title: string; body: string; alt: string; imageClass?: string }[] = [
   {
+    image: 'ai-verdict',
     title: 'Per-criterion AI assessments',
-    body: 'Not a black-box score. Every recommendation shows which criteria were met, how confident the agent is, and why.',
+    body: 'Not a black-box score. Every recommendation shows which criteria were met, how confident the agent is, and its reasoning. You confirm or override it with a single keystroke.',
+    alt: 'AI verdict panel recommending Include at 94% confidence, with each inclusion criterion marked Met and the AI reasoning for the first two criteria expanded.',
+    imageClass: 'max-w-sm',
   },
+  {
+    image: 'conflict',
+    title: 'Dual screening & conflicts',
+    body: 'Require one or two independent reviewers. When they disagree, the article is flagged with both decisions and notes side by side, and the project owner resolves it.',
+    alt: 'A reviewer conflict: one reviewer included the article and the other excluded it, each with a note explaining why, and a Resolve button.',
+  },
+  {
+    image: 'reports',
+    title: 'PRISMA-ready reporting',
+    body: 'PRISMA 2020 flow counts with exclusion reasons, Cohen’s kappa between reviewers, AI-versus-human accuracy, and CSV or RIS export of your decisions.',
+    alt: 'PRISMA flow diagram from 24 records identified to 6 studies included, above agreement statistics with a Cohen’s kappa of 0.76.',
+  },
+]
+
+const features = [
   {
     title: 'Automatic full-text retrieval',
     body: 'Open-access PDFs and full texts are fetched from Unpaywall, PubMed Central and Europe PMC. Upload the rest manually.',
-  },
-  {
-    title: 'Dual screening & conflicts',
-    body: 'Require one or two independent reviewers. Disagreements are flagged and resolved by the project owner.',
-  },
-  {
-    title: 'PRISMA-ready reporting',
-    body: 'PRISMA flow counts, Cohen’s kappa for inter-rater agreement, and CSV or RIS export of your decisions.',
   },
   {
     title: 'Complete audit trail',
@@ -225,6 +247,22 @@ const plans = computed<Plan[]>(() => {
               <p class="mt-2 text-sm text-muted-foreground">{{ step.body }}</p>
             </li>
           </ol>
+
+          <figure class="mt-16">
+            <img
+              :src="screenshot('workspace').src"
+              :width="screenshot('workspace').width"
+              :height="screenshot('workspace').height"
+              alt="The Excludr screening workspace: a full-text article on the left, and on the right the AI verdict (Include, 94% confidence) with an assessment of each criterion and buttons to include, mark uncertain or exclude."
+              loading="lazy"
+              decoding="async"
+              class="h-auto w-full rounded-lg border shadow-lg"
+              data-testid="home-screenshot"
+            />
+            <figcaption class="mt-3 text-center text-xs text-muted-foreground">
+              Screens from a demo review with fictional articles.
+            </figcaption>
+          </figure>
         </div>
       </section>
 
@@ -235,7 +273,32 @@ const plans = computed<Plan[]>(() => {
           <p class="mx-auto mt-4 max-w-2xl text-center text-muted-foreground">
             AI speeds up the work. Your reviewers stay accountable for every decision.
           </p>
-          <div class="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+
+          <div class="mt-16 space-y-20">
+            <div
+              v-for="(item, i) in showcase"
+              :key="item.image"
+              class="grid items-center gap-8 lg:grid-cols-5 lg:gap-12"
+            >
+              <div class="lg:col-span-2" :class="i % 2 === 1 ? 'lg:order-last' : ''">
+                <h3 class="text-2xl font-semibold">{{ item.title }}</h3>
+                <p class="mt-3 text-muted-foreground">{{ item.body }}</p>
+              </div>
+              <img
+                :src="screenshot(item.image).src"
+                :width="screenshot(item.image).width"
+                :height="screenshot(item.image).height"
+                :alt="item.alt"
+                loading="lazy"
+                decoding="async"
+                class="mx-auto h-auto w-full lg:col-span-3"
+                :class="item.imageClass"
+                data-testid="home-screenshot"
+              />
+            </div>
+          </div>
+
+          <div class="mt-20 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             <div v-for="feature in features" :key="feature.title" class="rounded-lg border bg-card p-6">
               <h3 class="font-semibold">{{ feature.title }}</h3>
               <p class="mt-2 text-sm text-muted-foreground">{{ feature.body }}</p>
