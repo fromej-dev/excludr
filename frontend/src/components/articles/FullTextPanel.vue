@@ -8,6 +8,7 @@ import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Progress from '@/components/ui/Progress.vue'
+import PdfCanvasViewer from '@/components/articles/PdfCanvasViewer.vue'
 
 interface Props {
   article: Article
@@ -41,6 +42,11 @@ const hasPdf = computed(() => !!props.article.full_text_path)
 type ViewTab = 'pdf' | 'text'
 const tab = ref<ViewTab>('pdf')
 const pdfUrl = ref<string | null>(null)
+const pdfBlob = ref<Blob | null>(null)
+// Browsers without a built-in PDF viewer (Chrome on Android, also as an installed
+// app) show only an "Open" placeholder in an iframe that cannot open a blob URL.
+const nativePdfViewer = typeof navigator === 'undefined' || navigator.pdfViewerEnabled !== false
+const pdfFileName = computed(() => `article-${props.article.id}.pdf`)
 const pdfLoading = ref(false)
 const pdfMissing = ref(false)
 const pdfError = ref<string | null>(null)
@@ -48,6 +54,7 @@ const pdfError = ref<string | null>(null)
 const revokePdf = () => {
   if (pdfUrl.value) URL.revokeObjectURL(pdfUrl.value)
   pdfUrl.value = null
+  pdfBlob.value = null
 }
 
 const loadPdf = async () => {
@@ -66,7 +73,8 @@ const loadPdf = async () => {
     })
     // Ignore a response for an article we have already navigated away from
     if (props.article.id !== id) return
-    pdfUrl.value = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+    pdfBlob.value = new Blob([res.data], { type: 'application/pdf' })
+    pdfUrl.value = URL.createObjectURL(pdfBlob.value)
   } catch (err: unknown) {
     if (axios.isAxiosError(err) && err.response?.status === 404) pdfMissing.value = true
     else pdfError.value = 'The PDF could not be loaded.'
@@ -226,13 +234,24 @@ const onFile = async (event: Event) => {
 
     <template v-if="tab === 'pdf'">
       <p v-if="pdfLoading" class="text-sm text-muted-foreground">Loading PDF...</p>
-      <iframe
-        v-else-if="pdfUrl"
-        :src="pdfUrl"
-        title="Full-text PDF"
-        :class="['w-full rounded-md border', pdfHeightClass]"
-        data-testid="pdf-viewer"
-      />
+      <template v-else-if="pdfUrl">
+        <iframe
+          v-if="nativePdfViewer"
+          :src="pdfUrl"
+          title="Full-text PDF"
+          :class="['w-full rounded-md border', pdfHeightClass]"
+          data-testid="pdf-viewer"
+        />
+        <PdfCanvasViewer v-else-if="pdfBlob" :data="pdfBlob" :height-class="pdfHeightClass" />
+        <a
+          :href="pdfUrl"
+          :download="pdfFileName"
+          class="inline-block text-sm text-primary underline-offset-4 hover:underline"
+          data-testid="pdf-download"
+        >
+          Download PDF
+        </a>
+      </template>
       <p v-else-if="pdfError" class="text-sm text-destructive" role="alert">{{ pdfError }}</p>
       <p v-else-if="pdfMissing" class="text-sm text-muted-foreground" data-testid="pdf-missing">
         No PDF is stored for this article<template v-if="text">; switch to the extracted text instead</template>.
