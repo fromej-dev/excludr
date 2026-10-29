@@ -80,4 +80,29 @@ test.describe('Bulk PDF upload', () => {
     const titles = (await res.json()).data.map((a: { title: string }) => a.title).sort()
     expect(titles).toEqual([byTitle.title, byDoi.title].sort())
   })
+
+  test('draws the PDF itself when the browser has no built-in PDF viewer', async ({
+    pageHelper,
+    api,
+    testUser,
+    page,
+    request,
+  }) => {
+    // Chrome on Android (also as an installed app) reports no PDF viewer
+    await page.addInitScript(() => Object.defineProperty(navigator, 'pdfViewerEnabled', { get: () => false }))
+    await pageHelper.loginDirect(testUser.token)
+    const project = await api.createProject(testUser.token)
+    await api.uploadRisFile(testUser.token, project.id, ris([{ title: 'Viewer test', doi: '10.5555/viewer', author: 'Smith, John', year: 2020 }]))
+    const [article] = (await api.getArticles(testUser.token, project.id)).data
+    const upload = await request.post(`/api/v1/projects/${project.id}/articles/${article.id}/fulltext/upload`, {
+      headers: auth(testUser.token),
+      multipart: { file: { name: 'paper.pdf', mimeType: 'application/pdf', buffer: makePdf(['Body text']) } },
+    })
+    expect(upload.ok()).toBeTruthy()
+
+    await page.goto(`/projects/${project.id}/articles/${article.id}`)
+    await expect(page.getByTestId('pdf-canvas-viewer').locator('canvas')).toHaveCount(1)
+    await expect(page.getByTestId('pdf-viewer')).toHaveCount(0)
+    await expect(page.getByTestId('pdf-download')).toBeVisible()
+  })
 })
