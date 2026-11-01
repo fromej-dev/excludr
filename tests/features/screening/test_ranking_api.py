@@ -169,13 +169,27 @@ def test_enabling_prioritization_ranks_immediately(setup, session):
     assert run.scored == len(setup.articles)
 
 
-def test_required_reviewers_change_schedules_rerank(setup, session):
-    _decide(setup, setup.articles[0], "exclude")
+def test_required_reviewers_change_schedules_rerank(setup, session, a_member, auth_as):
+    setup.project.required_reviewers = 2
+    session.add(setup.project)
+    session.commit()
+    r1 = a_member(setup.project, ProjectRole.reviewer)
+    r2 = a_member(setup.project, ProjectRole.reviewer)
+    agreed, lone = setup.articles[0], setup.articles[1]
+    for reviewer in (r1, r2):
+        auth_as(reviewer)
+        _decide(setup, agreed, "exclude")
+    auth_as(r1)
+    _decide(setup, lone, "include")  # blinded while dual screening
+    before = _runs(session, setup.project)
+    assert before and before[-1].labelled_includes == 0
+    auth_as(setup.owner)
     res = setup.client.patch(
-        f"{BASE}/{setup.project.id}", json={"required_reviewers": 2}
+        f"{BASE}/{setup.project.id}", json={"required_reviewers": 1}
     )
     assert res.status_code == 200
-    assert len(_runs(session, setup.project)) <= 2
+    runs = _runs(session, setup.project)
+    assert len(runs) == len(before) + 1 and runs[-1].labelled_includes == 1
 
 
 def test_import_into_prioritized_project_scores_new_records(
@@ -262,3 +276,31 @@ def test_rerank_endpoint_forbidden(setup, a_member, auth_as, role):
     auth_as(member)
     res = setup.client.post(f"{BASE}/{setup.project.id}/screening/rerank")
     assert res.status_code == 403
+
+
+def test_rerank_endpoint_402_when_pass_expired(setup, session, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from app.core.config import Settings
+    from app.features.billing.models import PlanSource, ProjectPlan
+
+    now = datetime.now(timezone.utc)
+    session.add(
+        ProjectPlan(
+            project_id=setup.project.id,
+            tier="pass_250",
+            fulltext_limit=250,
+            activated_at=now - timedelta(days=400),
+            expires_at=now - timedelta(days=1),
+            source=PlanSource.admin,
+        )
+    )
+    session.commit()
+    settings = Settings(_env_file=None, secret_key="x", billing_enabled=True)
+    for target in (
+        "app.features.billing.services.get_settings",
+        "app.features.billing.routers.get_settings",
+    ):
+        monkeypatch.setattr(target, lambda: settings)
+    res = setup.client.post(f"{BASE}/{setup.project.id}/screening/rerank")
+    assert res.status_code == 402

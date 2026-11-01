@@ -58,6 +58,7 @@ def _decide(
 def ranking_on(session, monkeypatch):
     monkeypatch.setattr(ranking, "Session", lambda _engine: nullcontext(session))
     monkeypatch.setattr(get_settings(), "ranking_auto_retrain", True)
+    monkeypatch.setattr(ranking, "run_inline", True)
     ranking.clear()
     yield session
     ranking.clear()
@@ -289,6 +290,7 @@ def test_cold_start_similarity_ranks_question_matches_first():
     "texts,pending,labels",
     [
         ({}, [], {}),
+        ({1: "alpha beta", 2: "beta gamma"}, [], {1: True, 2: False}),
         ({1: "alpha beta", 2: "beta gamma", 3: "delta"}, [1], {2: True, 3: False}),
         ({1: "apple pear", 2: "zebra lion"}, [1, 2], {}),
         ({1: "", 2: "", 3: ""}, [1, 2, 3], {}),
@@ -362,6 +364,8 @@ def _run(method, inc, exc):
         (0, 7, _run("similarity", 0, 0), False, False),
         (1, 3, _run("similarity", 0, 3), False, True),
         (2, 3, _run("model", 1, 3), False, True),
+        (0, 4, _run("model", 1, 3), False, True),
+        (0, 4, _run("similarity", 0, 3), False, False),
         (1, 7, _run("model", 1, 3), False, False),
         (1, 8, _run("model", 1, 3), False, True),
         (1, 3, _run("model", 1, 3), False, False),
@@ -495,3 +499,81 @@ async def test_background_failure_releases_and_notifies(
     await ranking.rerank_in_background(5)
     assert ranking.is_running(5) is False
     assert notifier.await_args.kwargs["data"]["type"] == "ranking_failed"
+
+
+def test_write_scores_leaves_updated_at_and_other_projects(
+    a_project, an_article_in, session
+):
+    from datetime import datetime, timezone
+
+    project, other = a_project(), a_project()
+    mine, foreign = an_article_in(project), an_article_in(other)
+    old = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    for a in (mine, foreign):
+        a.updated_at = old
+        session.add(a)
+    session.commit()
+    ranking.write_scores(session, project.id, {mine.id: 0.7, foreign.id: 0.9})
+    session.commit()
+    session.expire_all()
+    assert session.get(Article, mine.id).relevance_score == pytest.approx(0.7)
+    assert session.get(Article, mine.id).updated_at == old
+    assert session.get(Article, foreign.id).relevance_score is None  # project guard
+
+
+def test_matrix_cache_reused_until_corpus_changes(monkeypatch):
+    ranking.clear()
+    calls = []
+    real = ranking._fit_matrix
+    monkeypatch.setattr(
+        ranking, "_fit_matrix", lambda docs: calls.append(1) or real(docs)
+    )
+    texts = {1: "alpha beta", 2: "beta gamma", 3: "gamma delta", 4: "delta alpha"}
+    first = ranking.compute_scores(1, texts, [3, 4], {1: True, 2: False}, "")
+    second = ranking.compute_scores(1, texts, [3, 4], {1: False, 2: True}, "")
+    assert len(calls) == 1 and first.method == second.method == ranking.METHOD_MODEL
+    ranking.compute_scores(
+        1, {**texts, 4: "changed text"}, [3, 4], {1: True, 2: False}, ""
+    )
+    assert len(calls) == 2
+    for pid in range(10, 20):
+        ranking.compute_scores(pid, texts, [3, 4], {1: True, 2: False}, "")
+    assert len(ranking._matrix_cache) == ranking.MATRIX_CACHE_SIZE
+
+
+@pytest.mark.asyncio
+async def test_background_hands_off_without_blocking(ranking_on, notifier, monkeypatch):
+    import asyncio
+    import threading
+
+    monkeypatch.setattr(ranking, "run_inline", False)
+    gate, used = threading.Event(), []
+
+    def fake(project_id, request):
+        used.append(threading.current_thread().name)
+        gate.wait(5)
+        return None
+
+    monkeypatch.setattr(ranking, "_run_once", fake)
+    await ranking.rerank_in_background(5)  # returns before the worker finishes
+    assert ranking.is_running(5) and not gate.is_set()
+    gate.set()
+    await asyncio.gather(*list(ranking._tasks))
+    assert ranking.is_running(5) is False and used
+
+
+def test_run_once_opens_its_own_session(a_project, an_article_in, session, monkeypatch):
+    opened = []
+
+    def factory(bind):
+        opened.append(bind)
+        return nullcontext(session)
+
+    monkeypatch.setattr(ranking, "Session", factory)
+    project = a_project()
+    project.prioritized_screening = True
+    session.add(project)
+    session.commit()
+    an_article_in(project)
+    assert ranking._run_once(project.id, ranking.RerankRequest()) is not None
+    assert opened == [ranking.engine]

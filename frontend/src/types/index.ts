@@ -28,6 +28,25 @@ export interface User {
   updated_at: string
 }
 
+// Relevance ranking (prioritized screening)
+export interface RankingRun {
+  id: number
+  created_at: string
+  model_version: string
+  method: 'model' | 'similarity' | 'random'
+  trigger: 'auto' | 'manual'
+  triggered_by?: number | null
+  labelled_includes: number
+  labelled_excludes: number
+  scored: number
+  duration_ms: number
+}
+
+export interface RerankResponse {
+  status: 'scheduled' | 'queued'
+  last_run: RankingRun | null
+}
+
 // Project types
 export interface Project {
   id: number

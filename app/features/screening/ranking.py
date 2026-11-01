@@ -25,9 +25,11 @@ single-process deployment; with several API workers two processes could rank the
 same project at once (last writer wins, two ``RankingRun`` rows).
 """
 
+import asyncio
 import logging
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from hashlib import sha256
@@ -207,6 +209,43 @@ def _fit_matrix(docs: list[str]) -> Optional[tuple[TfidfVectorizer, csr_matrix]]
     return None
 
 
+# Fitting TF-IDF dominates a run and does not depend on the labels, so the matrix of
+# the latest corpora is kept. The key is a hash of the ids and texts, which does not
+# change when the ranking itself rewrites scores. In-process, like the registry below.
+MATRIX_CACHE_SIZE = 4
+_matrix_cache: "OrderedDict[int, tuple[str, csr_matrix]]" = OrderedDict()
+_matrix_lock = threading.Lock()
+
+
+def _fingerprint(ids: Sequence[int], docs: Sequence[str]) -> str:
+    digest = sha256()
+    for article_id, doc in zip(ids, docs, strict=True):
+        digest.update(f"{article_id}\0{len(doc)}\0".encode())
+        digest.update(doc.encode())
+    return digest.hexdigest()
+
+
+def _cached_matrix(
+    project_id: int, ids: Sequence[int], docs: list[str]
+) -> Optional[csr_matrix]:
+    """TF-IDF matrix of the corpus, refit only when the ids or texts changed."""
+    key = _fingerprint(ids, docs)
+    with _matrix_lock:
+        hit = _matrix_cache.get(project_id)
+        if hit is not None and hit[0] == key:
+            _matrix_cache.move_to_end(project_id)
+            return hit[1]
+    fitted = _fit_matrix(docs)
+    if fitted is None:
+        return None
+    with _matrix_lock:
+        _matrix_cache[project_id] = (key, fitted[1])
+        _matrix_cache.move_to_end(project_id)
+        while len(_matrix_cache) > MATRIX_CACHE_SIZE:
+            _matrix_cache.popitem(last=False)
+    return fitted[1]
+
+
 @dataclass(frozen=True)
 class Scores:
     """Scores for the pending records and how they were produced (METHOD_*)."""
@@ -229,15 +268,16 @@ def compute_scores(
     scores by probability of relevance; otherwise by cosine similarity to ``query``;
     failing that by seeded random order. Scores are only comparable within one run.
     """
+    if not pending_ids:
+        return Scores(METHOD_RANDOM, {})
     ids = sorted(set(pending_ids) | set(labels))
     docs = [texts.get(i, "") for i in ids]
     row = {article_id: n for n, article_id in enumerate(ids)}
     pending_rows = [row[i] for i in pending_ids]
 
     if True in labels.values() and False in labels.values():
-        fitted = _fit_matrix(docs)
-        if fitted is not None:
-            _, matrix = fitted
+        matrix = _cached_matrix(project_id, ids, docs)
+        if matrix is not None:
             label_ids = sorted(labels)
             model = LogisticRegression(
                 class_weight="balanced",
@@ -281,14 +321,17 @@ def should_retrain(
 
     Runs the first time, whenever a pending record has no score, once the model
     becomes possible, right after a new include, and every ``RETRAIN_EVERY`` new
-    labels. Cold-start scores do not depend on labels, so they are not recomputed.
+    labels. Cold-start scores do not depend on labels, so they are not recomputed (unless
+    the last run was a model run whose labels are gone).
     Counts are compared with the last run; a flipped include plus a new include
     leaves them equal, which the next 5-label step or a manual rerank corrects.
     """
     if last is None or has_unscored:
         return True
     if includes < 1 or excludes < 1:
-        return False
+        # Cold-start scores do not depend on labels, but a model run's scores do: once
+        # the labels collapse to one class, go back to the cold-start order once.
+        return last.method == METHOD_MODEL
     if last.method != METHOD_MODEL:
         return True
     if includes > last.labelled_includes:
@@ -308,13 +351,13 @@ def _pg_update_stmt(project_id: int, chunk: Sequence[tuple[int, float]]) -> Any:
     return (
         update(Article)
         .where(Article.id == v.c.aid, Article.project_id == project_id)
-        .values(relevance_score=v.c.score)
+        .values(relevance_score=v.c.score, updated_at=Article.updated_at)
         .execution_options(synchronize_session=False)
     )
 
 
 def write_scores(session: Session, project_id: int, scores: dict[int, float]) -> None:
-    """Bulk-write ``relevance_score`` (no commit; only that column changes)."""
+    """Bulk-write ``relevance_score`` (no commit; ``updated_at`` is left alone)."""
     items = sorted(scores.items())
     postgres = session.get_bind().dialect.name == "postgresql"
     table = Article.__table__
@@ -329,7 +372,9 @@ def write_scores(session: Session, project_id: int, scores: dict[int, float]) ->
                     table.c.id == bindparam("b_id"),
                     table.c.project_id == project_id,
                 )
-                .values(relevance_score=bindparam("b_score"))
+                .values(
+                    relevance_score=bindparam("b_score"), updated_at=table.c.updated_at
+                )
             )
             session.connection().execute(
                 stmt, [{"b_id": i, "b_score": s} for i, s in chunk]
@@ -452,6 +497,10 @@ class RerankRequest:
         return replace(base, force=self.force or other.force)
 
 
+_train_slot = threading.BoundedSemaphore(1)  # one ranking at a time, process-wide
+# Tests set this so the task is awaited instead of detached.
+run_inline = False
+_tasks: set[asyncio.Task] = set()
 _lock = threading.Lock()
 _running: set[int] = set()
 _follow_up: dict[int, RerankRequest] = {}
@@ -487,11 +536,17 @@ def clear() -> None:
     with _lock:
         _running.clear()
         _follow_up.clear()
+    with _matrix_lock:
+        _matrix_cache.clear()
 
 
 def _run_once(project_id: int, request: RerankRequest) -> Optional[RankingRun]:
-    """One rerank in its own session (runs in a worker thread)."""
-    with Session(engine) as session:
+    """One rerank in its own session (runs in a worker thread).
+
+    Never uses the request's session, and at most one project trains at a time
+    in this process.
+    """
+    with _train_slot, Session(engine) as session:
         run = rerank_project(
             session,
             project_id,
@@ -522,16 +577,8 @@ async def _notify(
         logger.exception("Failed to send ranking notification")
 
 
-async def rerank_in_background(
-    project_id: int,
-    trigger: str = TRIGGER_AUTO,
-    user_id: Optional[int] = None,
-    force: bool = False,
-) -> None:
-    """Rerank a project off the event loop; coalesces overlapping requests."""
-    request: Optional[RerankRequest] = RerankRequest(trigger, user_id, force)
-    if not claim(project_id, request):
-        return  # queued as the follow-up of the running task
+async def _drive(project_id: int, request: Optional[RerankRequest]) -> None:
+    """Run the claimed request and its queued follow-ups, then release the project."""
     try:
         while request is not None:
             try:
@@ -568,6 +615,29 @@ async def rerank_in_background(
             _running.discard(project_id)
             _follow_up.pop(project_id, None)
         raise
+
+
+async def rerank_in_background(
+    project_id: int,
+    trigger: str = TRIGGER_AUTO,
+    user_id: Optional[int] = None,
+    force: bool = False,
+) -> None:
+    """Hand a rerank off and return at once; coalesces overlapping requests.
+
+    The work runs in a detached task on a worker thread with its own session, so
+    the request that scheduled it can finish (and release its database
+    connection) without waiting for the training.
+    """
+    request = RerankRequest(trigger, user_id, force)
+    if not claim(project_id, request):
+        return  # queued as the follow-up of the running task
+    if run_inline:
+        await _drive(project_id, request)
+        return
+    task = asyncio.get_running_loop().create_task(_drive(project_id, request))
+    _tasks.add(task)  # keep a reference until it is done
+    task.add_done_callback(_tasks.discard)
 
 
 def schedule_rerank(
