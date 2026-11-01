@@ -34,13 +34,18 @@ def get_prisma_flow(access: ViewerAccess, rs: ReportingServiceDep):
       count when a project has none);
     * screened = articles that left ``imported``, minus those screened at
       title/abstract elsewhere (``records_screened_elsewhere``: imported with
-      ``title_abstract_screened`` or moved by ``skip-title-abstract``); excluded
-      at title/abstract =
+      ``title_abstract_screened`` or moved by ``skip-title-abstract``) and those
+      closed by the stopping rule; excluded at title/abstract =
       excluded articles whose deciding decision was at that stage;
+    * marked ineligible by automation tools = records closed by the stopping rule
+      without screening; they are part of neither ``records_screened`` nor
+      ``records_excluded``;
     * sought = articles past title/abstract; not retrieved = still
       ``awaiting_full_text``; assessed = sought - not retrieved;
     * full-text exclusions are grouped by the deciding decision's
-      ``primary_exclusion_reason`` (or its first met exclusion criterion code).
+      ``primary_exclusion_reason`` (or its first met exclusion criterion code);
+    * ``screening_method``: a suggested methods sentence (null unless prioritized
+      screening was used).
     """
     return rs.prisma(access.project)
 
@@ -53,7 +58,14 @@ def export_articles(
     format: Annotated[Literal["csv", "ris"], Query()] = "csv",
     status: Annotated[Optional[ArticleStatus], Query()] = None,
 ):
-    """Download the project's articles with decisions as CSV or RIS (owner only)."""
+    """Download the project's articles with decisions as CSV or RIS (owner only).
+
+    Records closed by the stopping rule have the exclusion reason "Not screened
+    (stopping rule)". ``relevance_score`` (CSV column; an ``N1`` note in RIS) is the
+    record's predicted title/abstract relevance from the last ranking before it left
+    the queue (prioritized screening); empty when never ranked. Scores of different
+    ranking runs are not on a common scale.
+    """
     project = access.project
     records = rs.export_records(project, status)
     audit.record_event(

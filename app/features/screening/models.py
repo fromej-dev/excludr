@@ -105,11 +105,13 @@ class ScreeningStats(SQLModel):
     settled. Invariants (for consistent data)::
 
         title_abstract_total = awaiting_screening + title_abstract_completed
-        title_abstract_completed = excluded_title_abstract + full_text_eligible
+        title_abstract_completed = excluded_title_abstract + not_screened_stopping_rule
+                                   + full_text_eligible
         full_text_eligible = awaiting_full_text + awaiting_full_text_screening
                              + full_text_completed
         full_text_retrieved = full_text_eligible - awaiting_full_text
         full_text_completed = included + excluded_full_text
+        excluded = excluded_title_abstract + excluded_full_text
     """
 
     # --- Legacy fields (kept for compatibility) -----------------------------
@@ -126,7 +128,10 @@ class ScreeningStats(SQLModel):
     )
     included: int = Field(default=0, description="Articles finally included")
     excluded: int = Field(
-        default=0, description="Articles finally excluded (at either stage)"
+        default=0,
+        description="Articles finally excluded by reviewers (at either stage). "
+        "Records closed by the stopping rule are counted in "
+        "not_screened_stopping_rule instead",
     )
     uncertain: int = Field(
         default=0,
@@ -162,16 +167,22 @@ class ScreeningStats(SQLModel):
     title_abstract_completed: int = Field(
         default=0,
         description="Articles whose title/abstract stage is settled: advanced to "
-        "full text or excluded at title/abstract",
+        "full text, excluded at title/abstract or closed by the stopping rule",
     )
     excluded_title_abstract: int = Field(
-        default=0, description="Articles excluded at title/abstract"
+        default=0, description="Articles excluded by reviewers at title/abstract"
     )
     title_abstract_skipped: int = Field(
         default=0,
         description="Eligible articles that skipped title/abstract screening "
         "because they were screened elsewhere (counted in title_abstract_total "
         "and title_abstract_completed)",
+    )
+    not_screened_stopping_rule: int = Field(
+        default=0,
+        description="Articles closed at title/abstract without screening by the "
+        "stopping rule (prioritized screening). Counted in title_abstract_total and "
+        "title_abstract_completed; not in excluded or excluded_title_abstract",
     )
     full_text_eligible: int = Field(
         default=0,

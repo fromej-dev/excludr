@@ -56,6 +56,10 @@ def get_articles(
         ),
     ] = False,
     has_full_text: Annotated[Optional[bool], Query()] = None,
+    not_screened_stopping_rule: Annotated[
+        Optional[bool],
+        Query(description="Only (or without) records closed by the stopping rule"),
+    ] = None,
 ):
     """Get all articles for a project with optional filtering.
 
@@ -90,6 +94,18 @@ def get_articles(
 
     if has_full_text is not None:
         query = query.where(Article.full_text_retrieved.is_(has_full_text))
+
+    if not_screened_stopping_rule is not None:
+        query = query.where(
+            Article.not_screened_stopping_rule.is_(not_screened_stopping_rule)
+        )
+
+    if fsp.sorting is not None and fsp.sorting.sort_by == "relevance_score":
+        # NULLS LAST in both directions (PostgreSQL puts NULLs first on DESC)
+        column = Article.relevance_score
+        ordered = column.desc() if fsp.sorting.order == "desc" else column.asc()
+        query = query.order_by(ordered.nulls_last(), Article.id)
+        fsp.sorting = None
 
     return fsp.generate_response(query, session)
 

@@ -4,7 +4,7 @@ import pytest
 
 from app.core.config import get_settings
 from app.features.projects.models import ProjectRole
-from app.features.research.models import Article, ArticleStatus
+from app.features.research.models import Article, ArticleStatus, FinalDecision
 from app.features.research.services import ArticleService
 from app.features.screening.models import (
     DecisionSource,
@@ -54,7 +54,9 @@ def _assert_invariants(s):
     )
     assert (
         s["title_abstract_completed"]
-        == s["excluded_title_abstract"] + s["full_text_eligible"]
+        == s["excluded_title_abstract"]
+        + s["not_screened_stopping_rule"]
+        + s["full_text_eligible"]
     )
     assert s["full_text_eligible"] == (
         s["awaiting_full_text"]
@@ -69,10 +71,16 @@ def _assert_invariants(s):
 def _assert_matches_prisma(client, project, s):
     prisma = client.get(f"{BASE}/{project.id}/prisma").json()
     assert prisma["screening"] == {
-        "records_screened": s["title_abstract_total"] - s["title_abstract_skipped"],
+        "records_screened": s["title_abstract_total"]
+        - s["title_abstract_skipped"]
+        - s["not_screened_stopping_rule"],
         "records_excluded": s["excluded_title_abstract"],
         "records_screened_elsewhere": s["title_abstract_skipped"],
     }
+    assert (
+        prisma["identification"]["marked_ineligible_by_automation"]
+        == s["not_screened_stopping_rule"]
+    )
     assert prisma["retrieval"] == {
         "reports_sought": s["full_text_eligible"],
         "reports_not_retrieved": s["awaiting_full_text"],
@@ -134,6 +142,7 @@ def test_single_reviewer_pipeline(auth_as, a_project, an_article_in, session):
         "title_abstract_completed": 5,
         "excluded_title_abstract": 1,
         "title_abstract_skipped": 0,
+        "not_screened_stopping_rule": 0,
         "full_text_eligible": 4,
         "full_text_retrieved": 3,
         "awaiting_full_text_screening": 1,
@@ -144,6 +153,59 @@ def test_single_reviewer_pipeline(auth_as, a_project, an_article_in, session):
     _assert_invariants(s)
     _assert_matches_prisma(client, project, s)
     assert untouched  # only part of the setup
+
+
+def _close_by_rule(an_article_in, project, **kw):
+    """An article closed by the stopping rule: excluded without any human decision."""
+    return an_article_in(
+        project,
+        status=ArticleStatus.excluded,
+        current_stage=ScreeningStage.completed,
+        final_decision=FinalDecision.excluded,
+        not_screened_stopping_rule=True,
+        **kw,
+    )
+
+
+def test_stopping_rule_records_counted_separately(
+    auth_as, a_project, an_article_in, session
+):
+    client, owner = auth_as()
+    project = a_project(owner)
+    ta_ex, inc, ft_ex, pend = (an_article_in(project) for _ in range(4))
+    _post(client, project, ta_ex, "exclude")
+    for a in (inc, ft_ex):
+        _post(client, project, a, "include")
+        _retrieve(session, a)
+    _post(client, project, inc, "include", stage=FT)
+    _post(client, project, ft_ex, "exclude", stage=FT)
+    _close_by_rule(an_article_in, project)
+    ns2 = _close_by_rule(an_article_in, project)
+    session.add(
+        ScreeningDecision(
+            article_id=ns2.id,
+            stage=ScreeningStage.title_abstract,
+            decision=ScreeningDecisionType.include,
+            source=DecisionSource.ai_agent,
+        )
+    )
+    session.commit()
+
+    s = _stats(client, project)
+    assert s["not_screened_stopping_rule"] == 2
+    assert s["excluded"] == 2
+    assert s["excluded_title_abstract"] == 1
+    assert s["excluded_full_text"] == 1
+    assert s["title_abstract_total"] == 6
+    assert s["title_abstract_completed"] == 5
+    assert s["title_abstract_decided"] == 3
+    assert s["awaiting_screening"] == 1
+    assert s["screened_title_abstract"] == 4  # 3 human + the AI decision on ns2
+    assert s["full_text_eligible"] == 2
+    assert s["uncertain"] == 0
+    _assert_invariants(s)
+    _assert_matches_prisma(client, project, s)
+    assert pend  # only part of the setup
 
 
 def test_full_text_uncertain_counts_while_open(

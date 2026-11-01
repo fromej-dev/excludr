@@ -600,6 +600,8 @@ class ScreeningService:
         title/abstract by having a human full-text decision: a human decision can
         only be recorded at the article's current stage, so an article only gets
         one after it passed title/abstract, and only human decisions move it.
+        Records closed by the stopping rule (no decision) are counted in
+        ``not_screened_stopping_rule``, not as exclusions.
         """
 
         def has_decision(stage: ScreeningStage, human_only: bool):
@@ -621,6 +623,7 @@ class ScreeningService:
                 has_decision(ta, True).label("ta_human"),
                 has_decision(ft, True).label("ft_human"),
                 Article.title_abstract_skipped.label("skipped"),
+                Article.not_screened_stopping_rule.label("not_screened"),
             )
             .where(Article.project_id == project_id)
             .subquery()
@@ -629,7 +632,17 @@ class ScreeningService:
         rows = self.session.exec(select(*cols, func.count()).group_by(*cols)).all()
 
         stats = ScreeningStats()
-        for status, stage, ta_any, ft_any, ta_human, ft_human, skipped, n in rows:
+        for (
+            status,
+            stage,
+            ta_any,
+            ft_any,
+            ta_human,
+            ft_human,
+            skipped,
+            not_screened,
+            n,
+        ) in rows:
             status, stage = ArticleStatus(status), ScreeningStage(stage)
             stats.total_articles += n
             stats.screened_title_abstract += n if ta_any else 0
@@ -650,6 +663,9 @@ class ScreeningService:
                 stats.included += n
                 stats.full_text_completed += n
             elif status == ArticleStatus.excluded:
+                if not_screened:  # closed by the stopping rule, never screened
+                    stats.not_screened_stopping_rule += n
+                    continue
                 stats.excluded += n
                 if excluded_ft:
                     stats.excluded_full_text += n

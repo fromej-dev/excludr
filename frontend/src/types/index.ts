@@ -240,7 +240,7 @@ export interface ScreeningStats {
   /** Legacy: ≥1 full-text decision of any source, AI included. Use full_text_completed for progress. */
   screened_full_text: number
   included: number
-  /** Excluded at either stage. */
+  /** Excluded by reviewers at either stage (records closed by the stopping rule are not included). */
   excluded: number
   /** Open articles where a reviewer's current decision at the article's stage is "uncertain". */
   uncertain: number
@@ -257,6 +257,8 @@ export interface ScreeningStats {
   /** Title/abstract stage settled: advanced to full text or excluded there. */
   title_abstract_completed: number
   excluded_title_abstract: number
+  /** Closed at title/abstract by the stopping rule without screening (counted in title_abstract_completed, not in excluded). */
+  not_screened_stopping_rule: number
   /** Passed title/abstract (at full text, or included/excluded at full text). */
   full_text_eligible: number
   /** Eligible and past retrieval (= full_text_eligible − awaiting_full_text). */
@@ -571,6 +573,8 @@ export interface PrismaFlow {
     records_identified: number
     duplicates_removed: number
     records_after_duplicates_removed: number
+    /** Records closed by the stopping rule without screening. */
+    marked_ineligible_by_automation: number
   }
   screening: {
     records_screened: number
@@ -584,6 +588,8 @@ export interface PrismaFlow {
     exclusion_reasons: Array<{ reason: string; count: number }>
   }
   included: { studies_included: number }
+  /** Suggested methods sentence; null unless prioritized screening was used. */
+  screening_method: string | null
 }
 
 export type ExportFormat = 'csv' | 'ris'
