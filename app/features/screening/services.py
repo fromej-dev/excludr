@@ -243,7 +243,7 @@ class ScreeningService:
         query = self.pending_articles_query(
             project.id, stage, reviewer_id, project.required_reviewers
         )
-        return self.session.exec(query.order_by(*order.clauses)).first()
+        return self.session.exec(query.order_by(*order.clauses).limit(1)).first()
 
     # ------------------------------------------------------------------
     # Dual screening: submitting, resolving and evaluating decisions
