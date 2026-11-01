@@ -39,6 +39,11 @@ export interface Project {
   owner_id: number
   number_of_articles: number
   required_reviewers: number
+  prioritized_screening: boolean
+  stop_after_consecutive_excludes: number | null
+  ranking_min_random: number
+  prioritized_screening_enabled_at: string | null
+  stopping_rule_applied_at: string | null
 }
 
 export interface ProjectCreate {
@@ -52,6 +57,9 @@ export interface ProjectUpdate {
   description?: string
   review_question?: string
   required_reviewers?: 1 | 2
+  prioritized_screening?: boolean
+  stop_after_consecutive_excludes?: number | null
+  ranking_min_random?: number
 }
 
 // Criteria types

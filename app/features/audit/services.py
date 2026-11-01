@@ -24,6 +24,7 @@ FULLTEXT_BATCH_FINISHED = "fulltext_batch.finished"
 FULLTEXT_PDFS_UPLOADED = "fulltext.pdfs_uploaded"
 EXPORT_CREATED = "export.created"
 PROJECT_SETTINGS_UPDATED = "project.settings_updated"
+PROJECT_SCREENING_RULE_UPDATED = "project.screening_rule_updated"
 TITLE_ABSTRACT_SKIPPED = "articles.title_abstract_skipped"
 
 

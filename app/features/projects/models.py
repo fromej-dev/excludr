@@ -46,6 +46,43 @@ class ProjectUpdate(ProjectBase):
         le=2,
         description="Human reviewers required per article and stage (1 or 2)",
     )
+    prioritized_screening: Optional[bool] = Field(
+        default=None,
+        description="Serve the title/abstract queue by predicted relevance",
+    )
+    stop_after_consecutive_excludes: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=100000,
+        description="Stopping rule: consecutive title/abstract excludes after which "
+        "the owner may close the rest (null clears it)",
+    )
+    ranking_min_random: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=10000,
+        description="Title/abstract decisions served in random order before ranking",
+    )
+
+
+# Settings of prioritized screening; changes to them get their own audit event.
+SCREENING_RULE_FIELDS = (
+    "prioritized_screening",
+    "stop_after_consecutive_excludes",
+    "ranking_min_random",
+)
+# Fields a client may clear by sending an explicit null.
+CLEARABLE_FIELDS = frozenset({"stop_after_consecutive_excludes"})
+
+
+def update_values(data: ProjectUpdate) -> dict:
+    """Fields a ``ProjectUpdate`` sets: unset and null ones are dropped, except
+    the clearable fields, which accept an explicit null."""
+    return {
+        k: v
+        for k, v in data.model_dump(exclude_unset=True).items()
+        if v is not None or k in CLEARABLE_FIELDS
+    }
 
 
 class Project(ProjectBase, table=True):
@@ -63,6 +100,36 @@ class Project(ProjectBase, table=True):
         le=2,
         sa_column_kwargs={"server_default": "1", "nullable": False},
         description="Human reviewers required per article and stage (1 or 2)",
+    )
+    prioritized_screening: bool = Field(
+        default=False,
+        description="Serve the title/abstract queue by predicted relevance",
+        sa_column_kwargs={"server_default": sa_false(), "nullable": False},
+    )
+    stop_after_consecutive_excludes: Optional[int] = Field(
+        default=100,
+        ge=1,
+        le=100000,
+        description="Stopping rule: consecutive title/abstract excludes after which "
+        "the owner may close the rest (null = no stopping rule)",
+        sa_column_kwargs={"server_default": "100", "nullable": True},
+    )
+    ranking_min_random: int = Field(
+        default=0,
+        ge=0,
+        le=10000,
+        description="Title/abstract decisions served in random order before ranking",
+        sa_column_kwargs={"server_default": "0", "nullable": False},
+    )
+    prioritized_screening_enabled_at: Optional[datetime] = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+        description="When prioritized screening was last switched on (set by the server)",
+    )
+    stopping_rule_applied_at: Optional[datetime] = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+        description="When the stopping rule last closed the remaining records",
     )
 
     owner: "User" = Relationship(back_populates="projects")  # noqa: F821

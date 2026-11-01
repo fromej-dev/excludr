@@ -1,8 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import func, false as sa_false, Column, JSON
+from sqlalchemy import DateTime, func, false as sa_false, Column, JSON
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -190,3 +190,30 @@ class ScreeningStats(SQLModel):
     excluded_full_text: int = Field(
         default=0, description="Articles excluded at full text"
     )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class RankingRun(SQLModel, table=True):
+    """One retraining of a project's title/abstract relevance model."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="project.id", index=True, ondelete="CASCADE")
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_type=DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
+    model_version: str = Field(max_length=50, description="e.g. tfidf-logreg-v1")
+    method: str = Field(max_length=20, description="model | similarity | random")
+    trigger: str = Field(max_length=20, description="auto | manual")
+    triggered_by: Optional[int] = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    labelled_includes: int = Field(default=0)
+    labelled_excludes: int = Field(default=0)
+    scored: int = Field(default=0, description="Records given a relevance_score")
+    duration_ms: int = Field(default=0)
