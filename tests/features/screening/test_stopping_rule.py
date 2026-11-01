@@ -12,7 +12,7 @@ from app.features.ai_usage.models import AIUsage
 from app.features.audit.models import AuditEvent
 from app.features.billing.models import ProjectPlan
 from app.features.criteria.models import Criterion, CriterionType
-from app.features.projects.models import ProjectRole
+from app.features.projects.models import ImportBatch, ProjectRole
 from app.features.research.models import Article, ArticleStatus, FinalDecision
 from app.features.screening import flows, inflight, stopping
 from app.features.screening.models import (
@@ -319,6 +319,7 @@ def test_get_stopping_rule_status_for_viewer(env):
         "threshold": 2,
         "consecutive_excludes": 1,
         "met": False,
+        "can_apply": False,
         "remaining": 2,
         "closable": 1,
         "screened": 2,
@@ -833,3 +834,101 @@ def test_reapply_after_new_import_needs_fresh_streak(env):
     assert second["applied_at"] > first["applied_at"]
     assert len(_events(session, env.project, "screening.stopping_rule_applied")) == 2
     assert u1 and n3 and n4
+
+
+# --- votes spanning the window, API votes, imports --------------------------
+
+
+def _spanning(env, pre_decision, post_decision, reviewers):
+    t = _now()
+    env.prio(since=t, reviewers=reviewers)
+    r1, r2 = env.member(env.project), env.member(env.project)
+    a1, a2 = env.arts(2)
+    pre, post = t - timedelta(hours=1), t + timedelta(hours=1)
+    _vote(env.session, a1, r1, pre_decision, created_at=pre)
+    _vote(env.session, a1, r2, post_decision, created_at=post)
+    return r1, r2, a1, a2, post
+
+
+@pytest.mark.parametrize(
+    "pre,post",
+    [(D.include, D.exclude), (D.uncertain, D.exclude), (D.exclude, D.include)],
+)
+def test_dual_conflict_spanning_window_resets(env, pre, post):
+    r1, r2, a1, a2, at = _spanning(env, pre, post, reviewers=2)
+    _vote(env.session, a2, r1, D.exclude, created_at=at)
+    _ex(env.session, a2, r2, created_at=at)
+    assert streak(env.session, env.project) == 1  # only a2, after the reset
+
+
+def test_single_uncertain_before_window_resets(env):
+    r1, r2, a1, a2, _ = _spanning(env, D.uncertain, D.exclude, reviewers=1)
+    _close_ta(env.session, a1, D.exclude)
+    # a1 settled as an exclude after r1's older uncertain vote reset the streak
+    assert streak(env.session, env.project) == 1
+
+
+def test_dual_votes_through_api_and_include_resolution(env):
+    env.prio(threshold=2, reviewers=2)
+    r1, r2 = env.member(env.project), env.member(env.project)
+    a1, a2, a3 = env.arts(3)
+
+    def vote(user, art, decision):
+        env.auth_as(user)
+        res = env.client.post(
+            f"{env.url}/articles/{art.id}/decisions",
+            json={"stage": "title_abstract", "decision": decision},
+        )
+        assert res.status_code == 201
+
+    vote(r1, a1, "exclude")
+    vote(r2, a1, "exclude")
+    vote(r1, a2, "include")
+    vote(r2, a2, "exclude")
+    assert streak(env.session, env.project) == 0  # conflict
+    env.auth_as(env.owner)
+    res = env.client.post(
+        f"{env.url}/articles/{a2.id}/resolve",
+        json={"decision": "include", "reason": "relevant"},
+    )
+    assert res.status_code in (200, 201)
+    assert streak(env.session, env.project) == 0  # include resolution
+    vote(r1, a3, "exclude")
+    vote(r2, a3, "exclude")
+    assert streak(env.session, env.project) == 1
+
+
+def test_import_after_met_needs_fresh_streak(env):
+    env.prio(threshold=2)
+    old = _now() - timedelta(hours=3)
+    for a in env.arts(2):
+        _ex(env.session, a, env.owner, created_at=old)
+    assert env.client.get(f"{env.url}/stopping-rule").json()["met"] is True
+    batch = ImportBatch(project_id=env.project.id, filename="u.ris", format="ris")
+    env.session.add(batch)
+    env.session.commit()
+    env.arts(2)
+    body = env.client.get(f"{env.url}/stopping-rule").json()
+    assert body["met"] is False and body["consecutive_excludes"] == 0
+    assert body["counting_since"][:19] == _naive(batch.created_at).isoformat()[:19]
+    assert _apply(env).status_code == 409
+
+
+def test_can_apply_false_when_nothing_closable(env):
+    _met(env)
+    (p1,) = env.arts(1)
+    _vote(env.session, p1, env.owner, D.uncertain)
+    body = env.client.get(f"{env.url}/stopping-rule").json()
+    assert body["can_apply"] is False
+    env.arts(1)
+    # the uncertain vote reset the streak only if it came after the excludes
+    assert env.client.get(f"{env.url}/stopping-rule").json()["can_apply"] is False
+
+
+def test_ai_decision_rejected_on_closed_record(closed):
+    env = closed
+    res = env.client.post(
+        f"{env.url}/articles/{env.closed[0].id}/decisions",
+        json={"stage": "title_abstract", "decision": "include", "source": "ai_agent"},
+    )
+    assert res.status_code == 409

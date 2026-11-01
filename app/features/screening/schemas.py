@@ -136,6 +136,7 @@ class StoppingRuleStatus(SQLModel):
     threshold: Optional[int]
     consecutive_excludes: int  # 0 when not prioritized
     met: bool
+    can_apply: bool  # met and there are records apply would close
     remaining: int  # records at title/abstract screening, with or without votes
     closable: int  # of those, with no human title/abstract decision (what apply closes)
     screened: int  # settled human title/abstract outcomes, all time

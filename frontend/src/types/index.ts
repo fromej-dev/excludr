@@ -287,6 +287,8 @@ export interface StoppingRuleStatus {
   threshold: number | null
   consecutive_excludes: number
   met: boolean
+  /** Met and there are records applying would close; show the Apply action only then. */
+  can_apply: boolean
   /** Records at title/abstract screening, with or without votes. */
   remaining: number
   /** Of those, without any human title/abstract decision (what applying closes). */

@@ -175,6 +175,11 @@ def create_decision(
             raise HTTPException(
                 status_code=403, detail="Only the owner can record AI decisions"
             )
+        if article.not_screened_stopping_rule:
+            raise HTTPException(
+                status_code=409,
+                detail="This record was closed by the stopping rule; the owner can reopen it",
+            )
         return ss.create_decision(article_id, data, None)
 
     was_waiting = article.status == ArticleStatus.awaiting_full_text

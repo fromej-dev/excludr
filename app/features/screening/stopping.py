@@ -5,15 +5,19 @@ signal a relevant record", over the project's human title/abstract decisions onl
 (AI decisions, full-text decisions, records that skipped title/abstract and
 records closed by the rule are ignored). Decision ids give the order.
 
-- **Window.** Only decisions made at or after ``counting_since`` count: the later of
-  ``Project.prioritized_screening_enabled_at`` and ``Project.stopping_rule_applied_at``.
-  So applying the rule restarts the count (a later import needs a fresh streak, or
-  ``force``), and reopening clears ``stopping_rule_applied_at`` (an undo).
-- **Reset events.** Every *current* vote (each reviewer's latest, non-resolution) and
-  every owner resolution that is ``include`` or ``uncertain``. That covers settled
+- **Window.** Only decisions made at or after ``counting_since`` count: the latest of
+  ``Project.prioritized_screening_enabled_at``, ``Project.stopping_rule_applied_at``
+  and the project's newest ``ImportBatch``. So applying the rule or importing more
+  records restarts the count (the new records need a fresh streak, or ``force``),
+  and reopening clears ``stopping_rule_applied_at`` (an undo).
+- **Reset events.** An article resets the streak when it has a *current* vote (each
+  reviewer's latest, non-resolution; looked up over all time, not just the window) or
+  an owner resolution that is ``include`` or ``uncertain``. That covers settled
   includes, uncertain votes, conflicts, and (dual screening) an include vote that
-  still waits for the second reviewer. A superseded include/uncertain vote no
-  longer resets.
+  still waits for the second reviewer. The reset sits at the article's latest
+  in-window decision (an article with none is ignored), so a vote from before the
+  window still counts once the other reviewer votes inside it. A superseded
+  include/uncertain vote no longer resets.
 - **Exclude events.** Articles whose title/abstract stage settled as an exclude
   (excluded, completed, no human full-text decision), positioned at the id of the
   decision that settled them. Single votes in dual screening add nothing until the
@@ -23,7 +27,8 @@ The streak is the number of exclude events after the last reset. It depends only
 decisions, not on the current ``required_reviewers``, so a settings change cannot
 rewrite it. Approximations: when ``required_reviewers`` drops from 2 to 1, articles
 settle at their last vote's position; on SQLite a decision in the same wall-clock
-second as the cutoff, but after it, can be missed (PostgreSQL compares properly).
+second as the cutoff, but after it, can be missed (its ``now()`` has no sub-second part;
+PostgreSQL compares properly).
 
 ``apply_rule`` closes only records at title/abstract with no human title/abstract
 decision at all. Partly reviewed, conflicted and uncertain records stay open
@@ -43,7 +48,7 @@ from sqlalchemy import and_, case, or_, update
 from sqlalchemy.orm import aliased
 from sqlmodel import Session, func, select
 
-from app.features.projects.models import Project
+from app.features.projects.models import ImportBatch, Project
 from app.features.research.models import Article, ArticleStatus, FinalDecision
 from app.features.websocket.schemas import NotificationLevel
 from app.features.websocket.services import NotificationService
@@ -104,54 +109,63 @@ def rule_enabled(project: Project) -> bool:
     )
 
 
-def counting_since(project: Project) -> Optional[datetime]:
-    """Start of the streak window (tz-aware UTC); None when neither date is set."""
+def counting_since(session: Session, project: Project) -> Optional[datetime]:
+    """Start of the streak window (tz-aware UTC); None when no date is set."""
+    last_import = session.exec(
+        select(func.max(ImportBatch.created_at)).where(
+            ImportBatch.project_id == project.id
+        )
+    ).one()
     dates = [
         _utc(d)
         for d in (
             project.prioritized_screening_enabled_at,
             project.stopping_rule_applied_at,
+            last_import,
         )
         if d is not None
     ]
     return max(dates) if dates else None
 
 
-def _base_conds(project_id: int, since: Optional[datetime]) -> list[Any]:
-    conds = [
+def _base_conds(project_id: int) -> list[Any]:
+    return [
         Article.project_id == project_id,
         SD.stage == ScreeningStage.title_abstract,
         SD.source == DecisionSource.human,
         Article.title_abstract_skipped.is_(False),
         Article.not_screened_stopping_rule.is_(False),
     ]
-    if since is not None:
-        # floor to the second: SQLite's now() has no sub-second part
-        conds.append(SD.created_at >= since.replace(microsecond=0))
-    return conds
 
 
 def compute_streak(session: Session, project: Project) -> Streak:
     """Consecutive settled excludes since the last reset (0, no queries, if not prioritized)."""
     if not project.prioritized_screening:
-        return Streak(0, None, counting_since(project))
-    since = counting_since(project)
-    conds = _base_conds(project.id, since)
+        return Streak(0, None, None)
+    since = counting_since(session, project)
+    base = _base_conds(project.id)
+    conds = base if since is None else [*base, SD.created_at >= since]
 
+    # current votes over all time, so a vote from before the window still counts
     current_votes = (
         select(func.max(SD.id))
         .join(Article, SD.article_id == Article.id)
-        .where(*conds, SD.is_resolution.is_(False))
+        .where(*base, SD.is_resolution.is_(False))
         .group_by(SD.article_id, SD.reviewer_id)
+    )
+    reset_articles = (
+        select(SD.article_id)
+        .join(Article, SD.article_id == Article.id)
+        .where(
+            *base,
+            SD.decision != ScreeningDecisionType.exclude,
+            or_(SD.is_resolution.is_(True), SD.id.in_(current_votes)),
+        )
     )
     last_reset = session.exec(
         select(func.max(SD.id))
         .join(Article, SD.article_id == Article.id)
-        .where(
-            *conds,
-            SD.decision != ScreeningDecisionType.exclude,
-            or_(SD.is_resolution.is_(True), SD.id.in_(current_votes)),
-        )
+        .where(*conds, SD.article_id.in_(reset_articles))
     ).one()
 
     ft = aliased(SD)
@@ -178,7 +192,8 @@ def compute_streak(session: Session, project: Project) -> Streak:
     )
     query = select(func.count()).select_from(settled)
     if last_reset is not None:
-        query = query.where(settled.c.sid > last_reset)
+        # >=: an article that reset the streak and then settled as an exclude counts
+        query = query.where(settled.c.sid >= last_reset)
     return Streak(session.exec(query).one(), last_reset, since)
 
 
@@ -261,6 +276,9 @@ def status(session: Session, project: Project) -> StoppingRuleStatus:
         threshold=threshold,
         consecutive_excludes=streak.consecutive_excludes,
         met=enabled and streak.consecutive_excludes >= threshold,
+        can_apply=enabled
+        and streak.consecutive_excludes >= threshold
+        and counts.closable > 0,
         remaining=counts.remaining,
         closable=counts.closable,
         screened=counts.screened,
@@ -299,6 +317,8 @@ def apply_rule(
         StoppingRuleError: 409 if prioritization is off, no threshold is set,
             nothing is closable, or the rule is not met and ``force`` is false.
     """
+    # serialize applications (and reopen) per project; no-op on SQLite
+    session.refresh(project, with_for_update=True)
     if not project.prioritized_screening:
         raise StoppingRuleError(409, "Prioritized screening is off for this project")
     threshold = project.stop_after_consecutive_excludes
@@ -327,6 +347,17 @@ def apply_rule(
         )
         .execution_options(synchronize_session=False)
     ).rowcount
+    if closed == 0:  # a vote or another application got there first
+        session.rollback()
+        raise StoppingRuleError(409, "No unscreened records left at title/abstract")
+    left_open = session.exec(
+        select(func.count())
+        .select_from(Article)
+        .where(
+            Article.project_id == project.id,
+            Article.status == ArticleStatus.screening,
+        )
+    ).one()
     applied_at = datetime.now(timezone.utc)
     project.stopping_rule_applied_at = applied_at
     session.add(project)
@@ -336,7 +367,7 @@ def apply_rule(
     run = latest_run(session, project.id)
     return ApplyStoppingRuleResult(
         closed=closed,
-        left_open=counts.remaining - counts.closable,
+        left_open=left_open,
         not_started=counts.not_started,
         screened=counts.screened,
         threshold=threshold,
@@ -359,6 +390,7 @@ def reopen(session: Session, project: Project) -> ReopenNotScreenedResult:
     Raises:
         StoppingRuleError: 409 if no record is closed.
     """
+    session.refresh(project, with_for_update=True)
     flagged = (
         Article.project_id == project.id,
         Article.not_screened_stopping_rule.is_(True),

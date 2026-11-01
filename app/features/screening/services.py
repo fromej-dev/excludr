@@ -354,6 +354,9 @@ class ScreeningService:
             ScreeningError: 409 if the article is not currently at ``data.stage`` or
                 was closed by the stopping rule.
         """
+        # lock the row so a concurrent stopping-rule application and this vote
+        # serialize (no-op on SQLite), then judge the fresh state
+        self.session.refresh(article, with_for_update=True)
         if article.not_screened_stopping_rule:
             raise ScreeningError(
                 409,
@@ -394,6 +397,7 @@ class ScreeningService:
         Raises:
             ScreeningError: 409 if the article is not currently in conflict.
         """
+        self.session.refresh(article, with_for_update=True)
         stage = article.current_stage
         if (
             stage not in SCREENING_STAGES
