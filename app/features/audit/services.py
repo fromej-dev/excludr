@@ -26,6 +26,7 @@ EXPORT_CREATED = "export.created"
 PROJECT_SETTINGS_UPDATED = "project.settings_updated"
 PROJECT_SCREENING_RULE_UPDATED = "project.screening_rule_updated"
 TITLE_ABSTRACT_SKIPPED = "articles.title_abstract_skipped"
+SCREENING_RERANK_REQUESTED = "screening.rerank_requested"
 
 
 def record_event(

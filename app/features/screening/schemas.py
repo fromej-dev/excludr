@@ -1,7 +1,7 @@
 """Request/response schemas for dual screening, conflicts and agreement."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import field_validator
 from sqlmodel import Field, SQLModel
@@ -100,3 +100,25 @@ class RunAIRequest(SQLModel):
     article_ids: Optional[list[int]] = Field(
         default=None, min_length=1, max_length=MAX_RUN_AI_ARTICLE_IDS
     )
+
+
+class RankingRunRead(SQLModel):
+    """One relevance-ranking run (read shape of ``RankingRun``)."""
+
+    id: int
+    created_at: datetime
+    model_version: str
+    method: str
+    trigger: str
+    triggered_by: Optional[int] = None
+    labelled_includes: int
+    labelled_excludes: int
+    scored: int
+    duration_ms: int
+
+
+class RerankResponse(SQLModel):
+    """Answer to a manual rerank request (the state before the request)."""
+
+    status: Literal["scheduled", "queued"]  # queued = runs right after the current run
+    last_run: Optional[RankingRunRead] = None

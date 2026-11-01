@@ -25,6 +25,14 @@ def reset_login_rate_limiter():
 
 
 @pytest.fixture(autouse=True)
+def no_auto_ranking(monkeypatch):
+    """Automatic relevance retraining is off; ranking tests turn it back on."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "ranking_auto_retrain", False)
+
+
+@pytest.fixture(autouse=True)
 def no_external_lookups(monkeypatch):
     """Keep imports and screening decisions off the network.
 

@@ -32,6 +32,7 @@ from .schemas import (
     SkipTitleAbstractResult,
 )
 from .services import ArticleServiceDep, skip_title_abstract
+from app.features.screening.ranking import schedule_rerank
 from app.features.screening.services import ScreeningServiceDep
 
 router = APIRouter(tags=["Articles"], prefix="/projects/{project_id}/articles")
@@ -190,9 +191,12 @@ def start_screening(
     project_id: int,
     access: OwnerAccess,
     article_service: ArticleServiceDep,
+    background_tasks: BackgroundTasks,
 ):
     """Move all imported articles to screening status."""
     count = article_service.start_screening(project_id)
+    if count > 0:
+        schedule_rerank(background_tasks, access.project, user_id=access.user.id)
     return {"message": f"Started screening for {count} articles", "count": count}
 
 

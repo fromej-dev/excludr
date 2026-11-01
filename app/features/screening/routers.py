@@ -31,6 +31,8 @@ from .schemas import (
     AgreementRead,
     ConflictRead,
     ResolveRequest,
+    RankingRunRead,
+    RerankResponse,
     RunAIRequest,
 )
 from .models import (
@@ -42,7 +44,7 @@ from .models import (
 )
 from .services import ScreeningError, ScreeningServiceDep, ScreeningService
 from .flows import batch_ai_screening_flow
-from . import inflight
+from . import inflight, ranking
 from sqlmodel import and_, or_, select
 
 logger = logging.getLogger(__name__)
@@ -171,6 +173,10 @@ def create_decision(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if not was_waiting:
         schedule_auto_retrieval(background_tasks, [article], access.user.id)
+    if data.stage == ScreeningStage.title_abstract:
+        ranking.schedule_rerank(
+            background_tasks, access.project, user_id=access.user.id
+        )
     audit.record_event(
         session,
         project_id,
@@ -220,6 +226,10 @@ def resolve_conflict(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if not was_waiting:
         schedule_auto_retrieval(background_tasks, [article], access.user.id)
+    if decision.stage == ScreeningStage.title_abstract:
+        ranking.schedule_rerank(
+            background_tasks, access.project, user_id=access.user.id
+        )
     audit.record_event(
         session,
         project_id,
@@ -236,6 +246,49 @@ def resolve_conflict(
     )
     session.refresh(decision)
     return decision
+
+
+@router.post("/rerank", response_model=RerankResponse, status_code=202)
+def rerank(
+    project_id: int,
+    access: OwnerAccess,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+):
+    """Re-rank the title/abstract queue now (owner only).
+
+    Runs in the background whatever the automatic-retraining setting says and
+    ignores the retrain throttle. The response describes the state before this
+    request: ``queued`` when a run is already going (this one follows it).
+    """
+    if not access.project.prioritized_screening:
+        raise HTTPException(
+            status_code=409, detail="Prioritized screening is off for this project"
+        )
+    previous = ranking.last_run(session, project_id)
+    queued = ranking.is_running(project_id)
+    ranking.schedule_rerank(
+        background_tasks,
+        access.project,
+        trigger=ranking.TRIGGER_MANUAL,
+        user_id=access.user.id,
+        force=True,
+    )
+    audit.record_event(
+        session,
+        project_id,
+        audit.SCREENING_RERANK_REQUESTED,
+        "project",
+        project_id,
+        access.user.id,
+        {},
+    )
+    return RerankResponse(
+        status="queued" if queued else "scheduled",
+        last_run=RankingRunRead.model_validate(previous, from_attributes=True)
+        if previous
+        else None,
+    )
 
 
 @router.get("/conflicts", response_model=list[ConflictRead])

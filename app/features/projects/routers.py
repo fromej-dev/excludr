@@ -27,6 +27,7 @@ from .permissions import OwnerAccess, OwnerAccessAnyState, ViewerAccess
 from .services import ProjectService, ProjectServiceDep
 from app.features.research.flows import schedule_auto_retrieval
 from app.features.research.models import Article, ArticleStatus
+from app.features.screening.ranking import schedule_rerank
 from app.features.screening.services import ScreeningService
 from .flows import parse_ris_file_flow, parse_pubmed_file_flow
 
@@ -122,6 +123,8 @@ async def upload_ris_file(
             title_abstract_screened,
         )
         _retrieve_skipped(session, background_tasks, result, access.user.id)
+        if result.get("articles_created"):
+            schedule_rerank(background_tasks, access.project, user_id=access.user.id)
 
         return JSONResponse(
             content={
@@ -182,6 +185,8 @@ async def upload_pubmed_file(
             title_abstract_screened,
         )
         _retrieve_skipped(session, background_tasks, result, access.user.id)
+        if result.get("articles_created"):
+            schedule_rerank(background_tasks, access.project, user_id=access.user.id)
 
         return JSONResponse(
             content={
@@ -282,6 +287,11 @@ def update_project(
         )
     if settings_changes or rule_changes:
         session.refresh(project)  # the audit commit expired it
+    if "prioritized_screening" in rule_changes:
+        schedule_rerank(background_tasks, project, user_id=access.user.id, force=True)
+    elif project.required_reviewers != reviewers_before:
+        # Labels may change under the new rule
+        schedule_rerank(background_tasks, project, user_id=access.user.id)
     return project
 
 
