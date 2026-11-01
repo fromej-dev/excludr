@@ -3,10 +3,14 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from sqlmodel import Field, SQLModel
 
-from .models import ScreeningDecisionType, ScreeningStage
+from .models import (  # noqa: F401
+    ScreeningDecisionType,
+    ScreeningStage,
+    StoppingRuleSummary,
+)
 
 
 class ResolveRequest(SQLModel):
@@ -122,3 +126,58 @@ class RerankResponse(SQLModel):
 
     status: Literal["scheduled", "queued"]  # queued = runs right after the current run
     last_run: Optional[RankingRunRead] = None
+
+
+class StoppingRuleStatus(SQLModel):
+    """Answer of ``GET .../screening/stopping-rule``."""
+
+    enabled: bool  # prioritized and a threshold is set
+    prioritized: bool
+    threshold: Optional[int]
+    consecutive_excludes: int  # 0 when not prioritized
+    met: bool
+    remaining: int  # records at title/abstract screening, with or without votes
+    closable: int  # of those, with no human title/abstract decision (what apply closes)
+    screened: int  # settled human title/abstract outcomes, all time
+    not_screened: int  # records currently closed by the rule
+    last_ranked_at: Optional[datetime]
+    applied_at: Optional[datetime]
+    counting_since: Optional[datetime]  # start of the streak window
+    last_run: Optional[RankingRunRead] = None
+
+
+class ApplyStoppingRuleRequest(SQLModel):
+    force: bool = False
+    reason: Optional[str] = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _reason_when_forced(self) -> "ApplyStoppingRuleRequest":
+        if self.force and not (self.reason or "").strip():
+            raise ValueError(
+                "A reason is required to apply the stopping rule before it is met"
+            )
+        self.reason = self.reason.strip() if self.reason else None
+        return self
+
+
+class ApplyStoppingRuleResult(SQLModel):
+    closed: int
+    left_open: (
+        int  # at title/abstract with human votes (partly reviewed, conflict, uncertain)
+    )
+    not_started: int  # legacy 'imported' records, untouched
+    screened: int
+    threshold: int
+    consecutive_excludes: int
+    forced: bool  # True only when the rule was not met
+    reason: Optional[str]
+    applied_at: datetime
+    counting_since: Optional[datetime]
+    ranking_run_id: Optional[int]
+    model_version: Optional[str]
+    ranking_method: Optional[str]
+
+
+class ReopenNotScreenedResult(SQLModel):
+    reopened: int
+    previous_applied_at: Optional[datetime]

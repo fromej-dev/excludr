@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_REVIEW_QUESTION = "No specific review question provided"
 
 
+class _Ineligible(Exception):
+    """The article may not be screened (it was closed by the stopping rule)."""
+
+
 async def _notify(
     project_id: int,
     message: str,
@@ -73,7 +77,7 @@ async def batch_ai_screening_flow(
     total = len(article_ids)
     screened = 0
     errors = 0
-    skipped = 0  # refused by the plan (allowance used up, or project read-only)
+    skipped = 0  # refused by the plan, or closed by the stopping rule
     activity = (
         AIActivity.screening_lookahead if targeted else AIActivity.screening_batch
     )
@@ -100,6 +104,8 @@ async def batch_ai_screening_flow(
                 article = session.get(Article, article_id)
                 if article is None or article.project_id != project_id:
                     raise LookupError(f"Article {article_id} not found in project")
+                if article.not_screened_stopping_rule:
+                    raise _Ineligible("Closed by the stopping rule")
                 if not criteria:
                     raise LookupError("No active criteria")
                 if project is not None:
@@ -120,7 +126,7 @@ async def batch_ai_screening_flow(
                     confidence=decision.confidence_score,
                 )
                 level = NotificationLevel.INFO
-            except billing.BillingError as exc:
+            except (billing.BillingError, _Ineligible) as exc:
                 skipped += 1
                 data.update(type="ai_screening_skipped", error=str(exc))
                 level = NotificationLevel.WARNING

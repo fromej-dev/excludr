@@ -31,7 +31,9 @@ def _post(client, project, article, decision, stage=TA):
 def _stats(client, project):
     res = client.get(f"{BASE}/{project.id}/screening/stats")
     assert res.status_code == 200
-    return res.json()
+    body = res.json()
+    assert body.pop("stopping_rule") is None  # only for prioritized projects
+    return body
 
 
 def _retrieve(session, article):

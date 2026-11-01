@@ -268,6 +268,64 @@ export interface ScreeningStats {
   /** Full-text stage settled (included + excluded_full_text). */
   full_text_completed: number
   excluded_full_text: number
+  /** Stopping-rule progress; null unless prioritized screening is on. */
+  stopping_rule?: StoppingRuleSummary | null
+}
+
+export interface StoppingRuleSummary {
+  enabled: boolean
+  threshold: number | null
+  consecutive_excludes: number
+  met: boolean
+  applied_at: string | null
+}
+
+/** GET /screening/stopping-rule */
+export interface StoppingRuleStatus {
+  enabled: boolean
+  prioritized: boolean
+  threshold: number | null
+  consecutive_excludes: number
+  met: boolean
+  /** Records at title/abstract screening, with or without votes. */
+  remaining: number
+  /** Of those, without any human title/abstract decision (what applying closes). */
+  closable: number
+  /** Settled human title/abstract outcomes, all time. */
+  screened: number
+  /** Records currently closed by the rule. */
+  not_screened: number
+  last_ranked_at: string | null
+  applied_at: string | null
+  counting_since: string | null
+  last_run: RankingRun | null
+}
+
+export interface ApplyStoppingRuleRequest {
+  force?: boolean
+  /** Required when `force` is true. */
+  reason?: string | null
+}
+
+export interface ApplyStoppingRuleResult {
+  closed: number
+  left_open: number
+  not_started: number
+  screened: number
+  threshold: number
+  consecutive_excludes: number
+  forced: boolean
+  reason: string | null
+  applied_at: string
+  counting_since: string | null
+  ranking_run_id: number | null
+  model_version: string | null
+  ranking_method: string | null
+}
+
+export interface ReopenNotScreenedResult {
+  reopened: number
+  previous_applied_at: string | null
 }
 
 // Pagination types (fastapi-fsp structure)

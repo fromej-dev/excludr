@@ -36,6 +36,7 @@ from ..projects.models import Project
 from ..research.models import Article, ArticleStatus
 from ..research.services import ArticleService
 from ..users.models import User
+from . import stopping
 from .queue import QueueOrder, queue_order
 from ...core.database import SessionDep
 
@@ -350,8 +351,14 @@ class ScreeningService:
             earlier decision by the same reviewer.
 
         Raises:
-            ScreeningError: 409 if the article is not currently at ``data.stage``.
+            ScreeningError: 409 if the article is not currently at ``data.stage`` or
+                was closed by the stopping rule.
         """
+        if article.not_screened_stopping_rule:
+            raise ScreeningError(
+                409,
+                "This record was closed by the stopping rule; the owner can reopen it",
+            )
         if data.stage not in SCREENING_STAGES or article.current_stage != data.stage:
             raise ScreeningError(
                 409, f"Article is not at the '{data.stage.value}' stage"
@@ -576,7 +583,9 @@ class ScreeningService:
             ),
         )
 
-    def get_screening_stats(self, project_id: int) -> ScreeningStats:
+    def get_screening_stats(
+        self, project_id: int, project: Optional[Project] = None
+    ) -> ScreeningStats:
         """Exact screening statistics for a project (see ``ScreeningStats``).
 
         Two queries: one grouped count of articles by status, stage and which
@@ -666,6 +675,8 @@ class ScreeningService:
                     stats.full_text_decided += n
 
         stats.uncertain = self._count_open_uncertain(project_id)
+        if project is not None and project.prioritized_screening:
+            stats.stopping_rule = stopping.summary(self.session, project)
         return stats
 
     def _count_open_uncertain(self, project_id: int) -> int:

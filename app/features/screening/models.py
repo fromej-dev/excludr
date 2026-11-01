@@ -86,6 +86,16 @@ class ScreeningDecision(ScreeningDecisionBase, table=True):
     reviewer: Optional["User"] = Relationship()  # noqa: F821
 
 
+class StoppingRuleSummary(SQLModel):
+    """Stopping-rule progress in short form (inside ``ScreeningStats``)."""
+
+    enabled: bool
+    threshold: Optional[int] = None
+    consecutive_excludes: int = 0
+    met: bool = False
+    applied_at: Optional[datetime] = None
+
+
 class ScreeningStats(SQLModel):
     """Response schema for screening statistics.
 
@@ -189,6 +199,12 @@ class ScreeningStats(SQLModel):
     )
     excluded_full_text: int = Field(
         default=0, description="Articles excluded at full text"
+    )
+
+    # --- Prioritized screening ---------------------------------------------
+    stopping_rule: Optional[StoppingRuleSummary] = Field(
+        default=None,
+        description="Stopping-rule progress (null unless prioritized screening is on)",
     )
 
 
