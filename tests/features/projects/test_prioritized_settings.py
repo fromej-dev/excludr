@@ -1,6 +1,7 @@
 """Prioritized screening settings: defaults, PATCH rules, audit, cleanup, migration."""
 
 import os
+from datetime import datetime, timezone
 import subprocess
 import sys
 from pathlib import Path
@@ -67,7 +68,7 @@ def test_owner_updates_screening_rule(auth_as, a_project, session):
     assert project.ranking_min_random == 20
 
 
-def test_enabled_at_set_only_on_off_to_on(auth_as, a_project):
+def test_enabled_at_set_only_on_off_to_on(auth_as, a_project, session):
     client, owner = auth_as()
     url = f"{API}/{a_project(owner).id}"
     first = client.patch(url, json={"prioritized_screening": True}).json()[
@@ -80,8 +81,13 @@ def test_enabled_at_set_only_on_off_to_on(auth_as, a_project):
     assert resend["prioritized_screening_enabled_at"] == first
     off = client.patch(url, json={"prioritized_screening": False}).json()
     assert off["prioritized_screening_enabled_at"] == first
+    project = session.get(Project, int(url.rsplit("/", 1)[1]))
+    old = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    project.prioritized_screening_enabled_at = old
+    session.add(project)
+    session.commit()
     again = client.patch(url, json={"prioritized_screening": True}).json()
-    assert again["prioritized_screening_enabled_at"] >= first
+    assert datetime.fromisoformat(again["prioritized_screening_enabled_at"]) > old
 
 
 def test_threshold_can_be_cleared(auth_as, a_project):

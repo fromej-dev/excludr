@@ -133,6 +133,8 @@ export interface Article {
   full_text_retrieval_error?: string | null
   /** Sent to full text without title/abstract screening here (screened elsewhere). */
   title_abstract_skipped?: boolean
+  relevance_score?: number | null
+  not_screened_stopping_rule?: boolean
   status: ArticleStatus
   current_stage: ScreeningStage
   final_decision: FinalDecision

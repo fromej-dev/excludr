@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime, timezone
 from enum import Enum
-from sqlalchemy import Index, UniqueConstraint
+from sqlalchemy import Index, UniqueConstraint, text
 from sqlalchemy import false as sa_false
 from sqlmodel import Field, SQLModel, Column, JSON, Text, Relationship
 
@@ -57,7 +57,11 @@ class Article(SQLModel, table=True):
         UniqueConstraint("project_id", "doi", name="uq_article_project_doi"),
         UniqueConstraint("project_id", "pmid", name="uq_article_project_pmid"),
         UniqueConstraint("project_id", "pmcid", name="uq_article_project_pmcid"),
-        Index("ix_article_project_relevance", "project_id", "relevance_score"),
+        Index(
+            "ix_article_project_relevance",
+            "project_id",
+            text("relevance_score DESC NULLS LAST"),
+        ),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)

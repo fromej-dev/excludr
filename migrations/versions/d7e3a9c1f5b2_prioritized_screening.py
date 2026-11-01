@@ -65,7 +65,9 @@ def upgrade() -> None:
             )
         )
     op.create_index(
-        "ix_article_project_relevance", "article", ["project_id", "relevance_score"]
+        "ix_article_project_relevance",
+        "article",
+        ["project_id", sa.text("relevance_score DESC NULLS LAST")],
     )
     op.create_table(
         "rankingrun",
