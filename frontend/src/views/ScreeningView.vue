@@ -19,6 +19,7 @@ import ShortcutLegend from '@/components/screening/ShortcutLegend.vue'
 import FullTextPanel from '@/components/articles/FullTextPanel.vue'
 import { decisionVariant, normalizeEvaluations } from '@/utils/criteriaEvaluations'
 import { useAiLookahead } from '@/composables/useAiLookahead'
+import { idsAfter } from '@/utils/queue'
 
 const route = useRoute()
 const router = useRouter()
@@ -118,11 +119,21 @@ const nextArticle = async () => {
     return
   }
   // Skip without deciding: pick another queued article we have not visited
-  const queue = await screeningStore.fetchQueueIds(projectId.value, stage.value)
   const seen = new Set(history.value)
   const currentId = article.value.id
-  const candidates = queue.filter((id) => !seen.has(id))
-  const nextId = candidates.find((id) => id > currentId) ?? candidates[0]
+  // The reviewer's own decision means the article has left their queue: do not look for it
+  const inQueue = myDecision.value === null
+  const queue = await screeningStore.fetchQueueIds(projectId.value, stage.value, {
+    enough: (ids) => {
+      if (!inQueue) return ids.some((id) => !seen.has(id))
+      const i = ids.indexOf(currentId)
+      return i !== -1 && ids.slice(i + 1).some((id) => !seen.has(id))
+    },
+  })
+  // Next unseen article after the current one in server order, wrapping to the top
+  const nextId =
+    idsAfter(queue, currentId, 1, { exclude: seen, wrap: true })?.[0] ??
+    queue.find((id) => !seen.has(id)) // current not in the queue: top unseen
   if (nextId === undefined) {
     wsStore.addNotification('No other articles in the queue', 'info', 2500)
     return

@@ -63,6 +63,8 @@ def get_articles(
     must be waiting for screening at ``stage`` (``screening`` status for
     title_abstract, ``full_text_retrieved`` for full_text), not yet decided by the
     caller, and not already covered by enough reviewers in dual-screening mode.
+    Without ``sort_by`` the items come in queue order, the same order
+    ``GET /screening/next`` serves, so page 1 item 1 is what ``next`` returns.
     """
 
     if pending_for_me:
@@ -70,12 +72,15 @@ def get_articles(
             raise HTTPException(
                 status_code=422, detail="pending_for_me needs a screening stage"
             )
+        queue_stage = stage or ScreeningStage.title_abstract
         query = ss.pending_articles_query(
             project_id,
-            stage or ScreeningStage.title_abstract,
+            queue_stage,
             reviewer_id=access.user.id,
             required_reviewers=access.project.required_reviewers,
         )
+        if fsp.sorting is None:  # an explicit sort_by replaces the queue order
+            query = query.order_by(*ss.queue_order(access.project, queue_stage).clauses)
     elif status:
         query = article_service.get_articles_by_status(project_id, status)
     elif stage:

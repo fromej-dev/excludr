@@ -244,7 +244,7 @@ def test_next_skips_own_decisions_and_is_blind(team, an_article_in):
     team.as_(team.r2)
     body = team.client.get(url).json()
     assert body["article"]["id"] == a1.id
-    assert set(body) == {"article"}
+    assert set(body) == {"article", "queue_order", "random_start_remaining"}
     assert "screening_decisions" not in body["article"]
 
 

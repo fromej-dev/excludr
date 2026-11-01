@@ -398,9 +398,13 @@ export interface PdfBulkConfirmResponse {
 }
 
 // Screening: next article, AI batch, conflicts
+export type QueueOrderMode = 'id' | 'random_start' | 'ranked'
+
 export interface NextArticleResponse {
   message?: string
   article: Article | null
+  queue_order?: QueueOrderMode
+  random_start_remaining?: number
 }
 
 export interface StaleAiResponse {

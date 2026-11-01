@@ -87,17 +87,26 @@ def get_next_article(
 ):
     """Get the next article this reviewer has not yet screened at the given stage.
 
+    Articles come in queue order: ids, or for prioritized title/abstract screening a
+    seeded random start followed by relevance. ``queue_order`` names the mode and
+    ``random_start_remaining`` counts the outcomes left in the random start.
     The response never includes other reviewers' decisions (blind screening).
     """
+    order = ss.queue_order(access.project, stage)
     article = ss.get_next_article_for_screening(
-        project_id,
-        stage,
-        reviewer_id=access.user.id,
-        required_reviewers=access.project.required_reviewers,
+        access.project, stage, reviewer_id=access.user.id, order=order
     )
+    queue = {
+        "queue_order": order.mode.value,
+        "random_start_remaining": order.random_start_remaining,
+    }
     if article is None:
-        return {"message": "No more articles to screen at this stage", "article": None}
-    return {"article": article}
+        return {
+            "message": "No more articles to screen at this stage",
+            "article": None,
+            **queue,
+        }
+    return {"article": article, **queue}
 
 
 @router.get(

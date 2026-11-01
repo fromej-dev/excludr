@@ -36,6 +36,7 @@ from ..projects.models import Project
 from ..research.models import Article, ArticleStatus
 from ..research.services import ArticleService
 from ..users.models import User
+from .queue import QueueOrder, queue_order
 from ...core.database import SessionDep
 
 SCREENING_STAGES = (ScreeningStage.title_abstract, ScreeningStage.full_text)
@@ -226,18 +227,23 @@ class ScreeningService:
             query = query.where(Article.id.notin_(fully_reviewed))
         return query
 
+    def queue_order(self, project: Project, stage: ScreeningStage) -> QueueOrder:
+        """Queue order at ``stage`` (see ``queue.queue_order``)."""
+        return queue_order(self.session, project, stage)
+
     def get_next_article_for_screening(
         self,
-        project_id: int,
+        project: Project,
         stage: ScreeningStage,
         reviewer_id: Optional[int] = None,
-        required_reviewers: int = 1,
+        order: Optional[QueueOrder] = None,
     ) -> Article | None:
-        """Get the next article this reviewer should screen at the given stage."""
+        """First article of the reviewer's queue at ``stage``, in queue order."""
+        order = order or self.queue_order(project, stage)
         query = self.pending_articles_query(
-            project_id, stage, reviewer_id, required_reviewers
+            project.id, stage, reviewer_id, project.required_reviewers
         )
-        return self.session.exec(query.order_by(Article.id)).first()
+        return self.session.exec(query.order_by(*order.clauses)).first()
 
     # ------------------------------------------------------------------
     # Dual screening: submitting, resolving and evaluating decisions
