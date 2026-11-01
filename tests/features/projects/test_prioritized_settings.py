@@ -87,7 +87,8 @@ def test_enabled_at_set_only_on_off_to_on(auth_as, a_project, session):
     session.add(project)
     session.commit()
     again = client.patch(url, json={"prioritized_screening": True}).json()
-    assert datetime.fromisoformat(again["prioritized_screening_enabled_at"]) > old
+    new = datetime.fromisoformat(again["prioritized_screening_enabled_at"])
+    assert new.replace(tzinfo=timezone.utc) > old
 
 
 def test_threshold_can_be_cleared(auth_as, a_project):

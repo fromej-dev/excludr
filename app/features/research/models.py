@@ -1,7 +1,9 @@
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime, timezone
 from enum import Enum
-from sqlalchemy import Index, UniqueConstraint, text
+from sqlalchemy import Index, UniqueConstraint, column
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.sql.expression import ColumnElement
 from sqlalchemy import false as sa_false
 from sqlmodel import Field, SQLModel, Column, JSON, Text, Relationship
 
@@ -17,6 +19,26 @@ from app.features.screening.models import ScreeningStage
 def _utcnow() -> datetime:
     """Return the current time as a timezone-aware UTC datetime."""
     return datetime.now(timezone.utc)
+
+
+class _DescNullsLast(ColumnElement):
+    """Index expression ``col DESC NULLS LAST``; plain ``DESC`` where the
+    database cannot index NULLS LAST (SQLite, used in tests)."""
+
+    inherit_cache = True
+
+    def __init__(self, col):
+        self.col = col
+
+
+@compiles(_DescNullsLast)
+def _desc(element, compiler, **kw):
+    return f"{compiler.process(element.col, **kw)} DESC"
+
+
+@compiles(_DescNullsLast, "postgresql")
+def _desc_nulls_last_pg(element, compiler, **kw):
+    return f"{compiler.process(element.col, **kw)} DESC NULLS LAST"
 
 
 class ArticleStatus(str, Enum):
@@ -60,7 +82,7 @@ class Article(SQLModel, table=True):
         Index(
             "ix_article_project_relevance",
             "project_id",
-            text("relevance_score DESC NULLS LAST"),
+            _DescNullsLast(column("relevance_score")),
         ),
     )
 

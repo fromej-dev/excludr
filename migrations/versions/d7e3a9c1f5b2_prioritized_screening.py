@@ -64,10 +64,12 @@ def upgrade() -> None:
                 nullable=False,
             )
         )
+    # SQLite cannot index NULLS LAST; there it is plain DESC.
+    nulls_last = " NULLS LAST" if op.get_bind().dialect.name == "postgresql" else ""
     op.create_index(
         "ix_article_project_relevance",
         "article",
-        ["project_id", sa.text("relevance_score DESC NULLS LAST")],
+        ["project_id", sa.text(f"relevance_score DESC{nulls_last}")],
     )
     op.create_table(
         "rankingrun",
