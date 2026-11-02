@@ -436,4 +436,78 @@ test.describe('Prioritized screening and the stopping rule', () => {
     await expect(page.getByTestId('prisma-automation')).toHaveCount(0)
     await page.waitForLoadState('networkidle')
   })
+
+  // Needs the statistical-rule backend (stopping_rule_type, recall_target, stopping_alpha).
+  test('owner switches to the statistical stopping rule', async ({ page, pageHelper, api, testUser, request }) => {
+    const { projectId } = await setup(api, testUser, 3)
+    await api.updateProject(testUser.token, projectId, { prioritized_screening: true })
+    await pageHelper.loginDirect(testUser.token)
+    await pageHelper.goToProjectTab(projectId, 'overview')
+
+    await page.getByTestId('stopping-rule-toggle').check()
+    await page.getByTestId('rule-type-statistical').check()
+    await page.getByTestId('recall-target').fill('90')
+    await page.getByTestId('stopping-alpha').fill('0.01')
+    await page.getByTestId('prioritization-save').click()
+    await expect(toast(page, 'Screening rule saved')).toBeVisible()
+
+    await page.reload()
+    await expect(page.getByTestId('rule-type-statistical')).toBeChecked()
+    await expect(page.getByTestId('recall-target')).toHaveValue('90')
+    await expect(page.getByTestId('stopping-alpha')).toHaveValue('0.01')
+    const project = await (await request.get(`/api/v1/projects/${projectId}`, { headers: auth(testUser.token) })).json()
+    expect(project.stopping_rule_type).toBe('statistical')
+    expect(project.recall_target).toBe(0.9)
+    expect(project.stopping_alpha).toBe(0.01)
+  })
+
+  // Mocked API responses: runs without the statistical backend.
+  test('screening shows the recall test progress and the dialog the p-value (mocked)', async ({
+    page,
+    pageHelper,
+    api,
+    testUser,
+  }) => {
+    const { projectId } = await setup(api, testUser, 5, { stop_after_consecutive_excludes: 3 })
+    const statistical = { rule_type: 'statistical', recall_target: 0.95, alpha: 0.05 }
+    await page.route('**/screening/stats', async (route) => {
+      const body = await (await route.fetch()).json()
+      await route.fulfill({
+        json: {
+          ...body,
+          stopping_rule: { ...body.stopping_rule, ...statistical, enabled: true, met: false, p_value: 0.21, test_reason: 'ok' },
+        },
+      })
+    })
+    await page.route('**/screening/stopping-rule', async (route) => {
+      const body = await (await route.fetch()).json()
+      await route.fulfill({
+        json: {
+          ...body,
+          ...statistical,
+          enabled: true,
+          met: false,
+          statistical: {
+            p_value: 0.21, met: false, relevant_found: 4, screened: 40, sample_size: 30, unscreened: 100,
+            min_missed_under_h0: 6, best_sample: 30, excludes_needed: 12, reason: 'ok',
+          },
+        },
+      })
+    })
+    await pageHelper.loginDirect(testUser.token)
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await expect(page.getByTestId('stopping-recall')).toContainText('Recall ≥ 95% not yet shown (p = 0.21, needs < 0.05)')
+    await expect(page.getByTestId('stopping-streak')).toHaveCount(0)
+
+    await pageHelper.goToProjectTab(projectId, 'overview')
+    await page.getByTestId('apply-rule-open').click()
+    await expect(page.getByTestId('apply-rule-not-met')).toContainText('p = 0.21 for recall below 95%')
+    await expect(page.getByTestId('apply-rule-not-met')).toContainText('About 12 more consecutive excludes')
+    await expect(page.getByTestId('apply-rule-confirm')).toBeDisabled()
+    await page.getByTestId('apply-rule-reason').fill('Time-boxed rapid review')
+    await expect(page.getByTestId('apply-rule-confirm')).toBeEnabled()
+  })
+
+  // TODO once the backend has landed: seed 20 includes + 900 excludes (p = 0.0099), apply, and check the
+  // methods text ("Callaghan and Müller-Hansen (2020)", "p = 0.0099").
 })

@@ -5,7 +5,7 @@ import type { QueueOrderMode, ScreeningStage, ScreeningStats } from '@/types'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Progress from '@/components/ui/Progress.vue'
-import { formatDate } from '@/utils/format'
+import { formatDate, formatP, formatPercent } from '@/utils/format'
 
 interface Props {
   stage: Exclude<ScreeningStage, 'completed'>
@@ -32,7 +32,22 @@ const visible = computed(
     (rule.value !== null || props.queueOrder === 'ranked' || props.queueOrder === 'random_start')
 )
 
-const showStreak = computed(() => !!rule.value?.enabled && rule.value.threshold !== null)
+const statistical = computed(() => !!rule.value?.enabled && rule.value.rule_type === 'statistical')
+const showStreak = computed(
+  () => !statistical.value && !!rule.value?.enabled && rule.value.threshold !== null
+)
+const target = computed(() => formatPercent(rule.value?.recall_target ?? 0.95))
+const alphaText = computed(() => String(rule.value?.alpha ?? 0.05))
+const recallText = computed(() => {
+  const r = rule.value
+  if (!r) return ''
+  if (r.test_reason === 'no_relevant') return 'Recall test starts after the first include'
+  if (r.test_reason === 'no_sample') {
+    return 'Recall test: no records screened since the last import or rule change'
+  }
+  if (r.p_value === null || r.p_value === undefined) return `Recall ≥ ${target.value} not yet shown`
+  return `Recall ≥ ${target.value} not yet shown (${formatP(r.p_value)}, needs < ${alphaText.value})`
+})
 const streakPct = computed(() =>
   rule.value?.threshold ? Math.min(100, (rule.value.consecutive_excludes / rule.value.threshold) * 100) : 0
 )
@@ -72,9 +87,24 @@ const showApplied = computed(() => !!rule.value?.applied_at && notScreened.value
       </span>
     </div>
 
+    <span
+      v-if="statistical && !met"
+      class="tabular-nums"
+      aria-live="polite"
+      data-testid="stopping-recall"
+    >
+      {{ recallText }}
+    </span>
+
     <div v-if="met" class="flex flex-wrap items-center gap-3" data-testid="stopping-rule-met">
       <span>
-        <strong>Stopping rule met.</strong> {{ rule?.threshold }} consecutive records were excluded.
+        <strong>Stopping rule met.</strong>
+        <template v-if="statistical">
+          <span data-testid="stopping-recall">
+            Recall below {{ target }} rejected ({{ formatP(rule?.p_value ?? 0) }} &lt; {{ alphaText }}).
+          </span>
+        </template>
+        <template v-else>{{ rule?.threshold }} consecutive records were excluded.</template>
       </span>
       <template v-if="isOwner">
         <Button

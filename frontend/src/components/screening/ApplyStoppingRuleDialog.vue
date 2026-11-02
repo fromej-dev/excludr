@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useStoppingRuleStore } from '@/stores/stoppingRule'
 import { useWebSocketStore } from '@/stores/websocket'
 import type { ApplyStoppingRuleResult } from '@/types'
+import { formatP, formatPercent } from '@/utils/format'
 import Dialog from '@/components/ui/Dialog.vue'
 import Button from '@/components/ui/Button.vue'
 import Label from '@/components/ui/Label.vue'
@@ -39,6 +40,10 @@ watch(
 
 const s = computed(() => store.status)
 const forced = computed(() => !!s.value && !s.value.met)
+const stat = computed(() => (s.value?.rule_type === 'statistical' ? (s.value.statistical ?? null) : null))
+const isStatistical = computed(() => s.value?.rule_type === 'statistical')
+const targetText = computed(() => formatPercent(s.value?.recall_target ?? 0.95))
+const alphaText = computed(() => String(s.value?.alpha ?? 0.05))
 const leftOpen = computed(() => (s.value ? Math.max(0, s.value.remaining - s.value.closable) : 0))
 const canSubmit = computed(
   () =>
@@ -86,20 +91,47 @@ const submit = async () => {
       </p>
       <template v-else>
         <p v-if="!s.enabled" class="text-muted-foreground">
-          Set a stopping threshold in Screening settings first.
+          Choose a stopping rule in Screening settings first.
         </p>
         <template v-else>
-          <p v-if="s.met">
-            {{ s.consecutive_excludes }} consecutive excludes (rule: {{ s.threshold }}).
-          </p>
-          <div
-            v-else
-            class="rounded-md border border-uncertain/60 bg-uncertain-soft p-3 text-uncertain-soft-foreground"
-            data-testid="apply-rule-not-met"
-          >
-            The rule is not met yet: {{ s.consecutive_excludes }} of {{ s.threshold }} consecutive
-            excludes. Closing records now must be justified in your report.
-          </div>
+          <template v-if="isStatistical">
+            <p v-if="s.met && stat" data-testid="apply-rule-statistical">
+              Recall below {{ targetText }} rejected at α = {{ alphaText }}
+              ({{ formatP(stat.p_value ?? 0) }}), from {{ stat.relevant_found }} included of
+              {{ stat.screened }} screened.
+            </p>
+            <div
+              v-else
+              class="rounded-md border border-uncertain/60 bg-uncertain-soft p-3 text-uncertain-soft-foreground"
+              data-testid="apply-rule-not-met"
+            >
+              <template v-if="stat?.reason === 'no_relevant'">
+                No relevant record has been found yet, so recall cannot be tested.
+              </template>
+              <template v-else-if="stat && stat.p_value !== null">
+                The rule is not met yet: {{ formatP(stat.p_value) }} for recall below {{ targetText }}
+                (needs p &lt; {{ alphaText }}).
+                <template v-if="stat.excludes_needed">
+                  About {{ stat.excludes_needed }} more consecutive excludes would meet it.
+                </template>
+              </template>
+              <template v-else>The rule is not met yet: recall cannot be tested.</template>
+              Closing records now must be justified in your report.
+            </div>
+          </template>
+          <template v-else>
+            <p v-if="s.met">
+              {{ s.consecutive_excludes }} consecutive excludes (rule: {{ s.threshold }}).
+            </p>
+            <div
+              v-else
+              class="rounded-md border border-uncertain/60 bg-uncertain-soft p-3 text-uncertain-soft-foreground"
+              data-testid="apply-rule-not-met"
+            >
+              The rule is not met yet: {{ s.consecutive_excludes }} of {{ s.threshold }} consecutive
+              excludes. Closing records now must be justified in your report.
+            </div>
+          </template>
 
           <div v-if="forced" class="space-y-1.5">
             <Label for="apply-rule-reason">Reason (recorded in the audit log and the methods text)</Label>

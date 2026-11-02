@@ -48,6 +48,8 @@ export interface RerankResponse {
 }
 
 // Project types
+export type StoppingRuleType = 'consecutive' | 'statistical'
+
 export interface Project {
   id: number
   name: string
@@ -60,6 +62,11 @@ export interface Project {
   required_reviewers: number
   prioritized_screening: boolean
   stop_after_consecutive_excludes: number | null
+  stopping_rule_type: StoppingRuleType
+  /** Fraction 0.80-0.99 (statistical rule). */
+  recall_target: number
+  /** Significance level 0.001-0.20 (statistical rule). */
+  stopping_alpha: number
   ranking_min_random: number
   prioritized_screening_enabled_at: string | null
   stopping_rule_applied_at: string | null
@@ -78,6 +85,9 @@ export interface ProjectUpdate {
   required_reviewers?: 1 | 2
   prioritized_screening?: boolean
   stop_after_consecutive_excludes?: number | null
+  stopping_rule_type?: StoppingRuleType
+  recall_target?: number
+  stopping_alpha?: number
   ranking_min_random?: number
 }
 
@@ -282,6 +292,29 @@ export interface StoppingRuleSummary {
   consecutive_excludes: number
   met: boolean
   applied_at: string | null
+  rule_type?: StoppingRuleType
+  recall_target?: number
+  alpha?: number
+  p_value?: number | null
+  relevant_found?: number | null
+  test_reason?: string | null
+}
+
+export type RecallTestReason = 'ok' | 'no_relevant' | 'no_sample' | 'nothing_left'
+
+/** Recall hypothesis test of the statistical stopping rule. */
+export interface RecallTest {
+  p_value: number | null
+  met: boolean
+  relevant_found: number
+  screened: number
+  sample_size: number
+  unscreened: number
+  min_missed_under_h0: number
+  best_sample: number | null
+  /** About how many more consecutive excludes would meet the rule. */
+  excludes_needed: number | null
+  reason: RecallTestReason
 }
 
 /** GET /screening/stopping-rule */
@@ -291,6 +324,10 @@ export interface StoppingRuleStatus {
   threshold: number | null
   consecutive_excludes: number
   met: boolean
+  rule_type?: StoppingRuleType
+  recall_target?: number
+  alpha?: number
+  statistical?: RecallTest | null
   /** Met and there are records applying would close; show the Apply action only then. */
   can_apply: boolean
   /** Records at title/abstract screening, with or without votes. */
@@ -318,8 +355,15 @@ export interface ApplyStoppingRuleResult {
   left_open: number
   not_started: number
   screened: number
-  threshold: number
+  threshold: number | null
   consecutive_excludes: number
+  rule_type?: StoppingRuleType
+  recall_target?: number | null
+  alpha?: number | null
+  p_value?: number | null
+  relevant_found?: number | null
+  sample_size?: number | null
+  unscreened?: number | null
   forced: boolean
   reason: string | null
   applied_at: string
