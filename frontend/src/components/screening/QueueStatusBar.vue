@@ -65,9 +65,9 @@ const showApplied = computed(() => !!rule.value?.applied_at && notScreened.value
       </Badge>
     </span>
 
-    <div v-if="showStreak" class="flex min-w-[12rem] items-center gap-2" data-testid="stopping-streak">
-      <Progress :value="streakPct" size="sm" class="w-24" />
-      <span aria-live="polite" class="tabular-nums">
+    <div v-if="showStreak" class="flex max-w-full shrink-0 items-center gap-2 whitespace-nowrap" data-testid="stopping-streak">
+      <div class="w-20 shrink-0"><Progress :value="streakPct" size="sm" /></div>
+      <span aria-live="polite" class="whitespace-nowrap tabular-nums">
         {{ rule?.consecutive_excludes }} / {{ rule?.threshold }} consecutive excludes
       </span>
     </div>
