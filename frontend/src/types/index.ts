@@ -162,7 +162,7 @@ export interface Article {
 }
 
 /** Columns the articles list can be sorted by (server-side). */
-export type ArticleSortField = 'title' | 'year' | 'status'
+export type ArticleSortField = 'title' | 'year' | 'status' | 'relevance_score'
 
 export type SortOrder = 'asc' | 'desc'
 
@@ -171,6 +171,8 @@ export interface ArticleListOptions {
   status?: ArticleStatus
   final_decision?: FinalDecision
   has_full_text?: boolean
+  /** true: only records closed by the stopping rule; false: never those. */
+  not_screened_stopping_rule?: boolean
   /** Case-insensitive match on title, authors and journal. */
   search?: string
   sort_by?: ArticleSortField

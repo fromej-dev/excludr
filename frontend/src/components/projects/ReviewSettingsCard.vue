@@ -7,6 +7,7 @@ import type { Project } from '@/types'
 import Card from '@/components/ui/Card.vue'
 import Label from '@/components/ui/Label.vue'
 import Select from '@/components/ui/Select.vue'
+import PrioritizationSettings from '@/components/projects/PrioritizationSettings.vue'
 
 interface Props {
   project: Project
@@ -75,6 +76,9 @@ const onChange = async (v: string | number) => {
       >
         Dual screening is included with a review pass.
       </p>
+    </div>
+    <div class="border-t pt-4">
+      <PrioritizationSettings :project="project" :can-edit="canEdit" :read-only="billingStore.status?.read_only ?? false" />
     </div>
   </Card>
 </template>

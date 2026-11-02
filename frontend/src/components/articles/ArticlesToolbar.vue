@@ -12,6 +12,7 @@ interface Props {
   total: number
   hasFilters: boolean
   loading: boolean
+  showRelevance?: boolean
 }
 
 const props = defineProps<Props>()
@@ -28,6 +29,7 @@ const statusOptions = [
   { value: 'full_text_retrieved', label: 'Full text' },
   { value: 'included', label: 'Included' },
   { value: 'excluded', label: 'Excluded' },
+  { value: 'not_screened', label: 'Not screened (stopping rule)' },
 ]
 
 const decisionOptions = [
@@ -43,7 +45,7 @@ const fullTextOptions = [
   { value: 'missing', label: 'Missing full text' },
 ]
 
-const sortOptions = [
+const baseSortOptions = [
   { value: '', label: 'Default order' },
   { value: 'title:asc', label: 'Title A-Z' },
   { value: 'title:desc', label: 'Title Z-A' },
@@ -52,6 +54,15 @@ const sortOptions = [
   { value: 'status:asc', label: 'Status A-Z' },
   { value: 'status:desc', label: 'Status Z-A' },
 ]
+const sortOptions = computed(() =>
+  props.showRelevance
+    ? [
+        ...baseSortOptions,
+        { value: 'relevance_score:desc', label: 'Most relevant first' },
+        { value: 'relevance_score:asc', label: 'Least relevant first' },
+      ]
+    : baseSortOptions
+)
 
 // Local text so typing is instant; the URL (and the fetch) follow after a pause.
 const searchText = ref(props.state.q)

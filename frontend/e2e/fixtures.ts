@@ -135,6 +135,42 @@ export class ApiHelper {
     expect(res.ok()).toBeTruthy()
   }
 
+  /** PATCH project settings (owner). */
+  async updateProject(token: string, projectId: number, patch: Record<string, unknown>) {
+    const res = await this.request.patch(`${API_BASE}/projects/${projectId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: patch,
+    })
+    expect(res.ok()).toBeTruthy()
+    return await res.json()
+  }
+
+  /** Record a human decision. */
+  async decide(
+    token: string,
+    projectId: number,
+    articleId: number,
+    decision: 'include' | 'exclude' | 'uncertain',
+    stage: 'title_abstract' | 'full_text' = 'title_abstract',
+  ) {
+    const res = await this.request.post(`${API_BASE}/projects/${projectId}/screening/articles/${articleId}/decisions`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { stage, decision, source: 'human' },
+    })
+    expect(res.status()).toBe(201)
+  }
+
+  /** Register a new user and add them to the project with `role`. */
+  async addMember(ownerToken: string, projectId: number, role: 'reviewer' | 'viewer'): Promise<TestUser> {
+    const member = await this.register()
+    const res = await this.request.post(`${API_BASE}/projects/${projectId}/members`, {
+      headers: { Authorization: `Bearer ${ownerToken}` },
+      data: { email: member.email, role },
+    })
+    expect(res.status()).toBe(201)
+    return member
+  }
+
   async getArticles(token: string, projectId: number): Promise<{ data: TestArticle[] }> {
     const res = await this.request.get(`${API_BASE}/projects/${projectId}/articles`, {
       headers: { Authorization: `Bearer ${token}` },

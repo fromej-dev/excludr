@@ -11,6 +11,7 @@ import Button from '@/components/ui/Button.vue'
 import Label from '@/components/ui/Label.vue'
 import Select from '@/components/ui/Select.vue'
 import PrismaDiagram from '@/components/reports/PrismaDiagram.vue'
+import ScreeningMethodNote from '@/components/reports/ScreeningMethodNote.vue'
 import AgreementStats from '@/components/reports/AgreementStats.vue'
 
 const route = useRoute()
@@ -82,7 +83,10 @@ const variant = (d: ScreeningDecisionType) =>
           </Button>
         </div>
       </div>
-      <PrismaDiagram v-if="reportsStore.prisma" :flow="reportsStore.prisma" />
+      <template v-if="reportsStore.prisma">
+        <PrismaDiagram :flow="reportsStore.prisma" />
+        <ScreeningMethodNote v-if="reportsStore.prisma.screening_method" :text="reportsStore.prisma.screening_method" />
+      </template>
       <p v-else class="text-sm text-muted-foreground">Loading...</p>
     </Card>
 

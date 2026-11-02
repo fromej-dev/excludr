@@ -86,6 +86,8 @@ export const useArticlesStore = defineStore('articles', () => {
     try {
       const params = new URLSearchParams()
       if (options?.status) params.append('status', options.status)
+      if (options?.not_screened_stopping_rule !== undefined)
+        params.append('not_screened_stopping_rule', String(options.not_screened_stopping_rule))
       if (options?.has_full_text !== undefined) {
         params.append('has_full_text', String(options.has_full_text))
       }

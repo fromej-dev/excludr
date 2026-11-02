@@ -6,7 +6,15 @@ import type { WebSocketResponse } from '@/types'
 /** Per-article events of the bulk jobs (full-text retrieval, AI batch screening). */
 const PROGRESS_EVENTS = new Set(['fulltext_progress', 'ai_screening_progress', 'ai_screening_error'])
 /** Final event of each bulk job. */
-const COMPLETE_EVENTS = new Set(['fulltext_complete', 'ai_screening_complete'])
+const COMPLETE_EVENTS = new Set([
+  'fulltext_complete',
+  'ai_screening_complete',
+  // Closing or reopening records changes the stats, the sidebar counts and the queue for everyone
+  'stopping_rule_applied',
+  'stopping_rule_reverted',
+])
+
+export type RankingEvent = 'ranking_updated' | 'ranking_failed'
 
 export const LIVE_REFRESH_MS = 1500
 
@@ -27,7 +35,9 @@ export function isForProject(msg: WebSocketResponse, id: number): boolean {
 export function useProjectLiveUpdates(
   projectId: Ref<number>,
   refresh: (id: number) => void,
-  intervalMs = LIVE_REFRESH_MS
+  intervalMs = LIVE_REFRESH_MS,
+  /** Called directly (not throttled) when a queue ranking finishes or fails; they do not change the stats. */
+  onRanking?: (id: number, kind: RankingEvent) => void
 ) {
   const wsStore = useWebSocketStore()
   let detach: (() => void) | null = null
@@ -40,6 +50,7 @@ export function useProjectLiveUpdates(
       if (typeof kind !== 'string' || !isForProject(msg, id)) return
       if (COMPLETE_EVENTS.has(kind)) throttled.flush()
       else if (PROGRESS_EVENTS.has(kind)) throttled.call()
+      else if (kind === 'ranking_updated' || kind === 'ranking_failed') onRanking?.(id, kind)
     })
     detach = () => {
       off()

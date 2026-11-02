@@ -26,6 +26,8 @@ const total = computed(() => props.stats?.total_articles ?? 0)
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
 const join = (parts: Array<string | false>): string | undefined => parts.filter(Boolean).join(' · ') || undefined
 
+const notScreened = computed(() => props.stats?.not_screened_stopping_rule ?? 0)
+
 const steps = computed<Step[]>(() => {
   const s = props.stats
   if (!s) return []
@@ -45,6 +47,7 @@ const steps = computed<Step[]>(() => {
       of: s.title_abstract_total,
       note: join([
         s.title_abstract_completed > 0 && `${s.full_text_eligible} passed · ${s.excluded_title_abstract} excluded`,
+        notScreened.value > 0 && `${notScreened.value} not screened (stopping rule)`,
         s.awaiting_screening > 0 && `${s.awaiting_screening} open`,
       ]),
       tone: 'ai',
@@ -77,6 +80,7 @@ const outcomes = computed(() => {
   return [
     { key: 'included', label: 'Included', count: s.included, tone: 'include' as Tone },
     { key: 'excluded', label: 'Excluded', count: s.excluded, tone: 'exclude' as Tone },
+    { key: 'not-screened', label: 'Not screened (stopping rule)', count: notScreened.value, tone: 'neutral' as Tone },
     { key: 'uncertain', label: 'Uncertain', count: s.uncertain, tone: 'uncertain' as Tone },
   ]
 })
@@ -84,7 +88,7 @@ const outcomes = computed(() => {
 /** Articles still open somewhere in the pipeline (not included or excluded yet). */
 const open = computed(() => {
   const s = props.stats
-  return s ? s.total_articles - s.included - s.excluded : 0
+  return s ? s.total_articles - s.included - s.excluded - notScreened.value : 0
 })
 
 const barClass: Record<Tone, string> = {
@@ -146,7 +150,7 @@ const pct = (n: number, of: number = total.value): string =>
         </div>
         <ul class="mt-3 flex flex-wrap gap-2">
           <li
-            v-for="o in outcomes"
+            v-for="o in outcomes.filter((x) => x.count > 0 || x.key !== 'not-screened')"
             :key="o.key"
             class="rounded-full px-3 py-1 text-sm font-medium"
             :class="chipClass[o.tone]"
@@ -156,7 +160,8 @@ const pct = (n: number, of: number = total.value): string =>
           </li>
         </ul>
         <p class="mt-2 text-xs text-muted-foreground" data-testid="progress-outcome-note">
-          {{ stats.excluded_title_abstract }} excluded at title/abstract · {{ stats.excluded_full_text }} at full text<template
+          {{ stats.excluded_title_abstract }} excluded at title/abstract · {{ stats.excluded_full_text }} at full text<template v-if="notScreened > 0"> · {{ notScreened }} not screened (stopping rule)</template
+          ><template
             v-if="open > 0"
           >
             · {{ open }} still open</template

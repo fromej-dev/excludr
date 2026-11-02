@@ -22,6 +22,8 @@ export const useScreeningStore = defineStore('screening', () => {
   const decisions = ref<ScreeningDecision[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  /** HTTP status of the last failed decision (409 = the record was closed meanwhile). */
+  const errorStatus = ref<number | undefined>(undefined)
   const aiDecision = ref<ScreeningDecision | null>(null)
   const aiScreeningLoading = ref(false)
   // How `/screening/next` ordered the queue last time (id, random start or relevance)
@@ -162,6 +164,7 @@ export const useScreeningStore = defineStore('screening', () => {
   ) => {
     loading.value = true
     error.value = null
+    errorStatus.value = undefined
 
     try {
       const newDecision = await post<ScreeningDecision>(
@@ -172,6 +175,7 @@ export const useScreeningStore = defineStore('screening', () => {
       return newDecision
     } catch (err: unknown) {
       error.value = getErrorMessage(err, 'Failed to submit decision')
+      errorStatus.value = getErrorStatus(err)
       return null
     } finally {
       loading.value = false
@@ -283,6 +287,7 @@ export const useScreeningStore = defineStore('screening', () => {
     decisions,
     loading,
     error,
+    errorStatus,
     aiDecision,
     aiScreeningLoading,
     queueOrder,
