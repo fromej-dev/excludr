@@ -307,15 +307,21 @@ const onKeydown = (event: KeyboardEvent) => {
 
 // Stopping rule: apply dialog, and reacting to the rule closing the record that is open
 const applyOpen = ref(false)
+let applying = false
 const onRuleApplied = async () => {
-  await refreshAfterRuleChange(projectId.value)
-  await resetQueue()
+  applying = true
+  try {
+    await refreshAfterRuleChange(projectId.value)
+    await resetQueue()
+  } finally {
+    applying = false
+  }
 }
 
 // The full status says whether Apply would close anything (the stats only carry the short form)
 const ruleMet = computed(() => !!stats.value?.stopping_rule?.met)
 watch(
-  [ruleMet, () => stats.value?.not_screened_stopping_rule, () => stats.value?.awaiting_screening],
+  [ruleMet, () => membersStore.isOwner, () => stats.value?.not_screened_stopping_rule, () => stats.value?.awaiting_screening],
   () => {
     if (ruleMet.value && membersStore.isOwner) void ruleStore.fetch(projectId.value)
   },
@@ -360,7 +366,10 @@ onMounted(async () => {
   offRuleEvents = wsStore.onMessage('*', (msg) => {
     const kind = msg.data?.type
     if (stage.value !== 'title_abstract' || !isForProject(msg, projectId.value)) return
-    if (kind === 'stopping_rule_applied') void checkClosed()
+    // The owner's own apply already resets the queue
+    if (kind === 'stopping_rule_applied') {
+      if (!applyOpen.value && !applying) void checkClosed()
+    }
     else if (kind === 'stopping_rule_reverted' && !article.value && canReview.value) void loadNextUnscreened()
   })
   await criteriaStore.fetchCriteria(projectId.value)

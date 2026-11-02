@@ -71,7 +71,11 @@ export const toListOptions = (s: ArticleListState): ArticleListOptions => ({
   status: s.status === 'not_screened' ? 'excluded' : s.status || undefined,
   // "Excluded" means excluded by reviewers; the stopping-rule records have their own option
   not_screened_stopping_rule:
-    s.status === 'not_screened' ? true : s.status === 'excluded' ? false : undefined,
+    s.status === 'not_screened'
+      ? true
+      : s.status === 'excluded' || (s.decision === 'excluded' && !s.status)
+        ? false
+        : undefined,
   final_decision: s.decision || undefined,
   has_full_text: s.fullText === 'has' ? true : s.fullText === 'missing' ? false : undefined,
   search: s.q.trim() || undefined,

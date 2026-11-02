@@ -86,16 +86,34 @@ test.describe('Prioritized screening and the stopping rule', () => {
     }
   })
 
-  test('owner re-ranks and sees the last ranking', async ({ page, pageHelper, api, testUser }) => {
+  test('owner re-ranks and sees the last ranking', async ({ page, pageHelper, api, testUser, request }) => {
     const { projectId } = await setup(api, testUser, 3, { stop_after_consecutive_excludes: 5 })
     await pageHelper.loginDirect(testUser.token)
     await pageHelper.goToProjectTab(projectId, 'overview')
     const button = page.getByTestId('rerank-button')
+    const lastRunId = async () =>
+      (await (await request.get(`/api/v1/projects/${projectId}/screening/stopping-rule`, { headers: auth(testUser.token) })).json())
+        .last_run?.id as number | undefined
     await expect(button).toHaveText('Re-rank now')
-    await button.click()
-    await expect(button).toHaveText('Re-rank now')
-    await expect(page.getByTestId('ranking-last-run')).toContainText('Last ranked')
     await expect(page.getByTestId('ranking-last-run')).toContainText('cold start')
+    const before = await lastRunId()
+
+    // Hold the request so the busy state can be observed
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    let posts = 0
+    await page.route('**/screening/rerank', async (route) => {
+      posts++
+      await gate
+      await route.continue()
+    })
+    await button.click()
+    await expect(button).toHaveText('Re-ranking…')
+    await expect(button).toBeDisabled()
+    expect(posts).toBe(1)
+    release()
+    await expect(button).toHaveText('Re-rank now')
+    await expect.poll(lastRunId).not.toBe(before)
   })
 
   test('screening shows the ranked badge and the exclude streak', async ({ page, pageHelper, api, testUser }) => {
@@ -409,10 +427,13 @@ test.describe('Prioritized screening and the stopping rule', () => {
     await page.getByTestId('copy-screening-method').click()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(sentence)
 
+    // Let the (twice loaded) report settle before the routed responses are replaced
+    await page.waitForLoadState('networkidle')
     override = { auto: 0, method: null }
     await page.reload()
     await expect(page.getByTestId('prisma-diagram')).toBeVisible()
     await expect(page.getByTestId('screening-method')).toHaveCount(0)
     await expect(page.getByTestId('prisma-automation')).toHaveCount(0)
+    await page.waitForLoadState('networkidle')
   })
 })
