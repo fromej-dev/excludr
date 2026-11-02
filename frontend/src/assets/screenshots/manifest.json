@@ -14,5 +14,9 @@
   "reports": {
     "width": 736,
     "height": 1026
+  },
+  "prioritized": {
+    "width": 872,
+    "height": 340
   }
 }

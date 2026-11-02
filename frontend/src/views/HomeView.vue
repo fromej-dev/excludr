@@ -25,7 +25,7 @@ const steps = [
   },
   {
     title: 'Screen with AI assistance',
-    body: 'The screening agent reads each full text and assesses every criterion with a confidence score and its reasoning.',
+    body: 'Screen titles and abstracts in order of predicted relevance, then let the screening agent assess each full text against every criterion, with its reasoning.',
   },
   {
     title: 'Decide as a team',
@@ -42,7 +42,14 @@ const screenshot = (name: ScreenshotName) => ({
   ...screenshotSizes[name],
 })
 
-const showcase: { image: ScreenshotName; title: string; body: string; alt: string; imageClass?: string }[] = [
+const showcase: {
+  image: ScreenshotName
+  title: string
+  body: string
+  alt: string
+  imageClass?: string
+  link?: { to: string; label: string }
+}[] = [
   {
     image: 'ai-verdict',
     title: 'Per-criterion AI assessments',
@@ -55,6 +62,13 @@ const showcase: { image: ScreenshotName; title: string; body: string; alt: strin
     title: 'Dual screening & conflicts',
     body: 'Require one or two independent reviewers. When they disagree, the article is flagged with both decisions and notes side by side, and the project owner resolves it.',
     alt: 'A reviewer conflict: one reviewer included the article and the other excluded it, each with a note explaining why, and a Resolve button.',
+  },
+  {
+    image: 'prioritized',
+    title: 'Screen the most relevant records first',
+    body: 'Excludr ranks titles and abstracts by predicted relevance, learning from every decision your team makes. Stop after a set number of consecutive exclusions, or when a statistical test shows you have reached your recall target (Callaghan & Müller-Hansen, 2020). Records you do not screen are reported in your PRISMA diagram, with a methods paragraph ready to adapt.',
+    alt: 'Title/abstract screening ranked by relevance: the status bar reads “Recall ≥ 95% not yet shown”, with its p-value, above the next record to screen.',
+    link: { to: '/prioritized-screening', label: 'How the stopping rules work' },
   },
   {
     image: 'reports',
@@ -283,6 +297,13 @@ const plans = computed<Plan[]>(() => {
               <div class="lg:col-span-2" :class="i % 2 === 1 ? 'lg:order-last' : ''">
                 <h3 class="text-2xl font-semibold">{{ item.title }}</h3>
                 <p class="mt-3 text-muted-foreground">{{ item.body }}</p>
+                <router-link
+                  v-if="item.link"
+                  :to="item.link.to"
+                  class="mt-4 inline-block text-sm font-medium text-primary hover:underline"
+                >
+                  {{ item.link.label }} →
+                </router-link>
               </div>
               <img
                 :src="screenshot(item.image).src"
