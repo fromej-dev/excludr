@@ -325,7 +325,8 @@ def apply_stopping_rule(
 ):
     """Close the records nobody screened once the stopping rule is met (owner only).
 
-    409 unless the streak reached the threshold, or ``force`` with a ``reason``.
+    409 unless the rule is met (the streak reached the threshold, or the statistical
+    recall test is passed), or ``force`` with a ``reason``.
     Only records without any human title/abstract decision are closed; the others
     stay open (``left_open``). Reversible with ``reopen-not-screened``.
     """
@@ -344,6 +345,7 @@ def apply_stopping_rule(
         project_id,
         access.user.id,
         {
+            "rule_type": result.rule_type.value,
             "threshold": result.threshold,
             "consecutive_excludes": result.consecutive_excludes,
             "closed": result.closed,
@@ -358,6 +360,12 @@ def apply_stopping_rule(
             "ranking_run_id": result.ranking_run_id,
             "model_version": result.model_version,
             "ranking_method": result.ranking_method,
+            "recall_target": result.recall_target,
+            "alpha": result.alpha,
+            "p_value": result.p_value,
+            "relevant_found": result.relevant_found,
+            "sample_size": result.sample_size,
+            "unscreened": result.unscreened,
         },
     )
     background_tasks.add_task(
@@ -369,6 +377,7 @@ def apply_stopping_rule(
             "project_id": project_id,
             "closed": result.closed,
             "forced": result.forced,
+            "rule_type": result.rule_type.value,
         },
     )
     return result

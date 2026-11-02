@@ -2,8 +2,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional, List
 
-from pydantic import computed_field
-from sqlalchemy import DateTime, UniqueConstraint, event, func, insert
+from pydantic import computed_field, field_validator
+from sqlalchemy import DateTime, String, UniqueConstraint, event, func, insert
 from sqlalchemy import false as sa_false
 from sqlmodel import SQLModel, Field, Relationship
 
@@ -19,6 +19,13 @@ class ProjectRole(str, Enum):
     owner = "owner"
     reviewer = "reviewer"
     viewer = "viewer"
+
+
+class StoppingRuleType(str, Enum):
+    """How the stopping rule of prioritized screening decides to stop."""
+
+    consecutive = "consecutive"  # N consecutive title/abstract excludes
+    statistical = "statistical"  # recall target shown by a hypergeometric test
 
 
 class ProjectBase(SQLModel):
@@ -63,6 +70,28 @@ class ProjectUpdate(ProjectBase):
         le=10000,
         description="Title/abstract decisions served in random order before ranking",
     )
+    stopping_rule_type: Optional[StoppingRuleType] = Field(
+        default=None,
+        description="Stopping rule: consecutive excludes or statistical recall test",
+    )
+    recall_target: Optional[float] = Field(
+        default=None,
+        ge=0.80,
+        le=0.99,
+        description="Statistical stopping rule: recall to demonstrate (0.80-0.99)",
+    )
+    stopping_alpha: Optional[float] = Field(
+        default=None,
+        ge=0.001,
+        le=0.20,
+        description="Statistical stopping rule: significance level (0.001-0.20)",
+    )
+
+    @field_validator("recall_target", "stopping_alpha")
+    @classmethod
+    def _round_4dp(cls, value: Optional[float]) -> Optional[float]:
+        """Four decimals keep the exact fraction in the recall test small."""
+        return None if value is None else round(value, 4)
 
 
 # Settings of prioritized screening; changes to them get their own audit event.
@@ -70,6 +99,9 @@ SCREENING_RULE_FIELDS = (
     "prioritized_screening",
     "stop_after_consecutive_excludes",
     "ranking_min_random",
+    "stopping_rule_type",
+    "recall_target",
+    "stopping_alpha",
 )
 # Fields a client may clear by sending an explicit null.
 CLEARABLE_FIELDS = frozenset({"stop_after_consecutive_excludes"})
@@ -120,6 +152,26 @@ class Project(ProjectBase, table=True):
         le=10000,
         description="Title/abstract decisions served in random order before ranking",
         sa_column_kwargs={"server_default": "0", "nullable": False},
+    )
+    stopping_rule_type: StoppingRuleType = Field(
+        default=StoppingRuleType.consecutive,
+        sa_type=String(20),
+        description="Stopping rule: consecutive excludes or statistical recall test",
+        sa_column_kwargs={"server_default": "consecutive", "nullable": False},
+    )
+    recall_target: float = Field(
+        default=0.95,
+        ge=0.80,
+        le=0.99,
+        description="Statistical stopping rule: recall to demonstrate",
+        sa_column_kwargs={"server_default": "0.95", "nullable": False},
+    )
+    stopping_alpha: float = Field(
+        default=0.05,
+        ge=0.001,
+        le=0.20,
+        description="Statistical stopping rule: significance level",
+        sa_column_kwargs={"server_default": "0.05", "nullable": False},
     )
     prioritized_screening_enabled_at: Optional[datetime] = Field(
         default=None,

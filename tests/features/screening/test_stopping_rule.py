@@ -328,6 +328,10 @@ def test_get_stopping_rule_status_for_viewer(env):
         "applied_at": None,
         "counting_since": None,
         "last_run": None,
+        "rule_type": "consecutive",
+        "recall_target": 0.95,
+        "alpha": 0.05,
+        "statistical": None,
     }
     assert body["last_ranked_at"][:19] == _naive(run.created_at).isoformat()[:19]
     assert body["last_run"]["id"] == run.id
@@ -359,6 +363,12 @@ def test_stats_include_short_form(env):
         "consecutive_excludes": 1,
         "met": False,
         "applied_at": None,
+        "rule_type": "consecutive",
+        "recall_target": None,
+        "alpha": None,
+        "p_value": None,
+        "relevant_found": None,
+        "test_reason": None,
     }
 
 
@@ -512,6 +522,13 @@ def test_apply_audit_payload(env):
     (event,) = _events(env.session, env.project, "screening.stopping_rule_applied")
     assert event.entity_type == "project" and event.user_id == env.owner.id
     assert event.details == {
+        "rule_type": "consecutive",
+        "recall_target": None,
+        "alpha": None,
+        "p_value": None,
+        "relevant_found": None,
+        "sample_size": None,
+        "unscreened": None,
         "threshold": 2,
         "consecutive_excludes": 3,
         "closed": 1,
@@ -932,3 +949,303 @@ def test_ai_decision_rejected_on_closed_record(closed):
         json={"stage": "title_abstract", "decision": "include", "source": "ai_agent"},
     )
     assert res.status_code == 409
+
+
+# --- statistical rule -----------------------------------------------------
+
+
+def _statistical(env, target=0.95, alpha=0.05, threshold=None, **kw):
+    """Prioritize with the statistical rule (the threshold is ignored by it)."""
+    env.prio(threshold=threshold, **kw)
+    env.project.stopping_rule_type = "statistical"
+    env.project.recall_target = target
+    env.project.stopping_alpha = alpha
+    env.session.add(env.project)
+    env.session.commit()
+
+
+def _recall(env):
+    env.session.expire_all()
+    return stopping.compute_recall_test(env.session, env.project)
+
+
+def _expected(labels, unscreened, *, before=0, seen_before=0, target=0.95, alpha=0.05):
+    return stopping.recall_test(
+        labels,
+        relevant_before=before,
+        screened_before=seen_before,
+        unscreened=unscreened,
+        recall_target=target,
+        alpha=alpha,
+    )
+
+
+def _met_statistical(env, extra_open=2):
+    """3 includes, 12 excludes, ``extra_open`` untouched records; p = 2/14 < 0.2."""
+    _statistical(env, target=0.8, alpha=0.2)
+    for kind in "I" * 3 + "E" * 12:
+        (art,) = env.arts(1)
+        (_inc if kind == "I" else _ex)(env.session, art, env.owner)
+    env.arts(extra_open)
+
+
+def test_recall_none_unless_prioritized(env):
+    env.arts(1)
+    assert stopping.compute_recall_test(env.session, env.project) is None
+
+
+def test_recall_sequence_orders_by_settlement(env):
+    _statistical(env)
+    a1, a2, a3, *_ = env.arts(5)
+    _ex(env.session, a3, env.owner)
+    _inc(env.session, a1, env.owner)
+    _ex(env.session, a2, env.owner)
+    got = _recall(env)
+    want = _expected([0, 1, 0], 2)
+    assert got == want
+    assert got.relevant_found == 1 and got.screened == 3 and got.unscreened == 2
+
+
+def test_recall_counts_full_text_excluded_as_relevant(env):
+    _statistical(env)
+    a1, a2 = env.arts(2)
+    _vote(env.session, a1, env.owner, D.include)
+    _vote(env.session, a1, env.owner, D.exclude, stage=FT)
+    a1.status = ArticleStatus.excluded
+    a1.current_stage = ScreeningStage.completed
+    env.session.add(a1)
+    env.session.commit()
+    _ex(env.session, a2, env.owner)
+    got = _recall(env)
+    assert got.relevant_found == 1 and got.screened == 2
+    assert got == _expected([1, 0], 0)
+
+
+def test_recall_ignores_ai_skipped_and_closed_records(env):
+    _statistical(env)
+    ai, open_one, skipped, closed, done = env.arts(5)
+    _vote(env.session, ai, None, D.exclude, source=AI)
+    skipped.title_abstract_skipped = True
+    skipped.status = ArticleStatus.awaiting_full_text
+    closed.not_screened_stopping_rule = True
+    closed.status = ArticleStatus.excluded
+    closed.current_stage = ScreeningStage.completed
+    for a in (skipped, closed):
+        env.session.add(a)
+    env.session.commit()
+    _ex(env.session, done, env.owner)
+    got = _recall(env)
+    # AI-only, untouched and closed records are unscreened; skipped is outside
+    assert got.screened == 1 and got.unscreened == 3
+    assert got == _expected([0], 3)
+
+
+def test_recall_dual_counts_agreed_only(env):
+    _statistical(env, reviewers=2)
+    r2 = env.member(env.project, ProjectRole.reviewer)
+    a1, a2 = env.arts(2)
+    _vote(env.session, a1, env.owner, D.include)
+    got = _recall(env)
+    assert got.relevant_found == 0 and got.screened == 0 and got.unscreened == 2
+    _inc(env.session, a1, r2)  # agreement settles it
+    _agreed_ex(env.session, a2, env.owner, r2)
+    got = _recall(env)
+    assert got.relevant_found == 1 and got.screened == 2 and got.unscreened == 0
+
+
+def test_recall_conflict_and_uncertain_stay_unscreened(env):
+    _statistical(env, reviewers=2)
+    r2 = env.member(env.project, ProjectRole.reviewer)
+    conflict, uncertain, resolved, settled = env.arts(4)
+    _vote(env.session, conflict, env.owner, D.include)
+    _vote(env.session, conflict, r2, D.exclude)
+    _vote(env.session, uncertain, env.owner, D.uncertain)
+    _vote(env.session, resolved, env.owner, D.include)
+    _vote(env.session, resolved, r2, D.exclude)
+    _vote(env.session, resolved, env.owner, D.include, resolution=True)
+    _close_ta(env.session, resolved, D.include)
+    _agreed_ex(env.session, settled, env.owner, r2)
+    got = _recall(env)
+    assert got.unscreened == 2 and got.screened == 2
+    assert got == _expected([1, 0], 2)
+
+
+def test_recall_window_restarts_on_import(env):
+    old = _now() - timedelta(hours=3)
+    _statistical(env, since=_now() - timedelta(days=2))
+    a1, a2, b1, b2 = env.arts(4)
+    _inc(env.session, a1, env.owner, created_at=old)
+    _ex(env.session, a2, env.owner, created_at=old)
+    batch = ImportBatch(
+        project_id=env.project.id,
+        filename="u.ris",
+        format="ris",
+        created_at=_now() - timedelta(hours=1),
+    )
+    env.session.add(batch)
+    env.session.commit()
+    _ex(env.session, b1, env.owner)
+    got = _recall(env)
+    assert got.relevant_found == 1 and got.screened == 3 and got.sample_size == 1
+    assert got == _expected([0], 1, before=1, seen_before=2)
+    assert b2
+
+
+def test_recall_window_since_enabled(env):
+    _statistical(env, since=_now() - timedelta(hours=1))
+    a1, a2, a3 = env.arts(3)
+    _inc(env.session, a1, env.owner, created_at=_now() - timedelta(hours=2))
+    _ex(env.session, a2, env.owner, created_at=_now() - timedelta(hours=2))
+    _ex(env.session, a3, env.owner)
+    got = _recall(env)
+    assert got.sample_size == 1 and got.screened == 3 and got.relevant_found == 1
+
+
+def test_recall_no_sample_when_nothing_in_window(env):
+    _statistical(env, since=_now() - timedelta(hours=1))
+    (a1,) = env.arts(1)
+    _inc(env.session, a1, env.owner, created_at=_now() - timedelta(hours=2))
+    got = _recall(env)
+    assert got.reason == "no_sample" and got.p_value is None and not got.met
+
+
+def test_status_statistical_payload(env):
+    _statistical(env)
+    for kind in "IIEEEE":
+        (art,) = env.arts(1)
+        (_inc if kind == "I" else _ex)(env.session, art, env.owner)
+    env.arts(4)
+    env.auth_as(env.member(env.project, ProjectRole.viewer))
+    body = env.client.get(f"{env.url}/stopping-rule").json()
+    assert body["rule_type"] == "statistical"
+    assert body["recall_target"] == 0.95 and body["alpha"] == 0.05
+    assert body["enabled"] is True and body["met"] is False
+    assert body["can_apply"] is False
+    stat = body["statistical"]
+    # m0 = 1, so p = U / (U + n) = 4 / 8 for the 4 excludes after the last include
+    assert stat["p_value"] == pytest.approx(0.5)
+    assert stat["relevant_found"] == 2 and stat["screened"] == 6
+    assert stat["sample_size"] == 6 and stat["unscreened"] == 4
+    assert stat["min_missed_under_h0"] == 1 and stat["best_sample"] == 4
+    assert stat["reason"] == "ok" and stat["met"] is False
+    assert stat["excludes_needed"] == 4  # p = (4 - m) / 8 < 0.05 only once all are seen
+
+
+def test_stats_summary_statistical(env):
+    _met_statistical(env)
+    body = env.client.get(f"{env.url}/stats").json()["stopping_rule"]
+    assert body["rule_type"] == "statistical" and body["met"] is True
+    assert body["p_value"] == pytest.approx(2 / 14)
+    assert body["recall_target"] == 0.8 and body["alpha"] == 0.2
+    assert body["relevant_found"] == 3 and body["test_reason"] == "ok"
+    assert "excludes_needed" not in body
+
+
+def test_statistical_enabled_without_threshold(env):
+    _statistical(env, threshold=None)
+    assert env.project.stop_after_consecutive_excludes is None
+    assert stopping.rule_enabled(env.project) is True
+    assert env.client.get(f"{env.url}/stopping-rule").json()["enabled"] is True
+
+
+def test_consecutive_still_needs_threshold(env):
+    env.prio(threshold=None)
+    assert stopping.rule_enabled(env.project) is False
+
+
+def test_statistical_not_enabled_when_not_prioritized(env):
+    _statistical(env)
+    env.project.prioritized_screening = False
+    env.session.add(env.project)
+    env.session.commit()
+    assert stopping.rule_enabled(env.project) is False
+
+
+def test_apply_statistical_409_when_not_met(env):
+    _statistical(env)
+    a1, a2 = env.arts(2)
+    _inc(env.session, a1, env.owner)
+    _ex(env.session, a2, env.owner)
+    env.arts(3)
+    res = _apply(env)
+    assert res.status_code == 409
+    detail = res.json()["detail"]
+    assert "not met" in detail and "p = 0.75" in detail
+    assert "95%" in detail and "p < 0.05" in detail
+
+
+def test_apply_statistical_409_no_relevant(env):
+    _statistical(env)
+    (a1,) = env.arts(1)
+    _ex(env.session, a1, env.owner)
+    env.arts(2)
+    res = _apply(env)
+    assert res.status_code == 409
+    assert "no relevant record has been found yet" in res.json()["detail"]
+
+
+def test_apply_statistical_when_met(env):
+    _met_statistical(env, extra_open=2)
+    res = _apply(env)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["closed"] == 2 and body["forced"] is False
+    assert body["rule_type"] == "statistical" and body["threshold"] is None
+    assert body["recall_target"] == 0.8 and body["alpha"] == 0.2
+    assert body["p_value"] == pytest.approx(2 / 14)
+    assert body["relevant_found"] == 3 and body["sample_size"] == 15
+    assert body["unscreened"] == 2
+    assert env.client.get(f"{env.url}/stopping-rule").json()["not_screened"] == 2
+
+
+def test_apply_statistical_forced_with_reason(env):
+    _statistical(env)
+    (a1,) = env.arts(1)
+    _inc(env.session, a1, env.owner)
+    env.arts(3)
+    res = _apply(env, force=True, reason="Out of budget")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["forced"] is True and body["reason"] == "Out of budget"
+    assert body["closed"] == 3
+    (event,) = _events(env.session, env.project, "screening.stopping_rule_applied")
+    assert event.details["forced"] is True
+    assert event.details["reason"] == "Out of budget"
+    assert event.details["p_value"] is not None
+
+
+def test_apply_statistical_audit_payload(env):
+    _met_statistical(env, extra_open=2)
+    assert _apply(env).status_code == 200
+    (event,) = _events(env.session, env.project, "screening.stopping_rule_applied")
+    d = event.details
+    assert d["rule_type"] == "statistical" and d["threshold"] is None
+    assert d["recall_target"] == 0.8 and d["alpha"] == 0.2
+    assert d["p_value"] == pytest.approx(2 / 14)
+    assert d["relevant_found"] == 3 and d["sample_size"] == 15
+    assert d["unscreened"] == 2 and d["forced"] is False
+
+
+def test_apply_consecutive_audit_has_rule_type(env):
+    _met(env)
+    env.arts(1)
+    assert _apply(env).status_code == 200
+    (event,) = _events(env.session, env.project, "screening.stopping_rule_applied")
+    d = event.details
+    assert d["rule_type"] == "consecutive" and d["threshold"] == 2
+    for key in ("recall_target", "alpha", "p_value", "relevant_found", "sample_size"):
+        assert d[key] is None
+
+
+def test_reopen_then_statistical_window(env):
+    _met_statistical(env, extra_open=2)
+    before = _recall(env)
+    assert before.met and before.unscreened == 2
+    assert _apply(env).status_code == 200
+    after_apply = _recall(env)  # window restarts at the application
+    assert after_apply.reason == "no_sample" and after_apply.unscreened == 2
+    res = env.client.post(f"{env.url}/reopen-not-screened")
+    assert res.status_code == 200
+    again = _recall(env)
+    assert again.unscreened == 2 and again.sample_size == before.sample_size
+    assert again.p_value == pytest.approx(before.p_value)

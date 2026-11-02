@@ -69,3 +69,8 @@ class PrismaFlow(SQLModel):
         description="Suggested methods sentence on prioritized screening and the "
         "stopping rule; null when prioritized screening was never used",
     )
+    screening_method_reference: Optional[str] = Field(
+        default=None,
+        description="Full reference to cite when the methods sentence names the "
+        "statistical stopping criterion; null otherwise",
+    )

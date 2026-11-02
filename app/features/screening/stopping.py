@@ -36,19 +36,36 @@ decision at all. Partly reviewed, conflicted and uncertain records stay open
 vote racing the UPDATE can land on a record that has just closed; later votes are
 then rejected by the stage check. ``reopen`` puts every closed record back.
 
-This module imports models only (no scikit-learn, no ``services``).
+Statistical rule (``Project.stopping_rule_type == "statistical"``). Callaghan and
+Mueller-Hansen (2020), "Statistical stopping criteria for automated screening in
+systematic reviews", Syst Rev 9:273, doi:10.1186/s13643-020-01521-4, "ranked
+quasi-sampling" as in ``buscarpy.calculate_h0`` (bias 1). The null hypothesis is that
+recall is below ``recall_target``. The last ``n`` settled records are treated as a
+random sample of the ``n`` plus the still unscreened ``U`` records; with ``k`` relevant
+in the sample, ``r`` relevant found in total and ``m0 = floor(r / target) + 1 - r`` (the
+fewest relevant records that must remain unseen under H0), the p-value is
+``P(X <= k)`` for ``X ~ Hypergeometric(U + n, k + m0, n)`` (``recall_test``). The rule is
+met when the smallest p over all ``n`` is below ``stopping_alpha`` (strictly) and at
+least one relevant record was found. Only records settled since ``counting_since`` can
+be part of a sample (earlier ones were not served by relevance, or could not have drawn
+the records imported since); all relevant records found count towards ``r``. Settled
+means agreed or resolved outcomes (as for the streak); records with open votes,
+conflicts or uncertain outcomes are unscreened. Records that skipped title/abstract
+are outside the population. ``scipy`` is imported inside the functions that need it.
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional
+from fractions import Fraction
+from typing import Any, Literal, Optional, Sequence
 
-from sqlalchemy import and_, case, or_, update
+import numpy as np
+from sqlalchemy import and_, case, or_, true, update
 from sqlalchemy.orm import aliased
 from sqlmodel import Session, func, select
 
-from app.features.projects.models import ImportBatch, Project
+from app.features.projects.models import ImportBatch, Project, StoppingRuleType
 from app.features.research.models import Article, ArticleStatus, FinalDecision
 from app.features.websocket.schemas import NotificationLevel
 from app.features.websocket.services import NotificationService
@@ -64,6 +81,7 @@ from .models import (
 from .schemas import (
     ApplyStoppingRuleResult,
     RankingRunRead,
+    RecallTestRead,
     ReopenNotScreenedResult,
     StoppingRuleStatus,
 )
@@ -98,14 +116,35 @@ class RecordCounts:
     screened: int  # settled human title/abstract outcomes, all time
 
 
+@dataclass(frozen=True)
+class RecallTest:
+    """Result of the hypergeometric recall test (see the module docstring)."""
+
+    p_value: Optional[float]  # None when there is no sample
+    met: bool  # p_value < alpha and relevant_found >= 1
+    recall_target: float
+    alpha: float
+    relevant_found: int  # all relevant records found so far
+    screened: int  # all settled records in the sequence
+    sample_size: int  # settled records inside the counting window
+    unscreened: int
+    min_missed_under_h0: int  # fewest relevant records left unseen under H0
+    best_sample: Optional[int]  # size of the sample window giving the smallest p
+    reason: Literal["ok", "no_relevant", "no_sample", "nothing_left"]
+
+
 def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 
+def is_statistical(project: Project) -> bool:
+    return project.stopping_rule_type == StoppingRuleType.statistical
+
+
 def rule_enabled(project: Project) -> bool:
-    return (
-        bool(project.prioritized_screening)
-        and project.stop_after_consecutive_excludes is not None
+    """Prioritized, and a statistical rule or a consecutive threshold is set."""
+    return bool(project.prioritized_screening) and (
+        is_statistical(project) or project.stop_after_consecutive_excludes is not None
     )
 
 
@@ -254,6 +293,252 @@ def record_counts(session: Session, project_id: int) -> RecordCounts:
     return RecordCounts(*(int(n) for n in row))
 
 
+def min_missed_under_h0(relevant_found: int, recall_target: float) -> int:
+    """Fewest relevant records that must remain unseen for recall < target.
+
+    ``floor(r / target) + 1 - r`` in integer arithmetic (``recall_target`` is read as
+    its decimal string, so 19 found at 0.95 gives 2, not a float-rounding accident).
+    """
+    t = Fraction(str(recall_target))
+    return (relevant_found * t.denominator) // t.numerator + 1 - relevant_found
+
+
+def _window_arrays(
+    window: Sequence[int] | np.ndarray,
+    relevant_before: int,
+    unscreened: int,
+    recall_target: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
+    """Candidate sample windows as ``(starts, n, k, M, K, m0)`` arrays.
+
+    The p-value never increases when a window grows backwards over an exclude, so the
+    minimum is at the first record of the window or right after an include.
+    """
+    w = np.asarray(window, dtype=np.int64)
+    length = len(w)
+    relevant = relevant_before + int(w.sum())
+    m0 = min_missed_under_h0(relevant, recall_target)
+    if length == 0:  # an empty sample, to be grown by appended excludes
+        zero = np.zeros(1, dtype=np.int64)
+        return zero, zero, zero, zero + unscreened, zero + m0, m0
+    starts = np.unique(np.concatenate(([0], np.flatnonzero(w) + 1)))
+    starts = starts[starts < length]
+    suffix = np.concatenate((np.cumsum(w[::-1])[::-1], [0]))
+    n = length - starts
+    k = suffix[starts]
+    return starts, n, k, unscreened + n, k + m0, m0
+
+
+def _p_values(
+    k: np.ndarray, population: np.ndarray, k_tar: np.ndarray, n: np.ndarray
+) -> np.ndarray:
+    """``P(X <= k)`` for ``X ~ Hypergeometric(population, k_tar, n)``; 0 where H0 is
+    impossible (``k_tar`` above the population)."""
+    from scipy.stats import hypergeom
+
+    impossible = k_tar > population
+    p = hypergeom.cdf(k, population, np.minimum(k_tar, population), n)
+    return np.where(impossible, 0.0, p)
+
+
+def recall_test(
+    window: Sequence[int] | np.ndarray,
+    *,
+    relevant_before: int,
+    screened_before: int,
+    unscreened: int,
+    recall_target: float,
+    alpha: float,
+) -> RecallTest:
+    """Ranked quasi-sampling recall test (module docstring).
+
+    Args:
+        window: Settled records usable as a sample, in screening order (1 = relevant).
+        relevant_before: Relevant records settled before the window.
+        screened_before: Records settled before the window.
+        unscreened: Records not screened yet (the unseen part of the population).
+        recall_target: Recall to demonstrate, e.g. 0.95.
+        alpha: Significance level; the rule is met when ``p < alpha``.
+    """
+    length = len(window)
+    relevant = relevant_before + int(np.asarray(window, dtype=np.int64).sum())
+    base = {
+        "recall_target": recall_target,
+        "alpha": alpha,
+        "relevant_found": relevant,
+        "screened": screened_before + length,
+        "sample_size": length,
+        "unscreened": unscreened,
+        "min_missed_under_h0": min_missed_under_h0(relevant, recall_target),
+    }
+    if length == 0:
+        return RecallTest(
+            p_value=None, met=False, best_sample=None, reason="no_sample", **base
+        )
+    _, n, k, population, k_tar, _ = _window_arrays(
+        window, relevant_before, unscreened, recall_target
+    )
+    p = _p_values(k, population, k_tar, n)
+    best = int(np.argmin(p))
+    p_min = 0.0 if unscreened == 0 else float(p[best])
+    if relevant == 0:
+        reason = "no_relevant"
+    elif unscreened == 0:
+        reason = "nothing_left"
+    else:
+        reason = "ok"
+    return RecallTest(
+        p_value=p_min,
+        met=relevant >= 1 and p_min < alpha,
+        best_sample=int(n[best]),
+        reason=reason,
+        **base,
+    )
+
+
+def excludes_needed(
+    window: Sequence[int] | np.ndarray,
+    *,
+    relevant_before: int,
+    screened_before: int,
+    unscreened: int,
+    recall_target: float,
+    alpha: float,
+    max_candidates: int = 32,
+) -> Optional[int]:
+    """About how many more excludes in a row would meet the rule (None: no include yet).
+
+    Binary search on ``m``: appending ``m`` excludes leaves each candidate's population
+    and ``K`` unchanged and grows its sample, so ``p`` only falls. Only the window start
+    and the starts after the last ``max_candidates`` includes are tried, which can only
+    over-estimate (an upper bound).
+    """
+    w = np.asarray(window, dtype=np.int64)
+    if relevant_before + int(w.sum()) == 0:
+        return None
+    starts, n, k, population, k_tar, m0 = _window_arrays(
+        w, relevant_before, unscreened, recall_target
+    )
+    if len(w) == 0:  # no candidate yet; only the appended excludes can form one
+        n = k = population = k_tar = np.zeros(0, dtype=np.int64)
+    else:
+        tail = np.arange(max(1, len(starts) - max_candidates), len(starts))
+        keep = np.unique(np.concatenate(([0], tail)))
+        n, k, population, k_tar = n[keep], k[keep], population[keep], k_tar[keep]
+    # a sample made only of the appended excludes (starts after a last include)
+    only_new = np.array([m0], dtype=np.int64)
+    only_pop = np.array([unscreened], dtype=np.int64)
+    zero = np.zeros(1, dtype=np.int64)
+
+    def met(m: int) -> bool:
+        p = _p_values(k, population, k_tar, n + m)
+        if m > 0:
+            p = np.append(p, _p_values(zero, only_pop, only_new, zero + m))
+        return len(p) > 0 and float(p.min()) < alpha
+
+    lo, hi = 0, unscreened  # met(unscreened) is true: every record seen, p = 0
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if met(mid):
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+
+
+@dataclass(frozen=True)
+class _Sequence:
+    window: np.ndarray
+    relevant_before: int
+    screened_before: int
+
+
+def _recall_sequence(
+    session: Session, project: Project, since: Optional[datetime]
+) -> _Sequence:
+    """Settled title/abstract outcomes in settlement order (see the module docstring)."""
+    ft = aliased(SD)
+    ft_human = (
+        select(ft.id)
+        .where(
+            ft.article_id == Article.id,
+            ft.stage == ScreeningStage.full_text,
+            ft.source == DecisionSource.human,
+        )
+        .exists()
+    )
+    irrelevant = and_(
+        Article.status == ArticleStatus.excluded,
+        Article.current_stage == ScreeningStage.completed,
+        ~ft_human,
+    )
+    settled = (
+        select(
+            SD.article_id.label("article_id"),
+            func.max(SD.id).label("sid"),
+            case((irrelevant, 0), else_=1).label("relevant"),
+        )
+        .join(Article, SD.article_id == Article.id)
+        .where(
+            *_base_conds(project.id),
+            Article.status.notin_((ArticleStatus.imported, ArticleStatus.screening)),
+        )
+        .group_by(SD.article_id, Article.status, Article.current_stage, Article.id)
+        .subquery()
+    )
+    last = aliased(SD)
+    in_window = true() if since is None else last.created_at >= since
+    rows = session.exec(
+        select(settled.c.relevant, in_window)
+        .select_from(settled)
+        .join(last, last.id == settled.c.sid)
+        .order_by(settled.c.sid)
+    ).all()
+    labels = np.array([int(r[0]) for r in rows], dtype=np.int64)
+    inside = np.array([bool(r[1]) for r in rows], dtype=bool)
+    before = labels[~inside]
+    return _Sequence(labels[inside], int(before.sum()), len(before))
+
+
+def compute_recall_test(
+    session: Session,
+    project: Project,
+    counts: Optional["RecordCounts"] = None,
+    since: Optional[datetime] = None,
+) -> Optional[RecallTest]:
+    """Recall test on the project's settled records; None unless prioritized."""
+    if not project.prioritized_screening:
+        return None
+    counts = counts or record_counts(session, project.id)
+    since = since or counting_since(session, project)
+    seq = _recall_sequence(session, project, since)
+    return recall_test(
+        seq.window,
+        relevant_before=seq.relevant_before,
+        screened_before=seq.screened_before,
+        unscreened=counts.remaining + counts.not_started + counts.not_screened,
+        recall_target=project.recall_target,
+        alpha=project.stopping_alpha,
+    )
+
+
+def _excludes_needed_for(
+    session: Session,
+    project: Project,
+    counts: "RecordCounts",
+    since: Optional[datetime],
+) -> Optional[int]:
+    seq = _recall_sequence(session, project, since)
+    return excludes_needed(
+        seq.window,
+        relevant_before=seq.relevant_before,
+        screened_before=seq.screened_before,
+        unscreened=counts.remaining + counts.not_started + counts.not_screened,
+        recall_target=project.recall_target,
+        alpha=project.stopping_alpha,
+    )
+
+
 def latest_run(session: Session, project_id: int) -> Optional[RankingRun]:
     """The project's most recent ranking run (same query as ``ranking.last_run``)."""
     return session.exec(
@@ -263,6 +548,19 @@ def latest_run(session: Session, project_id: int) -> Optional[RankingRun]:
     ).first()
 
 
+def _consecutive_met(project: Project, streak: Streak) -> bool:
+    threshold = project.stop_after_consecutive_excludes
+    return threshold is not None and streak.consecutive_excludes >= threshold
+
+
+def _is_met(project: Project, streak: Streak, test: Optional[RecallTest]) -> bool:
+    if not rule_enabled(project):
+        return False
+    if is_statistical(project):
+        return test is not None and test.met
+    return _consecutive_met(project, streak)
+
+
 def status(session: Session, project: Project) -> StoppingRuleStatus:
     """Payload of ``GET .../screening/stopping-rule``."""
     streak = compute_streak(session, project)
@@ -270,15 +568,19 @@ def status(session: Session, project: Project) -> StoppingRuleStatus:
     run = latest_run(session, project.id)
     threshold = project.stop_after_consecutive_excludes
     enabled = rule_enabled(project)
+    test = (
+        compute_recall_test(session, project, counts, streak.counting_since)
+        if is_statistical(project)
+        else None
+    )
+    met = _is_met(project, streak, test)
     return StoppingRuleStatus(
         enabled=enabled,
         prioritized=bool(project.prioritized_screening),
         threshold=threshold,
         consecutive_excludes=streak.consecutive_excludes,
-        met=enabled and streak.consecutive_excludes >= threshold,
-        can_apply=enabled
-        and streak.consecutive_excludes >= threshold
-        and counts.closable > 0,
+        met=met,
+        can_apply=met and counts.closable > 0,
         remaining=counts.remaining,
         closable=counts.closable,
         screened=counts.screened,
@@ -289,6 +591,21 @@ def status(session: Session, project: Project) -> StoppingRuleStatus:
         last_run=RankingRunRead.model_validate(run, from_attributes=True)
         if run
         else None,
+        rule_type=project.stopping_rule_type,
+        recall_target=project.recall_target,
+        alpha=project.stopping_alpha,
+        statistical=RecallTestRead(
+            **{
+                k: v
+                for k, v in asdict(test).items()
+                if k in RecallTestRead.model_fields
+            },
+            excludes_needed=_excludes_needed_for(
+                session, project, counts, streak.counting_since
+            ),
+        )
+        if test is not None
+        else None,
     )
 
 
@@ -297,14 +614,41 @@ def summary(session: Session, project: Project) -> Optional[StoppingRuleSummary]
     if not project.prioritized_screening:
         return None
     streak = compute_streak(session, project)
-    threshold = project.stop_after_consecutive_excludes
-    enabled = rule_enabled(project)
+    test = compute_recall_test(session, project) if is_statistical(project) else None
     return StoppingRuleSummary(
-        enabled=enabled,
-        threshold=threshold,
+        enabled=rule_enabled(project),
+        threshold=project.stop_after_consecutive_excludes,
         consecutive_excludes=streak.consecutive_excludes,
-        met=enabled and streak.consecutive_excludes >= threshold,
+        met=_is_met(project, streak, test),
         applied_at=project.stopping_rule_applied_at,
+        rule_type=project.stopping_rule_type,
+        recall_target=project.recall_target if test else None,
+        alpha=project.stopping_alpha if test else None,
+        p_value=test.p_value if test else None,
+        relevant_found=test.relevant_found if test else None,
+        test_reason=test.reason if test else None,
+    )
+
+
+def _not_met_message(
+    streak: Streak, threshold: Optional[int], test: Optional[RecallTest]
+) -> str:
+    if test is None:
+        return (
+            f"The stopping rule is not met ({streak.consecutive_excludes} of "
+            f"{threshold} consecutive excludes)"
+        )
+    if test.reason == "no_relevant":
+        return "The stopping rule is not met: no relevant record has been found yet"
+    target = f"{test.recall_target * 100:g}%"
+    if test.p_value is None:
+        return (
+            f"The stopping rule is not met: no record was screened since "
+            f"the counting window started (recall target {target})"
+        )
+    return (
+        f"The stopping rule is not met (p = {test.p_value:.2g} for recall below "
+        f"{target}; needs p < {test.alpha:g})"
     )
 
 
@@ -314,27 +658,29 @@ def apply_rule(
     """Close the records nobody has screened (see the module docstring).
 
     Raises:
-        StoppingRuleError: 409 if prioritization is off, no threshold is set,
+        StoppingRuleError: 409 if prioritization is off, no rule is set,
             nothing is closable, or the rule is not met and ``force`` is false.
     """
     # serialize applications (and reopen) per project; no-op on SQLite
     session.refresh(project, with_for_update=True)
     if not project.prioritized_screening:
         raise StoppingRuleError(409, "Prioritized screening is off for this project")
-    threshold = project.stop_after_consecutive_excludes
-    if threshold is None:
+    if not rule_enabled(project):
         raise StoppingRuleError(409, "No stopping rule is set for this project")
+    threshold = project.stop_after_consecutive_excludes
+    statistical = is_statistical(project)
     streak = compute_streak(session, project)
     counts = record_counts(session, project.id)
     if counts.closable == 0:
         raise StoppingRuleError(409, "No unscreened records left at title/abstract")
-    met = streak.consecutive_excludes >= threshold
+    test = (
+        compute_recall_test(session, project, counts, streak.counting_since)
+        if statistical
+        else None
+    )
+    met = _is_met(project, streak, test)
     if not met and not force:
-        raise StoppingRuleError(
-            409,
-            f"The stopping rule is not met ({streak.consecutive_excludes} of "
-            f"{threshold} consecutive excludes)",
-        )
+        raise StoppingRuleError(409, _not_met_message(streak, threshold, test))
 
     closed = session.exec(
         update(Article)
@@ -370,7 +716,7 @@ def apply_rule(
         left_open=left_open,
         not_started=counts.not_started,
         screened=counts.screened,
-        threshold=threshold,
+        threshold=None if statistical else threshold,
         consecutive_excludes=streak.consecutive_excludes,
         forced=not met,
         reason=reason,
@@ -379,6 +725,13 @@ def apply_rule(
         ranking_run_id=run.id if run else None,
         model_version=run.model_version if run else None,
         ranking_method=run.method if run else None,
+        rule_type=project.stopping_rule_type,
+        recall_target=project.recall_target if test else None,
+        alpha=project.stopping_alpha if test else None,
+        p_value=test.p_value if test else None,
+        relevant_found=test.relevant_found if test else None,
+        sample_size=test.sample_size if test else None,
+        unscreened=test.unscreened if test else None,
     )
 
 

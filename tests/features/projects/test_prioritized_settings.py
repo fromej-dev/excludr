@@ -211,6 +211,48 @@ def test_project_delete_removes_ranking_runs(auth_as, a_project, session):
     assert session.exec(select(RankingRun)).all() == []
 
 
+def test_statistical_rule_migration_round_trip(tmp_path):
+    """Down- and upgrade the statistical-rule revision; existing rows get defaults."""
+    url = f"sqlite:///{tmp_path / 'migrate.db'}"
+    engine = create_engine(url)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as s:
+        user = User(email="m@example.com", name="m", hashed_password="x")
+        s.add(user)
+        s.flush()
+        s.add(Project(name="proj", description="d", owner_id=user.id))
+        s.commit()
+    engine.dispose()
+    env = {**os.environ, "DATABASE_URL": url}
+
+    def alembic(*args):
+        subprocess.run(
+            [sys.executable, "-m", "alembic", *args],
+            cwd=REPO_ROOT,
+            env=env,
+            check=True,
+            capture_output=True,
+        )
+
+    alembic("stamp", "e5b2d8f4a7c1")
+    alembic("downgrade", "d7e3a9c1f5b2")
+    engine = create_engine(url)
+    cols = {c["name"] for c in inspect(engine).get_columns("project")}
+    assert not cols & {"stopping_rule_type", "recall_target", "stopping_alpha"}
+    engine.dispose()
+
+    alembic("upgrade", "e5b2d8f4a7c1")
+    engine = create_engine(url)
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT stopping_rule_type, recall_target, stopping_alpha FROM project"
+            )
+        ).one()
+    assert tuple(row) == ("consecutive", 0.95, 0.05)
+    engine.dispose()
+
+
 def test_migration_adds_prioritized_screening_schema(tmp_path):
     """Down- and upgrade this revision on a SQLite DB built from the models.
 
@@ -273,3 +315,131 @@ def test_migration_adds_prioritized_screening_schema(tmp_path):
         ).one()
         assert tuple(row) == (0, None)
     engine.dispose()
+
+
+# --- statistical stopping rule settings -----------------------------------
+
+
+def test_statistical_defaults_exposed(auth_as, a_project):
+    client, owner = auth_as()
+    body = client.get(f"{API}/{a_project(owner).id}").json()
+    assert body["stopping_rule_type"] == "consecutive"
+    assert body["recall_target"] == 0.95
+    assert body["stopping_alpha"] == 0.05
+
+
+def test_patch_rule_type_and_targets(auth_as, a_project, session):
+    client, owner = auth_as()
+    project = a_project(owner)
+    r = client.patch(
+        f"{API}/{project.id}",
+        json={
+            "stopping_rule_type": "statistical",
+            "recall_target": 0.9,
+            "stopping_alpha": 0.01,
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["stopping_rule_type"] == "statistical"
+    assert body["recall_target"] == 0.9 and body["stopping_alpha"] == 0.01
+    assert body["stop_after_consecutive_excludes"] == 100  # kept
+    session.refresh(project)
+    assert project.stopping_rule_type == "statistical"
+
+
+@pytest.mark.parametrize("role", [ProjectRole.reviewer, ProjectRole.viewer])
+def test_patch_rule_type_owner_only(auth_as, a_project, a_member, session, role):
+    client, owner = auth_as()
+    project = a_project(owner)
+    auth_as(a_member(project, role))
+    r = client.patch(f"{API}/{project.id}", json={"stopping_rule_type": "statistical"})
+    assert r.status_code == 403
+    session.refresh(project)
+    assert project.stopping_rule_type == "consecutive"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"recall_target": 0.79},
+        {"recall_target": 1.0},
+        {"recall_target": 0.995},
+        {"recall_target": "NaN"},
+        {"stopping_alpha": 0},
+        {"stopping_alpha": 0.21},
+        {"stopping_alpha": "NaN"},
+        {"stopping_rule_type": "random"},
+        {"stopping_rule_type": ""},
+    ],
+)
+def test_statistical_validation(auth_as, a_project, payload):
+    client, owner = auth_as()
+    r = client.patch(f"{API}/{a_project(owner).id}", json=payload)
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"recall_target": 0.8},
+        {"recall_target": 0.99},
+        {"stopping_alpha": 0.001},
+        {"stopping_alpha": 0.2},
+    ],
+)
+def test_statistical_bounds_accepted(auth_as, a_project, payload):
+    client, owner = auth_as()
+    r = client.patch(f"{API}/{a_project(owner).id}", json=payload)
+    assert r.status_code == 200
+    assert {k: r.json()[k] for k in payload} == payload
+
+
+def test_targets_rounded_to_four_decimals(auth_as, a_project):
+    client, owner = auth_as()
+    r = client.patch(
+        f"{API}/{a_project(owner).id}",
+        json={"recall_target": 0.912345678, "stopping_alpha": 0.0123456},
+    )
+    assert r.json()["recall_target"] == 0.9123
+    assert r.json()["stopping_alpha"] == 0.0123
+
+
+def test_screening_rule_updated_audit_includes_new_fields(auth_as, a_project, session):
+    client, owner = auth_as()
+    project = a_project(owner)
+    client.patch(
+        f"{API}/{project.id}",
+        json={
+            "stopping_rule_type": "statistical",
+            "recall_target": 0.9,
+            "stopping_alpha": 0.05,  # unchanged: not in the diff
+        },
+    )
+    (event,) = _events(session, project, "project.screening_rule_updated")
+    assert event.details == {
+        "changes": {
+            "stopping_rule_type": {"from": "consecutive", "to": "statistical"},
+            "recall_target": {"from": 0.95, "to": 0.9},
+        }
+    }
+    assert _events(session, project, "project.settings_updated") == []
+
+
+def test_rule_type_and_targets_not_clearable(auth_as, a_project):
+    client, owner = auth_as()
+    url = f"{API}/{a_project(owner).id}"
+    client.patch(url, json={"stopping_rule_type": "statistical", "recall_target": 0.9})
+    r = client.patch(
+        url,
+        json={
+            "stopping_rule_type": None,
+            "recall_target": None,
+            "stopping_alpha": None,
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["stopping_rule_type"] == "statistical"
+    assert body["recall_target"] == 0.9
+    assert body["stopping_alpha"] == 0.05

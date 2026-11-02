@@ -960,6 +960,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "rispy" },
     { name = "scikit-learn" },
+    { name = "scipy" },
     { name = "sqlmodel" },
     { name = "uvicorn" },
 ]
@@ -991,6 +992,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.32" },
     { name = "rispy", specifier = ">=0.10.0" },
     { name = "scikit-learn", specifier = ">=1.7" },
+    { name = "scipy", specifier = ">=1.11" },
     { name = "sqlmodel", specifier = ">=0.0.48" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]

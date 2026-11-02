@@ -305,6 +305,9 @@ class ReportingService:
         excluded_ft = stats.excluded_full_text
         included = stats.included
 
+        method_inputs = methods.load_method_inputs(
+            self.session, project, not_screened, stats.awaiting_screening
+        )
         return PrismaFlow(
             identification=PrismaIdentification(
                 sources=[
@@ -342,10 +345,9 @@ class ReportingService:
                 ],
             ),
             included=PrismaIncluded(studies_included=included),
-            screening_method=methods.screening_method_sentence(
-                methods.load_method_inputs(
-                    self.session, project, not_screened, stats.awaiting_screening
-                )
+            screening_method=methods.screening_method_sentence(method_inputs),
+            screening_method_reference=methods.screening_method_reference(
+                method_inputs
             ),
         )
 

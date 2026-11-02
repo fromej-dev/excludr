@@ -514,3 +514,42 @@ def test_prisma_screening_method_omits_unused_rule_when_all_screened(
     _human(session, a, owner, S.title_abstract, D.exclude, "E1")
     method = client.get(f"{BASE}/{project.id}/prisma").json()["screening_method"]
     assert method.endswith("(Excludr ranking model tfidf-logreg-v1).")
+
+
+def test_prisma_statistical_method_and_reference(
+    auth_as, a_project, an_article_in, session
+):
+    client, owner = auth_as()
+    project = a_project(owner)
+    _prioritize(session, project, None)
+    project.stopping_rule_type = "statistical"
+    project.recall_target = 0.8
+    project.stopping_alpha = 0.2
+    session.add(project)
+    session.commit()
+    arts = [an_article_in(project) for _ in range(17)]
+    for i, a in enumerate(arts[:15]):
+        res = client.post(
+            f"{BASE}/{project.id}/screening/articles/{a.id}/decisions",
+            json={
+                "stage": "title_abstract",
+                "decision": "include" if i < 3 else "exclude",
+                "source": "human",
+            },
+        )
+        assert res.status_code == 201, res.text
+    res = client.post(f"{BASE}/{project.id}/screening/apply-stopping-rule")
+    assert res.status_code == 200, res.text
+
+    body = client.get(f"{BASE}/{project.id}/prisma").json()
+    assert body["screening_method"] == (
+        "Title and abstract screening stopped when the statistical stopping criterion of Callaghan and "
+        "Müller-Hansen (2020) was met after 15 records had been screened (3 included): "
+        "treating the most recently screened records as a sample of the remaining "
+        "records (ranked quasi-sampling), the null hypothesis that title and abstract "
+        "screening had reached a recall below 80% was rejected at a significance "
+        "level of 0.2 (p = 0.14). The remaining 2 records were not screened "
+        "(reported as marked ineligible by automation tools in the PRISMA flow "
+        "diagram)."
+    )
+    assert "10.1186/s13643-020-01521-4" in body["screening_method_reference"]

@@ -5,6 +5,8 @@ from typing import Optional
 from sqlalchemy import DateTime, func, false as sa_false, Column, JSON
 from sqlmodel import SQLModel, Field, Relationship
 
+from app.features.projects.models import StoppingRuleType
+
 
 class ScreeningStage(str, Enum):
     """Stage of screening."""
@@ -94,6 +96,12 @@ class StoppingRuleSummary(SQLModel):
     consecutive_excludes: int = 0
     met: bool = False
     applied_at: Optional[datetime] = None
+    rule_type: StoppingRuleType = StoppingRuleType.consecutive
+    recall_target: Optional[float] = None  # statistical rule only, as below
+    alpha: Optional[float] = None
+    p_value: Optional[float] = None
+    relevant_found: Optional[int] = None
+    test_reason: Optional[str] = None  # ok | no_relevant | no_sample | nothing_left
 
 
 class ScreeningStats(SQLModel):
