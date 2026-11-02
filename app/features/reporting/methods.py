@@ -77,10 +77,15 @@ class MethodInputs:
     threshold: Optional[int]  # Project.stop_after_consecutive_excludes (current)
     not_screened: int  # stats.not_screened_stopping_rule (current)
     applied: Optional[AppliedRule]  # only loaded when not_screened > 0
+    awaiting_screening: int = 0  # records still open at title/abstract
+    applications: int = 1  # applications since the last reopen (when applied)
 
 
 def load_method_inputs(
-    session: Session, project: Project, not_screened: int
+    session: Session,
+    project: Project,
+    not_screened: int,
+    awaiting_screening: int = 0,
 ) -> MethodInputs:
     """Collect the inputs of the methods sentence for a project."""
     runs = session.exec(
@@ -100,7 +105,24 @@ def load_method_inputs(
             last = session.exec(latest.order_by(RankingRun.id.desc()).limit(1)).first()
             cold_start = last.method if last is not None else None
     applied = None
+    applications = 1
     if not_screened > 0:
+        reverted = session.exec(
+            select(func.max(AuditEvent.id)).where(
+                AuditEvent.project_id == project.id,
+                AuditEvent.action == audit.SCREENING_STOPPING_RULE_REVERTED,
+            )
+        ).one()
+        applications = max(
+            1,
+            session.exec(
+                select(func.count(AuditEvent.id)).where(
+                    AuditEvent.project_id == project.id,
+                    AuditEvent.action == audit.SCREENING_STOPPING_RULE_APPLIED,
+                    AuditEvent.id > (reverted or 0),
+                )
+            ).one(),
+        )
         event = session.exec(
             select(AuditEvent)
             .where(
@@ -121,6 +143,8 @@ def load_method_inputs(
         threshold=project.stop_after_consecutive_excludes,
         not_screened=not_screened,
         applied=applied,
+        awaiting_screening=awaiting_screening,
+        applications=applications,
     )
 
 
@@ -172,7 +196,7 @@ def _part_b(i: MethodInputs, lead: str) -> Optional[str]:
         )
         a = i.applied
         if a is None:
-            if i.threshold is None:
+            if i.threshold is None or not i.prioritized:
                 return f"{lead} stopped early. {remaining}"
             return (
                 f"{lead} stopped early using a stopping rule "
@@ -198,22 +222,28 @@ def _part_b(i: MethodInputs, lead: str) -> Optional[str]:
                 f"{lead} stopped before the stopping rule{rule} was met"
                 f"{after}{reason_part}. {remaining}"
             )
-        met = (
-            f"{_n(c, 'consecutive record')} {_was(c)} excluded"
-            if c is not None
-            else "the required run of consecutive exclusions was reached"
-        )
         rule = (
             f" (rule: {_n(threshold, 'consecutive exclusion')})"
             if threshold is not None
             else ""
         )
         after = f" after {_n(s, 'record')} had been screened" if s is not None else ""
-        return (
-            f"{lead} stopped when the stopping rule was met: {met}{rule}{after}. "
-            f"{remaining}"
+        last = (
+            f": the last {_n(c, 'consecutive record')} {_was(c)} excluded{rule}"
+            if c is not None
+            else rule
         )
-    if i.prioritized and i.threshold is not None:
+        times = (
+            f" (The rule was applied {i.applications} times; figures are from the "
+            "last application.)"
+            if i.applications > 1
+            else ""
+        )
+        return (
+            f"{lead} stopped when the stopping rule was met{after}{last}. "
+            f"{remaining}{times}"
+        )
+    if i.prioritized and i.threshold is not None and i.awaiting_screening > 0:
         return (
             f"A stopping rule ({_n(i.threshold, 'consecutive exclusion')}) was set "
             "but has not been applied."

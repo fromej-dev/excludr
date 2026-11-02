@@ -52,7 +52,9 @@ def test_sort_by_relevance_score_puts_nulls_last(auth_as, a_project, an_article_
     high = an_article_in(project, relevance_score=0.9)
     url = f"{BASE}/{project.id}/articles"
 
-    desc = _ids(client.get(f"{url}?sort_by=relevance_score&order=desc"))
+    res = client.get(f"{url}?sort_by=relevance_score&order=desc")
+    assert res.json()["meta"]["sort"] == {"sort_by": "relevance_score", "order": "desc"}
+    desc = _ids(res)
     assert desc == [high.id, low.id, never.id]
     asc = _ids(client.get(f"{url}?sort_by=relevance_score&order=asc"))
     assert asc == [low.id, high.id, never.id]

@@ -370,8 +370,8 @@ CANONICAL_METHOD = (
     "classifier on TF-IDF features of titles, abstracts and keywords that was "
     "retrained on the reviewers' title and abstract decisions during screening "
     "(Excludr ranking model tfidf-logreg-v1). Screening stopped when the stopping "
-    "rule was met: 2 consecutive records were excluded (rule: 2 consecutive "
-    "exclusions) after 2 records had been screened. The remaining 1 record was not "
+    "rule was met after 2 records had been screened: the last 2 consecutive "
+    "records were excluded (rule: 2 consecutive exclusions). The remaining 1 record was not "
     "screened (reported as marked ineligible by automation tools in the PRISMA flow "
     "diagram)."
 )
@@ -486,8 +486,31 @@ def test_prisma_screening_method_uses_latest_application(
     session.commit()
     method = client.get(f"{BASE}/{project.id}/prisma").json()["screening_method"]
     assert (
-        "Screening stopped when the stopping rule was met: 3 consecutive records "
-        "were excluded (rule: 3 consecutive exclusions) after 9 records had been "
-        "screened." in method
+        "Screening stopped when the stopping rule was met after 9 records had "
+        "been screened: the last 3 consecutive records were excluded (rule: 3 "
+        "consecutive exclusions)." in method
     )
     assert "reason: x" not in method
+    assert (
+        "The rule was applied 2 times; figures are from the last application." in method
+    )
+
+
+def test_prisma_screening_method_omits_unused_rule_when_all_screened(
+    auth_as, a_project, an_article_in, session
+):
+    client, owner = auth_as()
+    project = a_project(owner)
+    _prioritize(session, project, 100)
+    session.add(
+        RankingRun(
+            project_id=project.id,
+            model_version="tfidf-logreg-v1",
+            method="model",
+            trigger="auto",
+        )
+    )
+    a = _excluded(an_article_in, project)
+    _human(session, a, owner, S.title_abstract, D.exclude, "E1")
+    method = client.get(f"{BASE}/{project.id}/prisma").json()["screening_method"]
+    assert method.endswith("(Excludr ranking model tfidf-logreg-v1).")

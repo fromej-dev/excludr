@@ -105,7 +105,11 @@ def get_articles(
         column = Article.relevance_score
         ordered = column.desc() if fsp.sorting.order == "desc" else column.asc()
         query = query.order_by(ordered.nulls_last(), Article.id)
-        fsp.sorting = None
+        sorting, fsp.sorting = fsp.sorting, None
+        response = fsp.generate_response(query, session)
+        response.meta.sort = sorting  # report the sort that was requested
+        fsp.sorting = sorting
+        return response
 
     return fsp.generate_response(query, session)
 

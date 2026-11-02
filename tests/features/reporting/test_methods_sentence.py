@@ -43,9 +43,9 @@ COLD = (
 def test_canonical_sentence():
     assert screening_method_sentence(BASE) == (
         PART_A
-        + " Screening stopped when the stopping rule was met: 2 consecutive records "
-        "were excluded (rule: 2 consecutive exclusions) after 2 records had been "
-        "screened. The remaining 1 record was " + REMAINING
+        + " Screening stopped when the stopping rule was met after 2 records had "
+        "been screened: the last 2 consecutive records were excluded (rule: 2 "
+        "consecutive exclusions). The remaining 1 record was " + REMAINING
     )
 
 
@@ -113,7 +113,7 @@ def test_forced_with_reason():
 
 
 def test_rule_set_not_applied():
-    i = replace(BASE, not_screened=0, applied=None)
+    i = replace(BASE, not_screened=0, applied=None, awaiting_screening=4)
     assert screening_method_sentence(i).endswith(
         "A stopping rule (2 consecutive exclusions) was set but has not been applied."
     )
@@ -121,6 +121,25 @@ def test_rule_set_not_applied():
     assert off.endswith("(Excludr ranking model tfidf-logreg-v1).")
     none = screening_method_sentence(replace(i, threshold=None))
     assert none.endswith("(Excludr ranking model tfidf-logreg-v1).")
+
+
+def test_rule_not_mentioned_when_screening_finished():
+    i = replace(BASE, not_screened=0, applied=None, awaiting_screening=0)
+    assert screening_method_sentence(i) == PART_A
+
+
+def test_several_applications_noted():
+    s = screening_method_sentence(replace(BASE, applications=3))
+    assert s.endswith(
+        "(The rule was applied 3 times; figures are from the last application.)"
+    )
+
+
+def test_fallback_ignores_threshold_when_prioritization_off():
+    i = replace(BASE, applied=None, not_screened=3, prioritized=False)
+    assert "Screening stopped early. The remaining 3 records" in (
+        screening_method_sentence(i)
+    )
 
 
 def test_fallback_without_event():

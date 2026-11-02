@@ -343,7 +343,9 @@ class ReportingService:
             ),
             included=PrismaIncluded(studies_included=included),
             screening_method=methods.screening_method_sentence(
-                methods.load_method_inputs(self.session, project, not_screened)
+                methods.load_method_inputs(
+                    self.session, project, not_screened, stats.awaiting_screening
+                )
             ),
         )
 
