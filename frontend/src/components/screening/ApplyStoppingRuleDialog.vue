@@ -97,7 +97,7 @@ const submit = async () => {
           <template v-if="isStatistical">
             <p v-if="s.met && stat" data-testid="apply-rule-statistical">
               Recall below {{ targetText }} rejected at α = {{ alphaText }}
-              ({{ formatP(stat.p_value ?? 0) }}), from {{ stat.relevant_found }} included of
+              ({{ formatP(stat.p_value ?? 0, s.alpha) }}), from {{ stat.relevant_found }} included of
               {{ stat.screened }} screened.
             </p>
             <div
@@ -108,8 +108,15 @@ const submit = async () => {
               <template v-if="stat?.reason === 'no_relevant'">
                 No relevant record has been found yet, so recall cannot be tested.
               </template>
+              <template v-else-if="stat?.reason === 'nothing_left'">
+                Every record has already been screened at title/abstract.
+              </template>
+              <template v-else-if="stat?.reason === 'no_sample'">
+                No records have been screened since the last import or rule change, so recall cannot be
+                tested.
+              </template>
               <template v-else-if="stat && stat.p_value !== null">
-                The rule is not met yet: {{ formatP(stat.p_value) }} for recall below {{ targetText }}
+                The rule is not met yet: {{ formatP(stat.p_value, s.alpha) }} for recall below {{ targetText }}
                 (needs p &lt; {{ alphaText }}).
                 <template v-if="stat.excludes_needed">
                   About {{ stat.excludes_needed }} more consecutive excludes would meet it.

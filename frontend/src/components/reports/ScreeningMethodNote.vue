@@ -5,9 +5,10 @@ import Button from '@/components/ui/Button.vue'
 
 interface Props {
   text: string
+  reference?: string | null
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), { reference: null })
 const wsStore = useWebSocketStore()
 
 const quote = ref<HTMLElement | null>(null)
@@ -25,7 +26,7 @@ const selectText = () => {
 
 const copy = async () => {
   try {
-    await navigator.clipboard.writeText(props.text)
+    await navigator.clipboard.writeText(props.reference ? `${props.text}\n\n${props.reference}` : props.text)
     wsStore.addNotification('Methods text copied', 'success')
     copied.value = true
     if (timer) clearTimeout(timer)
@@ -54,6 +55,9 @@ onBeforeUnmount(() => {
     <blockquote ref="quote" class="border-l-4 border-ai pl-3 text-sm" data-testid="prisma-screening-method">
       {{ text }}
     </blockquote>
+    <p v-if="reference" class="text-xs text-muted-foreground" data-testid="prisma-screening-reference">
+      {{ reference }}
+    </p>
     <p class="text-xs text-muted-foreground">
       Generated from the ranking runs and the stopping-rule application. Suggested wording: check it
       against your protocol and edit it before use.

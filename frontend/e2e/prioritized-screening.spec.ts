@@ -508,6 +508,33 @@ test.describe('Prioritized screening and the stopping rule', () => {
     await expect(page.getByTestId('apply-rule-confirm')).toBeEnabled()
   })
 
-  // TODO once the backend has landed: seed 20 includes + 900 excludes (p = 0.0099), apply, and check the
-  // methods text ("Callaghan and Müller-Hansen (2020)", "p = 0.0099").
+  // Real backend: 1 include + 45 excludes, 2 left -> p = 2/47 = 0.0426 < 0.05.
+  test('owner applies the statistical rule when it is met', async ({ page, pageHelper, api, testUser, request }) => {
+    test.setTimeout(120_000)
+    const { projectId } = await setup(api, testUser, 48, {
+      stopping_rule_type: 'statistical',
+      recall_target: 0.95,
+      stopping_alpha: 0.05,
+    })
+    // setup() only sees the first page of articles
+    const list = await request.get(`/api/v1/projects/${projectId}/articles?per_page=100`, { headers: auth(testUser.token) })
+    const articleIds: number[] = (await list.json()).data.map((a: { id: number }) => a.id).sort((a: number, b: number) => a - b)
+    expect(articleIds).toHaveLength(48)
+    await api.decide(testUser.token, projectId, articleIds[0], 'include')
+    for (const id of articleIds.slice(1, 46)) await api.decide(testUser.token, projectId, id, 'exclude')
+
+    await pageHelper.loginDirect(testUser.token)
+    await pageHelper.goToProjectTab(projectId, 'screening')
+    await expect(page.getByTestId('stopping-rule-met')).toContainText('Recall below 95% rejected (p = 0.0426 < 0.05)')
+    await page.getByTestId('apply-rule-open').click()
+    await expect(page.getByTestId('apply-rule-statistical')).toContainText('p = 0.0426')
+    await expect(page.getByTestId('apply-rule-statistical')).toContainText('1 included of 46 screened')
+    await page.getByTestId('apply-rule-confirm').click()
+    await expect(toast(page, 'Stopping rule applied: 2 records closed')).toHaveCount(1)
+
+    await page.goto(`/projects/${projectId}/reports`)
+    await expect(page.getByTestId('prisma-screening-method')).toContainText('Callaghan and Müller-Hansen (2020)')
+    await expect(page.getByTestId('prisma-screening-method')).toContainText(/p = 0\.04/)
+    await expect(page.getByTestId('prisma-screening-reference')).toContainText('10.1186/s13643-020-01521-4')
+  })
 })

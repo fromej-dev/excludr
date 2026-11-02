@@ -18,12 +18,20 @@ export const formatUsd = (value: number) =>
     maximumFractionDigits: value !== 0 && Math.abs(value) < 1 ? 4 : 2,
   })
 
-/** p-value for display: `p < 0.001`, two decimals from 0.01, otherwise 2 significant digits. */
-export const formatP = (p: number): string => {
+/**
+ * p-value for display: `p < 0.001`, otherwise 3 significant digits. Digits are added until the rounded
+ * value is on the same side of `alpha` as `p`, so a p below alpha never reads as alpha or more.
+ */
+export const formatP = (p: number, alpha?: number): string => {
   if (p < 0.001) return 'p < 0.001'
-  const text = p >= 0.01 ? p.toFixed(2) : String(Number(p.toPrecision(2)))
+  let text = String(Number(p.toPrecision(3)))
+  for (let digits = 3; digits <= 10; digits++) {
+    const rounded = Number(p.toPrecision(digits))
+    text = String(rounded)
+    if (alpha === undefined || p < alpha ? rounded < (alpha ?? Infinity) : rounded >= alpha) break
+  }
   return `p = ${text}`
 }
 
-/** Recall target (fraction) as a whole percent, e.g. 0.95 -> `95%`. */
-export const formatPercent = (fraction: number): string => `${Math.round(fraction * 1000) / 10}%`
+/** Recall target (fraction) as a percent with up to 2 decimals, e.g. 0.95 -> `95%`. */
+export const formatPercent = (fraction: number): string => `${Math.round(fraction * 10000) / 100}%`

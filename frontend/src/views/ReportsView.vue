@@ -85,7 +85,11 @@ const variant = (d: ScreeningDecisionType) =>
       </div>
       <template v-if="reportsStore.prisma">
         <PrismaDiagram :flow="reportsStore.prisma" />
-        <ScreeningMethodNote v-if="reportsStore.prisma.screening_method" :text="reportsStore.prisma.screening_method" />
+        <ScreeningMethodNote
+          v-if="reportsStore.prisma.screening_method"
+          :text="reportsStore.prisma.screening_method"
+          :reference="reportsStore.prisma.screening_method_reference ?? null"
+        />
       </template>
       <p v-else class="text-sm text-muted-foreground">Loading...</p>
     </Card>

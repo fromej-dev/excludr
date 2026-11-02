@@ -636,6 +636,7 @@ export interface PrismaFlow {
   included: { studies_included: number }
   /** Suggested methods sentence; null unless prioritized screening was used. */
   screening_method: string | null
+  screening_method_reference?: string | null
 }
 
 export type ExportFormat = 'csv' | 'ris'

@@ -388,7 +388,7 @@ const onApplied = () => void refreshAfterRuleChange(props.project.id)
                 Recall ≥ {{ formatPercent(status.recall_target ?? 0.95) }}
                 {{ status.met ? 'shown' : 'not yet shown' }}
                 <template v-if="status.statistical?.p_value != null">
-                  ({{ formatP(status.statistical.p_value) }}, needs &lt; {{ status.alpha }})
+                  ({{ formatP(status.statistical.p_value, status.alpha) }}, needs &lt; {{ status.alpha }})
                 </template>
                 ·
               </span>

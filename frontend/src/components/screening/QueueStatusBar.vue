@@ -38,15 +38,24 @@ const showStreak = computed(
 )
 const target = computed(() => formatPercent(rule.value?.recall_target ?? 0.95))
 const alphaText = computed(() => String(rule.value?.alpha ?? 0.05))
+const alphaNum = computed(() => rule.value?.alpha ?? 0.05)
+/** Nothing left to screen at title/abstract: the recall test no longer applies. */
+const finished = computed(
+  () => (!!props.stats && props.stats.awaiting_screening === 0) || rule.value?.test_reason === 'nothing_left'
+)
 const recallText = computed(() => {
   const r = rule.value
   if (!r) return ''
-  if (r.test_reason === 'no_relevant') return 'Recall test starts after the first include'
-  if (r.test_reason === 'no_sample') {
-    return 'Recall test: no records screened since the last import or rule change'
+  if (finished.value) return 'All records screened at title/abstract'
+  switch (r.test_reason) {
+    case 'no_relevant':
+      return 'Recall test starts after the first include'
+    case 'no_sample':
+      return 'Recall test: no records screened since the last import or rule change'
+    default:
+      if (r.p_value === null || r.p_value === undefined) return `Recall ≥ ${target.value} not yet shown`
+      return `Recall ≥ ${target.value} not yet shown (${formatP(r.p_value, alphaNum.value)}, needs < ${alphaText.value})`
   }
-  if (r.p_value === null || r.p_value === undefined) return `Recall ≥ ${target.value} not yet shown`
-  return `Recall ≥ ${target.value} not yet shown (${formatP(r.p_value)}, needs < ${alphaText.value})`
 })
 const streakPct = computed(() =>
   rule.value?.threshold ? Math.min(100, (rule.value.consecutive_excludes / rule.value.threshold) * 100) : 0
@@ -101,7 +110,7 @@ const showApplied = computed(() => !!rule.value?.applied_at && notScreened.value
         <strong>Stopping rule met.</strong>
         <template v-if="statistical">
           <span data-testid="stopping-recall">
-            Recall below {{ target }} rejected ({{ formatP(rule?.p_value ?? 0) }} &lt; {{ alphaText }}).
+            Recall below {{ target }} rejected ({{ formatP(rule?.p_value ?? 0, alphaNum) }} &lt; {{ alphaText }}).
           </span>
         </template>
         <template v-else>{{ rule?.threshold }} consecutive records were excluded.</template>
