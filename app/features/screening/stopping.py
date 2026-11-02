@@ -7,7 +7,8 @@ records closed by the rule are ignored). Decision ids give the order.
 
 - **Window.** Only decisions made at or after ``counting_since`` count: the latest of
   ``Project.prioritized_screening_enabled_at``, ``Project.stopping_rule_applied_at``
-  and the project's newest ``ImportBatch``. So applying the rule or importing more
+  and the project's newest ``ImportBatch`` that added new records to title/abstract
+  screening (not a duplicates-only or ``title_abstract_screened`` import). So applying the rule or importing more
   records restarts the count (the new records need a fresh streak, or ``force``),
   and reopening clears ``stopping_rule_applied_at`` (an undo).
 - **Reset events.** An article resets the streak when it has a *current* vote (each
@@ -51,7 +52,9 @@ be part of a sample (earlier ones were not served by relevance, or could not hav
 the records imported since); all relevant records found count towards ``r``. Settled
 means agreed or resolved outcomes (as for the streak); records with open votes,
 conflicts or uncertain outcomes are unscreened. Records that skipped title/abstract
-are outside the population. ``scipy`` is imported inside the functions that need it.
+are outside the population. Approximation: open records (a pending include vote, conflicts,
+uncertain) count as unscreened although humans will still screen them, which only makes the
+test more conservative. ``scipy`` is imported inside the functions that need it.
 """
 
 import logging
@@ -152,7 +155,10 @@ def counting_since(session: Session, project: Project) -> Optional[datetime]:
     """Start of the streak window (tz-aware UTC); None when no date is set."""
     last_import = session.exec(
         select(func.max(ImportBatch.created_at)).where(
-            ImportBatch.project_id == project.id
+            ImportBatch.project_id == project.id,
+            # only imports that put new records into title/abstract screening
+            ImportBatch.imported > 0,
+            ImportBatch.title_abstract_screened.is_(False),
         )
     ).one()
     dates = [
@@ -505,13 +511,14 @@ def compute_recall_test(
     project: Project,
     counts: Optional["RecordCounts"] = None,
     since: Optional[datetime] = None,
+    seq: Optional["_Sequence"] = None,
 ) -> Optional[RecallTest]:
     """Recall test on the project's settled records; None unless prioritized."""
     if not project.prioritized_screening:
         return None
     counts = counts or record_counts(session, project.id)
     since = since or counting_since(session, project)
-    seq = _recall_sequence(session, project, since)
+    seq = seq or _recall_sequence(session, project, since)
     return recall_test(
         seq.window,
         relevant_before=seq.relevant_before,
@@ -523,12 +530,8 @@ def compute_recall_test(
 
 
 def _excludes_needed_for(
-    session: Session,
-    project: Project,
-    counts: "RecordCounts",
-    since: Optional[datetime],
+    project: Project, counts: "RecordCounts", seq: "_Sequence"
 ) -> Optional[int]:
-    seq = _recall_sequence(session, project, since)
     return excludes_needed(
         seq.window,
         relevant_before=seq.relevant_before,
@@ -568,9 +571,14 @@ def status(session: Session, project: Project) -> StoppingRuleStatus:
     run = latest_run(session, project.id)
     threshold = project.stop_after_consecutive_excludes
     enabled = rule_enabled(project)
+    seq = (
+        _recall_sequence(session, project, streak.counting_since)
+        if is_statistical(project) and project.prioritized_screening
+        else None
+    )
     test = (
-        compute_recall_test(session, project, counts, streak.counting_since)
-        if is_statistical(project)
+        compute_recall_test(session, project, counts, streak.counting_since, seq)
+        if seq is not None
         else None
     )
     met = _is_met(project, streak, test)
@@ -600,9 +608,7 @@ def status(session: Session, project: Project) -> StoppingRuleStatus:
                 for k, v in asdict(test).items()
                 if k in RecallTestRead.model_fields
             },
-            excludes_needed=_excludes_needed_for(
-                session, project, counts, streak.counting_since
-            ),
+            excludes_needed=_excludes_needed_for(project, counts, seq),
         )
         if test is not None
         else None,

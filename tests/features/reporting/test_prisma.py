@@ -544,9 +544,9 @@ def test_prisma_statistical_method_and_reference(
     body = client.get(f"{BASE}/{project.id}/prisma").json()
     assert body["screening_method"] == (
         "Title and abstract screening stopped when the statistical stopping criterion of Callaghan and "
-        "Müller-Hansen (2020) was met after 15 records had been screened (3 included): "
-        "treating the most recently screened records as a sample of the remaining "
-        "records (ranked quasi-sampling), the null hypothesis that title and abstract "
+        "Müller-Hansen (2020) was met after 15 records had been screened (3 included at title and abstract): "
+        "treating the most recently screened records as if they were a random "
+        "sample of the records not yet screened (ranked quasi-sampling), the null hypothesis that title and abstract "
         "screening had reached a recall below 80% was rejected at a significance "
         "level of 0.2 (p = 0.14). The remaining 2 records were not screened "
         "(reported as marked ineligible by automation tools in the PRISMA flow "

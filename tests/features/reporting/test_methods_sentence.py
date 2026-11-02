@@ -216,8 +216,9 @@ def test_statistical_met_sentence():
         PART_A
         + " Screening stopped when the statistical stopping criterion of Callaghan "
         "and Müller-Hansen (2020) was met after 4,812 records had been screened "
-        "(312 included): treating the most recently screened records as a sample of "
-        "the remaining records (ranked quasi-sampling), the null hypothesis that "
+        "(312 included at title and abstract): treating the most recently screened "
+        "records as if they were a random sample of the records not yet screened "
+        "(ranked quasi-sampling), the null hypothesis that "
         "title and abstract screening had reached a recall below 95% was rejected "
         "at a significance level of 0.05 (p = 0.031). " + STAT_REMAINING
     )
@@ -337,3 +338,14 @@ def test_reference_present_only_for_statistical():
         screening_method_reference(replace(BASE, ranking_runs=0, not_screened=0))
         is None
     )
+
+
+def test_p_never_rounds_across_alpha():
+    for p, expected in (
+        (0.04995, "p = 0.04995"),
+        (0.0499, "p = 0.0499"),
+        (0.0501, "p = 0.05"),
+    ):
+        applied = replace(STAT.applied, p_value=p)
+        text = screening_method_sentence(replace(STAT, applied=applied))
+        assert f"({expected})." in text, text

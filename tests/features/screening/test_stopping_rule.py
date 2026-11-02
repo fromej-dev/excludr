@@ -921,7 +921,9 @@ def test_import_after_met_needs_fresh_streak(env):
     for a in env.arts(2):
         _ex(env.session, a, env.owner, created_at=old)
     assert env.client.get(f"{env.url}/stopping-rule").json()["met"] is True
-    batch = ImportBatch(project_id=env.project.id, filename="u.ris", format="ris")
+    batch = ImportBatch(
+        project_id=env.project.id, filename="u.ris", format="ris", imported=2
+    )
     env.session.add(batch)
     env.session.commit()
     env.arts(2)
@@ -1080,6 +1082,7 @@ def test_recall_window_restarts_on_import(env):
         project_id=env.project.id,
         filename="u.ris",
         format="ris",
+        imported=2,
         created_at=_now() - timedelta(hours=1),
     )
     env.session.add(batch)
@@ -1249,3 +1252,35 @@ def test_reopen_then_statistical_window(env):
     again = _recall(env)
     assert again.unscreened == 2 and again.sample_size == before.sample_size
     assert again.p_value == pytest.approx(before.p_value)
+
+
+@pytest.mark.parametrize(
+    "batch,restarts",
+    [
+        ({"imported": 0, "duplicates": 3}, False),
+        ({"imported": 4, "title_abstract_screened": True}, False),
+        ({"imported": 4}, True),
+    ],
+)
+def test_only_imports_adding_title_abstract_records_restart_window(
+    env, batch, restarts
+):
+    since = _now() - timedelta(days=2)
+    _statistical(env, since=since)
+    (a1,) = env.arts(1)
+    _inc(env.session, a1, env.owner, created_at=_now() - timedelta(hours=2))
+    env.session.add(
+        ImportBatch(
+            project_id=env.project.id,
+            filename="u.ris",
+            format="ris",
+            created_at=_now() - timedelta(hours=1),
+            **batch,
+        )
+    )
+    env.session.commit()
+    got = _recall(env)
+    assert (got.sample_size == 0) is restarts
+    assert (
+        stopping.counting_since(env.session, env.project) > since + timedelta(days=1)
+    ) is restarts

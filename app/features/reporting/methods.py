@@ -196,8 +196,16 @@ def _target(recall_target: float) -> str:
     return f"{round(recall_target * 100, 2):g}%"
 
 
-def _p(p: float) -> str:
-    return "p < 0.001" if p < 0.001 else f"p = {p:.2g}"
+def _p(p: float, alpha: float) -> str:
+    """Format a p-value so that its rounded form never lies on the other side of
+    ``alpha`` than the value itself (more digits, else ``p < alpha``)."""
+    if p < 0.001:
+        return "p < 0.001"
+    for digits in (2, 3, 4):
+        text = f"{p:.{digits}g}"
+        if float(text) < alpha if p < alpha else float(text) >= alpha:
+            return f"p = {text}"
+    return f"p < {alpha:.3g}" if p < alpha else f"p = {p:.6g}"
 
 
 def _statistical_part_b(i: MethodInputs, lead: str, remaining: str) -> str:
@@ -216,7 +224,7 @@ def _statistical_part_b(i: MethodInputs, lead: str, remaining: str) -> str:
         hypothesis = (
             f"null hypothesis of recall below {target}, significance level {alpha}"
         )
-        p = f": {_p(a.p_value)}" if a.p_value is not None else ""
+        p = f": {_p(a.p_value, float(alpha))}" if a.p_value is not None else ""
         after = f", after {_n(s, 'screened record', True)}" if s is not None else ""
         reason = a.reason.rstrip(".").strip() if a.reason else ""
         reason_part = f" (reason: {reason})" if reason else ""
@@ -225,14 +233,16 @@ def _statistical_part_b(i: MethodInputs, lead: str, remaining: str) -> str:
             f"{after}{reason_part}. {remaining}"
         )
     included = (
-        f" ({a.relevant_found:,} included)" if a.relevant_found is not None else ""
+        f" ({a.relevant_found:,} included at title and abstract)"
+        if a.relevant_found is not None
+        else ""
     )
     after = (
         f" after {_n(s, 'record', True)} had been screened{included}"
         if s is not None
         else ""
     )
-    p = f" ({_p(a.p_value)})" if a.p_value is not None else ""
+    p = f" ({_p(a.p_value, float(alpha))})" if a.p_value is not None else ""
     times = (
         f" (The rule was applied {i.applications} times; figures are from the "
         "last application.)"
@@ -241,8 +251,8 @@ def _statistical_part_b(i: MethodInputs, lead: str, remaining: str) -> str:
     )
     return (
         f"{lead} stopped when {cite} was met{after}: treating the most recently "
-        "screened records as a sample of the remaining records (ranked "
-        "quasi-sampling), the null hypothesis that title and abstract screening had "
+        "screened records as if they were a random sample of the records not yet "
+        "screened (ranked quasi-sampling), the null hypothesis that title and abstract screening had "
         f"reached a recall below {target} was rejected at a significance level of "
         f"{alpha}{p}. {remaining}{times}"
     )
