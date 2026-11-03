@@ -18,6 +18,12 @@ class PrismaIdentification(SQLModel):
     records_identified: int
     duplicates_removed: int
     records_after_duplicates_removed: int
+    marked_ineligible_by_automation: int = Field(
+        default=0,
+        description="Records removed before screening: marked as ineligible by "
+        "automation tools (closed by the prioritized-screening stopping rule "
+        "without being screened)",
+    )
 
 
 class PrismaScreening(SQLModel):
@@ -58,3 +64,13 @@ class PrismaFlow(SQLModel):
     retrieval: PrismaRetrieval
     eligibility: PrismaEligibility
     included: PrismaIncluded
+    screening_method: Optional[str] = Field(
+        default=None,
+        description="Suggested methods sentence on prioritized screening and the "
+        "stopping rule; null when prioritized screening was never used",
+    )
+    screening_method_reference: Optional[str] = Field(
+        default=None,
+        description="Full reference to cite when the methods sentence names the "
+        "statistical stopping criterion; null otherwise",
+    )

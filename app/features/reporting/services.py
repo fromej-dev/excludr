@@ -22,6 +22,7 @@ from app.features.screening.models import (
     ScreeningStage,
 )
 from app.features.screening.services import ScreeningService
+from . import methods
 from .schemas import (
     ExclusionReasonCount,
     PrismaEligibility,
@@ -47,7 +48,10 @@ CSV_COLUMNS = [
     "exclusion_reason",
     "ai_decision",
     "ai_confidence",
+    "relevance_score",
 ]
+
+NOT_SCREENED_REASON = "Not screened (stopping rule)"
 
 UNSPECIFIED_REASON = "Unspecified"
 _FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
@@ -62,6 +66,10 @@ class ExportRecord:
     exclusion_reason: Optional[str]
     ai_decision: Optional[str]
     ai_confidence: Optional[float]
+
+
+def _score(a: Article) -> Optional[float]:
+    return None if a.relevance_score is None else round(a.relevance_score, 4)
 
 
 def safe_csv_cell(value: object) -> str:
@@ -150,7 +158,9 @@ class ReportingService:
         records = []
         for a in articles:
             reason = None
-            if a.status == ArticleStatus.excluded and a.id in exclusions:
+            if a.not_screened_stopping_rule:
+                reason = NOT_SCREENED_REASON
+            elif a.status == ArticleStatus.excluded and a.id in exclusions:
                 reason = self._reason_of(exclusions[a.id][1], codes)
             ai = ai_latest.get(a.id)
             records.append(
@@ -196,6 +206,7 @@ class ReportingService:
                         r.exclusion_reason,
                         r.ai_decision,
                         r.ai_confidence,
+                        _score(a),
                     )
                 ]
             )
@@ -219,6 +230,8 @@ class ReportingService:
         if r.ai_decision:
             conf = f" ({r.ai_confidence:.2f})" if r.ai_confidence is not None else ""
             notes.append(f"AI decision: {r.ai_decision}{conf}")
+        if (score := _score(a)) is not None:
+            notes.append(f"Excludr relevance score: {score}")
         entry: dict = {
             "type_of_reference": ref_type,
             "title": a.title,
@@ -279,14 +292,22 @@ class ReportingService:
             if ex is not None and ex[0] == ScreeningStage.full_text:
                 reasons[self._reason_of(ex[1], codes) or UNSPECIFIED_REASON] += 1
 
-        # Records screened elsewhere skip this box and go straight to retrieval.
-        screened = stats.title_abstract_total - stats.title_abstract_skipped
+        not_screened = stats.not_screened_stopping_rule
+        # Records screened elsewhere skip this box and go straight to retrieval;
+        # records closed by the stopping rule were removed before screening
+        # (marked ineligible by automation tools).
+        screened = (
+            stats.title_abstract_total - stats.title_abstract_skipped - not_screened
+        )
         excluded_ta = stats.excluded_title_abstract
         sought = stats.full_text_eligible
         not_retrieved = stats.awaiting_full_text
         excluded_ft = stats.excluded_full_text
         included = stats.included
 
+        method_inputs = methods.load_method_inputs(
+            self.session, project, not_screened, stats.awaiting_screening
+        )
         return PrismaFlow(
             identification=PrismaIdentification(
                 sources=[
@@ -303,6 +324,7 @@ class ReportingService:
                 records_identified=identified,
                 duplicates_removed=duplicates,
                 records_after_duplicates_removed=identified - duplicates,
+                marked_ineligible_by_automation=not_screened,
             ),
             screening=PrismaScreening(
                 records_screened=screened,
@@ -323,6 +345,10 @@ class ReportingService:
                 ],
             ),
             included=PrismaIncluded(studies_included=included),
+            screening_method=methods.screening_method_sentence(method_inputs),
+            screening_method_reference=methods.screening_method_reference(
+                method_inputs
+            ),
         )
 
 

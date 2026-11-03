@@ -12,6 +12,8 @@ interface Props {
   order: SortOrder
   selected: Set<number>
   selectable: boolean
+  /** Show the predicted-relevance column (prioritized projects). */
+  showRelevance?: boolean
   /** Rows to render as skeletons while loading. */
   skeletonRows?: number
 }
@@ -45,6 +47,19 @@ const statusLabels: Record<ArticleStatus, string> = {
 }
 
 const statusLabel = (status: ArticleStatus) => statusLabels[status] ?? status.replace(/_/g, ' ')
+
+const RELEVANCE_HINT =
+  'Predicted title/abstract relevance from the latest ranking (higher = more likely relevant). Scores from different rankings are not comparable.'
+
+const columns = computed(() => {
+  const cols: { field: ArticleSortField; text: string; hint?: string }[] = [
+    { field: 'title', text: 'Title' },
+    { field: 'year', text: 'Year' },
+  ]
+  if (props.showRelevance) cols.push({ field: 'relevance_score', text: 'Relevance', hint: RELEVANCE_HINT })
+  cols.push({ field: 'status', text: 'Status' })
+  return cols
+})
 
 const showSkeleton = computed(() => props.loading && props.articles.length === 0)
 
@@ -92,11 +107,7 @@ const thClass = 'px-3 py-2 text-left align-middle text-xs font-semibold uppercas
             />
           </th>
           <th
-            v-for="col in [
-              { field: 'title', text: 'Title' },
-              { field: 'year', text: 'Year' },
-              { field: 'status', text: 'Status' },
-            ] as { field: ArticleSortField; text: string }[]"
+            v-for="col in columns"
             :key="col.field"
             role="columnheader"
             scope="col"
@@ -107,6 +118,7 @@ const thClass = 'px-3 py-2 text-left align-middle text-xs font-semibold uppercas
               type="button"
               class="inline-flex items-center gap-1 rounded uppercase tracking-wide hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               :data-testid="`sort-${col.field}`"
+              :title="col.hint"
               @click="emit('sort', col.field)"
             >
               {{ col.text }}
@@ -137,6 +149,7 @@ const thClass = 'px-3 py-2 text-left align-middle text-xs font-semibold uppercas
               <div class="mt-2 h-3 w-1/3 rounded bg-muted" />
             </td>
             <td role="cell" class="md:table-cell md:px-3 md:py-3"><div class="h-4 w-10 rounded bg-muted" /></td>
+            <td v-if="showRelevance" role="cell" class="md:table-cell md:px-3 md:py-3"><div class="h-4 w-8 rounded bg-muted" /></td>
             <td role="cell" class="md:table-cell md:px-3 md:py-3"><div class="h-5 w-20 rounded-full bg-muted" /></td>
             <td role="cell" class="md:table-cell md:px-3 md:py-3"><div class="h-5 w-16 rounded-full bg-muted" /></td>
           </tr>
@@ -183,8 +196,27 @@ const thClass = 'px-3 py-2 text-left align-middle text-xs font-semibold uppercas
               {{ article.year ?? '—' }}
             </td>
 
+            <td
+              v-if="showRelevance"
+              role="cell"
+              class="tabular-nums text-muted-foreground md:table-cell md:px-3 md:py-3"
+              data-testid="relevance-score"
+            >
+              {{ article.relevance_score != null ? article.relevance_score.toFixed(2) : '—' }}
+            </td>
+
             <td role="cell" class="md:table-cell md:whitespace-nowrap md:px-3 md:py-3">
               <Badge
+                v-if="article.not_screened_stopping_rule"
+                variant="outline"
+                :glyph="false"
+                title="Closed at title/abstract by the stopping rule without screening"
+                data-testid="article-status"
+              >
+                Not screened (stopping rule)
+              </Badge>
+              <Badge
+                v-else
                 :variant="statusVariants[article.status] ?? 'outline'"
                 :glyph="article.status === 'included' || article.status === 'excluded'"
                 data-testid="article-status"

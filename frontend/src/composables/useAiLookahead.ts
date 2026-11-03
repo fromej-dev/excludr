@@ -1,5 +1,6 @@
 import { ref, watch, type Ref } from 'vue'
 import { useScreeningStore } from '@/stores/screening'
+import { idsAfter } from '@/utils/queue'
 
 /** How many queued articles after the current one the AI should have screened in advance. */
 export const LOOKAHEAD = 2
@@ -19,8 +20,8 @@ const readEnabled = (): boolean => {
  * article on screen plus the next {@link LOOKAHEAD} articles in their queue, so the AI verdict is
  * ready when they get there, without batch-screening the whole project.
  *
- * - The queue is `fetchQueueIds(projectId, stage)` (ascending ids); "next" = the ids after the
- *   current one, no wrapping.
+ * - The queue is `fetchQueueIds(projectId, stage)` (in the server's queue order); "next" = the ids
+ *   after the current one, no wrapping.
  * - Each id is sent to `run-ai` at most once per project + stage while the view is open (the server
  *   also skips ids that are already screened or already queued by another batch).
  * - A 400 (no active criteria), 402 (plan's AI allowance used up) or 503 (AI not configured) stops
@@ -66,7 +67,13 @@ export function useAiLookahead(options: {
     if (!enabled.value || unavailable.value || !options.canRun.value || !current) return
     if (!Number.isFinite(projectId)) return
 
-    const queue = await screeningStore.fetchQueueIds(projectId, stage as 'title_abstract' | 'full_text')
+    const queue = await screeningStore.fetchQueueIds(projectId, stage as 'title_abstract' | 'full_text', {
+      enough: (ids) => {
+        const i = ids.indexOf(current)
+        return i !== -1 && ids.length - i - 1 >= LOOKAHEAD
+      },
+      maxPages: 3, // background work; the current article is normally near the top
+    })
     // The user may have moved on (or switched the lookahead off) while the queue loaded
     if (
       !enabled.value ||
@@ -77,7 +84,9 @@ export function useAiLookahead(options: {
     ) {
       return
     }
-    const ahead = queue.filter((id) => id > current).slice(0, LOOKAHEAD)
+    // Current not in the queue: the first ids are what `/next` serves next
+    const ahead =
+      idsAfter(queue, current, LOOKAHEAD) ?? queue.filter((id) => id !== current).slice(0, LOOKAHEAD)
     const sent = requestedFor(`${projectId}:${stage}`)
     const wanted = [current, ...ahead].filter((id) => !sent.has(id))
     if (wanted.length === 0) return

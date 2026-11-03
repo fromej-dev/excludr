@@ -1,12 +1,18 @@
 """Request/response schemas for dual screening, conflicts and agreement."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from sqlmodel import Field, SQLModel
 
-from .models import ScreeningDecisionType, ScreeningStage
+from app.features.projects.models import StoppingRuleType
+
+from .models import (  # noqa: F401
+    ScreeningDecisionType,
+    ScreeningStage,
+    StoppingRuleSummary,
+)
 
 
 class ResolveRequest(SQLModel):
@@ -100,3 +106,108 @@ class RunAIRequest(SQLModel):
     article_ids: Optional[list[int]] = Field(
         default=None, min_length=1, max_length=MAX_RUN_AI_ARTICLE_IDS
     )
+
+
+class RankingRunRead(SQLModel):
+    """One relevance-ranking run (read shape of ``RankingRun``)."""
+
+    id: int
+    created_at: datetime
+    model_version: str
+    method: str
+    trigger: str
+    triggered_by: Optional[int] = None
+    labelled_includes: int
+    labelled_excludes: int
+    scored: int
+    duration_ms: int
+
+
+class RerankResponse(SQLModel):
+    """Answer to a manual rerank request (the state before the request)."""
+
+    status: Literal["scheduled", "queued"]  # queued = runs right after the current run
+    last_run: Optional[RankingRunRead] = None
+
+
+class RecallTestRead(SQLModel):
+    """The statistical recall test (see ``stopping.recall_test``)."""
+
+    p_value: Optional[float]  # None when no record was screened in the window
+    met: bool
+    relevant_found: int
+    screened: int  # settled records, all time
+    sample_size: int  # settled records inside the counting window
+    unscreened: int
+    min_missed_under_h0: int
+    best_sample: Optional[int]  # sample size that gave the smallest p
+    excludes_needed: Optional[int]  # about how many more excludes would meet it
+    reason: Literal["ok", "no_relevant", "no_sample", "nothing_left"]
+
+
+class StoppingRuleStatus(SQLModel):
+    """Answer of ``GET .../screening/stopping-rule``."""
+
+    enabled: bool  # prioritized and a rule is set (statistical, or a threshold)
+    prioritized: bool
+    threshold: Optional[int]
+    consecutive_excludes: int  # 0 when not prioritized
+    met: bool
+    can_apply: bool  # met and there are records apply would close
+    remaining: int  # records at title/abstract screening, with or without votes
+    closable: int  # of those, with no human title/abstract decision (what apply closes)
+    screened: int  # settled human title/abstract outcomes, all time
+    not_screened: int  # records currently closed by the rule
+    last_ranked_at: Optional[datetime]
+    applied_at: Optional[datetime]
+    counting_since: Optional[datetime]  # start of the streak window
+    last_run: Optional[RankingRunRead] = None
+    rule_type: StoppingRuleType = StoppingRuleType.consecutive
+    recall_target: float = 0.95
+    alpha: float = 0.05
+    statistical: Optional[RecallTestRead] = None  # statistical rule while prioritized
+
+
+class ApplyStoppingRuleRequest(SQLModel):
+    force: bool = False
+    reason: Optional[str] = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _reason_when_forced(self) -> "ApplyStoppingRuleRequest":
+        if self.force and not (self.reason or "").strip():
+            raise ValueError(
+                "A reason is required to apply the stopping rule before it is met"
+            )
+        self.reason = self.reason.strip() if self.reason else None
+        return self
+
+
+class ApplyStoppingRuleResult(SQLModel):
+    closed: int
+    left_open: (
+        int  # at title/abstract with human votes (partly reviewed, conflict, uncertain)
+    )
+    not_started: int  # legacy 'imported' records, untouched
+    screened: int
+    threshold: Optional[int]  # None for the statistical rule
+    consecutive_excludes: int
+    forced: bool  # True only when the rule was not met
+    reason: Optional[str]
+    applied_at: datetime
+    counting_since: Optional[datetime]
+    ranking_run_id: Optional[int]
+    model_version: Optional[str]
+    ranking_method: Optional[str]
+    rule_type: StoppingRuleType = StoppingRuleType.consecutive
+    # statistical rule only (None for the consecutive rule)
+    recall_target: Optional[float] = None
+    alpha: Optional[float] = None
+    p_value: Optional[float] = None
+    relevant_found: Optional[int] = None
+    sample_size: Optional[int] = None
+    unscreened: Optional[int] = None  # records not screened when applied
+
+
+class ReopenNotScreenedResult(SQLModel):
+    reopened: int
+    previous_applied_at: Optional[datetime]

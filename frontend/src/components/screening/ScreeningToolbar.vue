@@ -99,6 +99,10 @@ const percent = computed(() =>
         <dd class="font-semibold text-exclude-soft-foreground" data-testid="excluded-count">{{ stats.excluded }}</dd>
         <dt class="text-muted-foreground">Excluded</dt>
       </div>
+      <div v-if="stats.not_screened_stopping_rule > 0" class="flex items-baseline gap-1.5">
+        <dd class="font-semibold" data-testid="not-screened-count">{{ stats.not_screened_stopping_rule }}</dd>
+        <dt class="text-muted-foreground" title="Closed by the stopping rule without screening">Not screened</dt>
+      </div>
     </dl>
 
     <Button size="sm" variant="outline" data-testid="ai-batch-open" @click="aiOpen = true">

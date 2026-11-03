@@ -36,6 +36,8 @@ from ..projects.models import Project
 from ..research.models import Article, ArticleStatus
 from ..research.services import ArticleService
 from ..users.models import User
+from . import stopping
+from .queue import QueueOrder, queue_order
 from ...core.database import SessionDep
 
 SCREENING_STAGES = (ScreeningStage.title_abstract, ScreeningStage.full_text)
@@ -226,18 +228,23 @@ class ScreeningService:
             query = query.where(Article.id.notin_(fully_reviewed))
         return query
 
+    def queue_order(self, project: Project, stage: ScreeningStage) -> QueueOrder:
+        """Queue order at ``stage`` (see ``queue.queue_order``)."""
+        return queue_order(self.session, project, stage)
+
     def get_next_article_for_screening(
         self,
-        project_id: int,
+        project: Project,
         stage: ScreeningStage,
         reviewer_id: Optional[int] = None,
-        required_reviewers: int = 1,
+        order: Optional[QueueOrder] = None,
     ) -> Article | None:
-        """Get the next article this reviewer should screen at the given stage."""
+        """First article of the reviewer's queue at ``stage``, in queue order."""
+        order = order or self.queue_order(project, stage)
         query = self.pending_articles_query(
-            project_id, stage, reviewer_id, required_reviewers
+            project.id, stage, reviewer_id, project.required_reviewers
         )
-        return self.session.exec(query.order_by(Article.id)).first()
+        return self.session.exec(query.order_by(*order.clauses).limit(1)).first()
 
     # ------------------------------------------------------------------
     # Dual screening: submitting, resolving and evaluating decisions
@@ -344,8 +351,17 @@ class ScreeningService:
             earlier decision by the same reviewer.
 
         Raises:
-            ScreeningError: 409 if the article is not currently at ``data.stage``.
+            ScreeningError: 409 if the article is not currently at ``data.stage`` or
+                was closed by the stopping rule.
         """
+        # lock the row so a concurrent stopping-rule application and this vote
+        # serialize (no-op on SQLite), then judge the fresh state
+        self.session.refresh(article, with_for_update=True)
+        if article.not_screened_stopping_rule:
+            raise ScreeningError(
+                409,
+                "This record was closed by the stopping rule; the owner can reopen it",
+            )
         if data.stage not in SCREENING_STAGES or article.current_stage != data.stage:
             raise ScreeningError(
                 409, f"Article is not at the '{data.stage.value}' stage"
@@ -381,6 +397,7 @@ class ScreeningService:
         Raises:
             ScreeningError: 409 if the article is not currently in conflict.
         """
+        self.session.refresh(article, with_for_update=True)
         stage = article.current_stage
         if (
             stage not in SCREENING_STAGES
@@ -570,7 +587,9 @@ class ScreeningService:
             ),
         )
 
-    def get_screening_stats(self, project_id: int) -> ScreeningStats:
+    def get_screening_stats(
+        self, project_id: int, project: Optional[Project] = None
+    ) -> ScreeningStats:
         """Exact screening statistics for a project (see ``ScreeningStats``).
 
         Two queries: one grouped count of articles by status, stage and which
@@ -581,6 +600,8 @@ class ScreeningService:
         title/abstract by having a human full-text decision: a human decision can
         only be recorded at the article's current stage, so an article only gets
         one after it passed title/abstract, and only human decisions move it.
+        Records closed by the stopping rule (no decision) are counted in
+        ``not_screened_stopping_rule``, not as exclusions.
         """
 
         def has_decision(stage: ScreeningStage, human_only: bool):
@@ -602,6 +623,7 @@ class ScreeningService:
                 has_decision(ta, True).label("ta_human"),
                 has_decision(ft, True).label("ft_human"),
                 Article.title_abstract_skipped.label("skipped"),
+                Article.not_screened_stopping_rule.label("not_screened"),
             )
             .where(Article.project_id == project_id)
             .subquery()
@@ -610,7 +632,17 @@ class ScreeningService:
         rows = self.session.exec(select(*cols, func.count()).group_by(*cols)).all()
 
         stats = ScreeningStats()
-        for status, stage, ta_any, ft_any, ta_human, ft_human, skipped, n in rows:
+        for (
+            status,
+            stage,
+            ta_any,
+            ft_any,
+            ta_human,
+            ft_human,
+            skipped,
+            not_screened,
+            n,
+        ) in rows:
             status, stage = ArticleStatus(status), ScreeningStage(stage)
             stats.total_articles += n
             stats.screened_title_abstract += n if ta_any else 0
@@ -631,6 +663,9 @@ class ScreeningService:
                 stats.included += n
                 stats.full_text_completed += n
             elif status == ArticleStatus.excluded:
+                if not_screened:  # closed by the stopping rule, never screened
+                    stats.not_screened_stopping_rule += n
+                    continue
                 stats.excluded += n
                 if excluded_ft:
                     stats.excluded_full_text += n
@@ -660,6 +695,8 @@ class ScreeningService:
                     stats.full_text_decided += n
 
         stats.uncertain = self._count_open_uncertain(project_id)
+        if project is not None and project.prioritized_screening:
+            stats.stopping_rule = stopping.summary(self.session, project)
         return stats
 
     def _count_open_uncertain(self, project_id: int) -> int:

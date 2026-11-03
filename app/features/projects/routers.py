@@ -15,11 +15,19 @@ from app.features.audit import services as audit
 from app.features.auth.services import get_current_user
 from app.features.billing import services as billing
 from app.features.users.models import User
-from .models import ImportBatch, Project, ProjectCreate, ProjectUpdate
+from .models import (
+    SCREENING_RULE_FIELDS,
+    ImportBatch,
+    Project,
+    ProjectCreate,
+    ProjectUpdate,
+    update_values,
+)
 from .permissions import OwnerAccess, OwnerAccessAnyState, ViewerAccess
 from .services import ProjectService, ProjectServiceDep
 from app.features.research.flows import schedule_auto_retrieval
 from app.features.research.models import Article, ArticleStatus
+from app.features.screening.ranking import schedule_rerank
 from app.features.screening.services import ScreeningService
 from .flows import parse_ris_file_flow, parse_pubmed_file_flow
 
@@ -115,6 +123,8 @@ async def upload_ris_file(
             title_abstract_screened,
         )
         _retrieve_skipped(session, background_tasks, result, access.user.id)
+        if result.get("articles_created"):
+            schedule_rerank(background_tasks, access.project, user_id=access.user.id)
 
         return JSONResponse(
             content={
@@ -175,6 +185,8 @@ async def upload_pubmed_file(
             title_abstract_screened,
         )
         _retrieve_skipped(session, background_tasks, result, access.user.id)
+        if result.get("articles_created"):
+            schedule_rerank(background_tasks, access.project, user_id=access.user.id)
 
         return JSONResponse(
             content={
@@ -228,7 +240,8 @@ def update_project(
     background_tasks: BackgroundTasks,
 ):
     """Update project fields and settings (owner only)."""
-    changes = data.model_dump(exclude_unset=True, exclude_none=True)
+    changes = update_values(data)
+    rule_before = {f: getattr(access.project, f) for f in SCREENING_RULE_FIELDS}
     reviewers_before = access.project.required_reviewers
     if changes.get("required_reviewers", reviewers_before) > reviewers_before:
         try:
@@ -246,7 +259,13 @@ def update_project(
             if a.id not in waiting_before
         ]
         schedule_auto_retrieval(background_tasks, now_waiting, access.user.id)
-    if changes:
+    settings_changes = {k: v for k, v in changes.items() if k not in rule_before}
+    rule_changes = {
+        f: {"from": old, "to": getattr(project, f)}
+        for f, old in rule_before.items()
+        if getattr(project, f) != old
+    }
+    if settings_changes:
         audit.record_event(
             session,
             project.id,
@@ -254,9 +273,25 @@ def update_project(
             "project",
             project.id,
             access.user.id,
-            changes,
+            settings_changes,
         )
+    if rule_changes:
+        audit.record_event(
+            session,
+            project.id,
+            audit.PROJECT_SCREENING_RULE_UPDATED,
+            "project",
+            project.id,
+            access.user.id,
+            {"changes": rule_changes},
+        )
+    if settings_changes or rule_changes:
         session.refresh(project)  # the audit commit expired it
+    if "prioritized_screening" in rule_changes:
+        schedule_rerank(background_tasks, project, user_id=access.user.id, force=True)
+    elif project.required_reviewers != reviewers_before:
+        # Labels may change under the new rule
+        schedule_rerank(background_tasks, project, user_id=access.user.id)
     return project
 
 

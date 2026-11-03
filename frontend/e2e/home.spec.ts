@@ -12,12 +12,24 @@ test.describe('Home page', () => {
   test('shows the product screenshots', async ({ page }) => {
     await page.goto('/')
     const shots = page.getByTestId('home-screenshot')
-    await expect(shots).toHaveCount(4)
+    await expect(shots).toHaveCount(5)
     for (const shot of await shots.all()) {
       await shot.scrollIntoViewIfNeeded()
       await expect(shot).toHaveAttribute('alt', /\w/)
       await expect.poll(() => shot.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0)
     }
+  })
+
+  test('links to the prioritized screening explainer', async ({ page }) => {
+    await page.goto('/')
+    const link = page.getByRole('link', { name: /How the stopping rules work/ })
+    await link.scrollIntoViewIfNeeded()
+    await link.click()
+    await expect(page).toHaveURL('/prioritized-screening')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Prioritized screening and stopping rules')
+    // A new page opens at the top, not at the homepage's scroll position
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+    await expect(page.getByRole('link', { name: /doi\.org\/10\.1186\/s13643-020-01521-4/ })).toBeVisible()
   })
 
   test('offers the app to signed-in users', async ({ page, pageHelper, testUser }) => {

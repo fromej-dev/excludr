@@ -1,7 +1,9 @@
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime, timezone
 from enum import Enum
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import Index, UniqueConstraint, column
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.sql.expression import ColumnElement
 from sqlalchemy import false as sa_false
 from sqlmodel import Field, SQLModel, Column, JSON, Text, Relationship
 
@@ -17,6 +19,26 @@ from app.features.screening.models import ScreeningStage
 def _utcnow() -> datetime:
     """Return the current time as a timezone-aware UTC datetime."""
     return datetime.now(timezone.utc)
+
+
+class _DescNullsLast(ColumnElement):
+    """Index expression ``col DESC NULLS LAST``; plain ``DESC`` where the
+    database cannot index NULLS LAST (SQLite, used in tests)."""
+
+    inherit_cache = True
+
+    def __init__(self, col):
+        self.col = col
+
+
+@compiles(_DescNullsLast)
+def _desc(element, compiler, **kw):
+    return f"{compiler.process(element.col, **kw)} DESC"
+
+
+@compiles(_DescNullsLast, "postgresql")
+def _desc_nulls_last_pg(element, compiler, **kw):
+    return f"{compiler.process(element.col, **kw)} DESC NULLS LAST"
 
 
 class ArticleStatus(str, Enum):
@@ -57,6 +79,11 @@ class Article(SQLModel, table=True):
         UniqueConstraint("project_id", "doi", name="uq_article_project_doi"),
         UniqueConstraint("project_id", "pmid", name="uq_article_project_pmid"),
         UniqueConstraint("project_id", "pmcid", name="uq_article_project_pmcid"),
+        Index(
+            "ix_article_project_relevance",
+            "project_id",
+            _DescNullsLast(column("relevance_score")),
+        ),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -183,6 +210,16 @@ class Article(SQLModel, table=True):
         default=False,
         description="Sent to full text without title/abstract screening here "
         "(screened elsewhere)",
+        sa_column_kwargs={"server_default": sa_false(), "nullable": False},
+    )
+    relevance_score: Optional[float] = Field(
+        default=None,
+        description="Predicted relevance at title/abstract (prioritized screening); "
+        "higher = more likely relevant",
+    )
+    not_screened_stopping_rule: bool = Field(
+        default=False,
+        description="Closed at title/abstract without screening by the stopping rule",
         sa_column_kwargs={"server_default": sa_false(), "nullable": False},
     )
 

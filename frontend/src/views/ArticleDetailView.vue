@@ -76,6 +76,9 @@ const goBack = () => {
             <h1 class="text-2xl font-bold flex-1" data-testid="article-detail-title">{{ article.title || 'Untitled' }}</h1>
             <div class="flex gap-2 flex-shrink-0">
               <Badge>{{ article.status }}</Badge>
+              <Badge v-if="article.not_screened_stopping_rule" variant="outline" :glyph="false" data-testid="detail-not-screened">
+                Not screened (stopping rule)
+              </Badge>
               <Badge :variant="article.final_decision === 'included' ? 'include' : article.final_decision === 'excluded' ? 'exclude' : 'outline'">{{ article.final_decision }}</Badge>
             </div>
           </div>
@@ -89,7 +92,11 @@ const goBack = () => {
             <span v-if="article.journal">Journal: {{ article.journal }}</span>
             <span v-if="article.doi">DOI: {{ article.doi }}</span>
             <span v-if="article.pmid">PMID: {{ article.pmid }}</span>
+            <span v-if="article.relevance_score != null" data-testid="detail-relevance">Relevance score {{ article.relevance_score.toFixed(2) }}</span>
           </div>
+          <p v-if="article.not_screened_stopping_rule" class="mt-2 text-sm text-muted-foreground">
+            Closed at title/abstract by the stopping rule; the owner can reopen it from Articles.
+          </p>
         </div>
 
         <div v-if="article.abstract">

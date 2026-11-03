@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import Depends
@@ -10,6 +11,7 @@ from .models import (
     ProjectCreate,
     ProjectMember,
     ProjectUpdate,
+    update_values,
 )
 from ..users.models import User
 from ...core.database import SessionDep
@@ -96,11 +98,10 @@ class ProjectService:
         Returns:
             Project: Updated project object
         """
-        project.sqlmodel_update(
-            data.model_dump(
-                exclude_unset=True, exclude_defaults=True, exclude_none=True
-            )
-        )
+        values = update_values(data)
+        if values.get("prioritized_screening") and not project.prioritized_screening:
+            project.prioritized_screening_enabled_at = datetime.now(timezone.utc)
+        project.sqlmodel_update(values)
         self.session.add(project)
         self.session.commit()
         self.session.refresh(project)
@@ -119,8 +120,9 @@ class ProjectService:
         from app.features.ai_usage.models import AIUsage
         from app.features.audit.models import AuditEvent
         from app.features.billing.models import Payment, ProjectPlan
+        from app.features.screening.models import RankingRun
 
-        for model in (ProjectMember, ImportBatch, AuditEvent, ProjectPlan):
+        for model in (ProjectMember, ImportBatch, AuditEvent, ProjectPlan, RankingRun):
             self.session.exec(delete(model).where(model.project_id == project.id))
         # Payments are financial records: keep them, without the project link.
         self.session.exec(

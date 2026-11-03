@@ -10,6 +10,7 @@ In a systematic review, researchers must screen hundreds or thousands of article
 - Importing articles from **RIS** and **PubMed** formats
 - Using an **AI screening agent** to evaluate full-text articles against each criterion, producing confidence scores and reasoning
 - Supporting **human review** alongside AI decisions, with the ability to override
+- **Prioritized screening** (optional): the title/abstract queue is ordered by a local relevance model that learns from your decisions (no AI calls, no cost), with an optional stopping rule ("stop after N consecutive excludes") whose closed records are reported separately in PRISMA, the methods text and exports
 - Tracking each article through a screening pipeline from import to final decision
 
 The primary focus is on **full-text review** — the stage where researchers assess complete articles rather than just titles and abstracts.
@@ -122,6 +123,27 @@ python -m app.cli make-admin you@example.com
 python -m app.cli make-admin you@example.com --revoke
 ```
 
+## Prioritized screening
+
+Owners can switch on **prioritized screening** in the project settings. The title/abstract queue
+is then sorted by predicted relevance: a small local model (TF-IDF + logistic regression, no LLM)
+is retrained in the background from the reviewers' title/abstract decisions, so likely includes come
+first. Until there are both includes and excludes it ranks by similarity to the review question and
+the inclusion criteria; an optional random start (`ranking_min_random`) gives the model unbiased
+first labels. With dual screening both reviewers see the same order and still decide blind.
+
+The optional **stopping rule** ("stop after N consecutive excludes", default 100) shows progress in
+the screening view. When it is met the owner can close the records nobody has screened. They get the
+status "Not screened (stopping rule)": they are not counted as human excludes, appear in PRISMA as
+"marked as ineligible by automation tools", in the suggested methods sentence and in the CSV/RIS
+export, and the owner can reopen them. Records with a vote, an uncertain vote or a conflict stay
+open. The rule is a heuristic, not a guarantee that all relevant records were found; report it as
+such (the methods sentence helps).
+
+| Variable | Purpose |
+|---|---|
+| `RANKING_AUTO_RETRAIN=false` | Optional; stop retraining the ranking in the background (owners can still click "Re-rank now") |
+
 ## Project Structure
 
 ```
@@ -133,7 +155,7 @@ app/
     projects/     # Review projects, article import (RIS/PubMed)
     research/     # Articles, AI screening agent
     criteria/     # Inclusion/exclusion criteria
-    screening/    # Screening decisions (AI + human)
+    screening/    # Screening decisions (AI + human), relevance ranking, stopping rule
 ```
 
 Each feature module follows a consistent pattern: `models.py`, `routers.py`, `services.py`, and optionally `schemas.py` and `flows.py` (Prefect).

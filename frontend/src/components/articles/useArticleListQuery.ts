@@ -16,11 +16,12 @@ const STATUSES: ArticleStatus[] = [
   'excluded',
 ]
 const DECISIONS: FinalDecision[] = ['pending', 'included', 'excluded']
-const SORT_FIELDS: ArticleSortField[] = ['title', 'year', 'status']
+const SORT_FIELDS: ArticleSortField[] = ['title', 'year', 'status', 'relevance_score']
 
 export interface ArticleListState {
   q: string
-  status: ArticleStatus | ''
+  /** `not_screened` is a UI-only value: excluded records closed by the stopping rule. */
+  status: ArticleStatus | 'not_screened' | ''
   decision: FinalDecision | ''
   fullText: FullTextFilter
   sort: ArticleSortField | ''
@@ -32,7 +33,7 @@ export interface ArticleListState {
 const first = (v: LocationQuery[string]): string => (Array.isArray(v) ? (v[0] ?? '') : (v ?? ''))
 
 export const parseArticleQuery = (query: LocationQuery): ArticleListState => {
-  const status = first(query.status) as ArticleStatus
+  const status = first(query.status) as ArticleStatus | 'not_screened'
   const decision = first(query.decision) as FinalDecision
   const fullText = first(query.full_text)
   const sort = first(query.sort) as ArticleSortField
@@ -40,7 +41,7 @@ export const parseArticleQuery = (query: LocationQuery): ArticleListState => {
   const page = Number(first(query.page))
   return {
     q: first(query.q),
-    status: STATUSES.includes(status) ? status : '',
+    status: STATUSES.includes(status as ArticleStatus) || status === 'not_screened' ? status : '',
     decision: DECISIONS.includes(decision) ? decision : '',
     fullText: fullText === 'has' || fullText === 'missing' ? fullText : '',
     sort: SORT_FIELDS.includes(sort) ? sort : '',
@@ -67,7 +68,14 @@ export const serializeArticleState = (s: ArticleListState): LocationQueryRaw => 
 }
 
 export const toListOptions = (s: ArticleListState): ArticleListOptions => ({
-  status: s.status || undefined,
+  status: s.status === 'not_screened' ? 'excluded' : s.status || undefined,
+  // "Excluded" means excluded by reviewers; the stopping-rule records have their own option
+  not_screened_stopping_rule:
+    s.status === 'not_screened'
+      ? true
+      : s.status === 'excluded' || (s.decision === 'excluded' && !s.status)
+        ? false
+        : undefined,
   final_decision: s.decision || undefined,
   has_full_text: s.fullText === 'has' ? true : s.fullText === 'missing' ? false : undefined,
   search: s.q.trim() || undefined,
@@ -101,7 +109,11 @@ export function useArticleListQuery() {
   /** Click on a sortable header: asc -> desc -> off. */
   const toggleSort = (field: ArticleSortField) => {
     const s = state.value
-    if (s.sort !== field) return update({ sort: field, order: 'asc' })
+    // Relevance starts with the most relevant records
+    if (s.sort !== field) return update({ sort: field, order: field === 'relevance_score' ? 'desc' : 'asc' })
+    if (field === 'relevance_score') {
+      return s.order === 'desc' ? update({ order: 'asc' }) : update({ sort: '', order: 'asc' })
+    }
     if (s.order === 'asc') return update({ order: 'desc' })
     return update({ sort: '', order: 'asc' })
   }

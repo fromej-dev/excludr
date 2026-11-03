@@ -5,6 +5,11 @@ import { storeToRefs } from 'pinia'
 import { useArticlesStore } from '@/stores/articles'
 import { useMembersStore } from '@/stores/members'
 import { useWebSocketStore } from '@/stores/websocket'
+import { useProjectsStore } from '@/stores/projects'
+import { useProjectStatsStore } from '@/stores/projectStats'
+import { useBillingStore } from '@/stores/billing'
+import { useStoppingRuleStore, refreshAfterRuleChange } from '@/stores/stoppingRule'
+import Dialog from '@/components/ui/Dialog.vue'
 import Button from '@/components/ui/Button.vue'
 import ArticlesToolbar from '@/components/articles/ArticlesToolbar.vue'
 import ArticlesTable from '@/components/articles/ArticlesTable.vue'
@@ -17,6 +22,10 @@ const router = useRouter()
 const articlesStore = useArticlesStore()
 const membersStore = useMembersStore()
 const wsStore = useWebSocketStore()
+const projectsStore = useProjectsStore()
+const statsStore = useProjectStatsStore()
+const billingStore = useBillingStore()
+const ruleStore = useStoppingRuleStore()
 const { articles, pagination, loading, error } = storeToRefs(articlesStore)
 const { isOwner } = storeToRefs(membersStore)
 
@@ -122,6 +131,42 @@ const skipSelected = async () => {
   }
 }
 
+const showRelevance = computed(
+  () => !!projectsStore.currentProject?.prioritized_screening || articles.value.some((a) => a.relevance_score != null)
+)
+
+// Owner: put the records closed by the stopping rule back into screening
+const notScreened = computed(() => statsStore.stats?.not_screened_stopping_rule ?? 0)
+const readOnly = computed(() => !!billingStore.status?.read_only)
+const reopenOpen = ref(false)
+const reopening = ref(false)
+const reopenError = ref<string | null>(null)
+
+const openReopen = () => {
+  reopenError.value = null
+  reopenOpen.value = true
+}
+
+const reopenAll = async () => {
+  reopening.value = true
+  reopenError.value = null
+  const outcome = await ruleStore.reopen(projectId.value)
+  reopening.value = false
+  if (outcome.ok) {
+    reopenOpen.value = false
+    wsStore.addNotification(`${outcome.result.reopened} records reopened for screening`, 'info')
+    await Promise.all([refreshAfterRuleChange(projectId.value), fetchArticles()])
+    return
+  }
+  reopenError.value = outcome.message
+  if (outcome.status === 409) {
+    // Nothing was closed any more: refresh the numbers and close
+    await refreshAfterRuleChange(projectId.value)
+    reopenOpen.value = false
+    await fetchArticles()
+  }
+}
+
 const isEmpty = computed(() => hasFetched.value && !loading.value && !error.value && articles.value.length === 0)
 </script>
 
@@ -132,11 +177,21 @@ const isEmpty = computed(() => hasFetched.value && !loading.value && !error.valu
       :total="pagination.total"
       :has-filters="hasFilters"
       :loading="loading"
+      :show-relevance="showRelevance"
       @update="update"
       @clear="clearFilters"
     />
 
-    <div v-if="isOwner" class="flex justify-end">
+    <div v-if="isOwner" class="flex flex-wrap items-center justify-end gap-4">
+      <Button
+        v-if="notScreened > 0 && !readOnly"
+        variant="outline"
+        size="sm"
+        data-testid="reopen-not-screened"
+        @click="openReopen"
+      >
+        Reopen {{ notScreened }} not-screened records
+      </Button>
       <router-link
         :to="{ name: 'project-pdf-upload', params: { id: projectId } }"
         class="text-sm font-medium text-primary hover:underline"
@@ -192,6 +247,7 @@ const isEmpty = computed(() => hasFetched.value && !loading.value && !error.valu
         :order="state.order"
         :selected="selected"
         :selectable="isOwner"
+        :show-relevance="showRelevance"
         @open="goToArticle"
         @sort="toggleSort"
         @toggle-row="toggleRow"
@@ -208,5 +264,24 @@ const isEmpty = computed(() => hasFetched.value && !loading.value && !error.valu
         @update:per-page="update({ perPage: $event })"
       />
     </template>
+
+    <Dialog v-model:open="reopenOpen" title="Reopen not-screened records">
+      <div class="space-y-3 text-sm" data-testid="reopen-dialog">
+        <p>
+          Put the {{ notScreened }} records closed by the stopping rule back into title/abstract
+          screening? They return to the queue and are re-ranked. This undoes the application: the
+          streak is back to what it was, and the PRISMA box and methods text are updated.
+        </p>
+        <p v-if="reopenError" role="alert" class="text-destructive" data-testid="reopen-error">
+          {{ reopenError }}
+        </p>
+        <div class="flex justify-end gap-2 pt-2">
+          <Button variant="outline" @click="reopenOpen = false">Cancel</Button>
+          <Button :disabled="reopening" data-testid="reopen-confirm" @click="reopenAll">
+            Reopen {{ notScreened }} records
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   </div>
 </template>

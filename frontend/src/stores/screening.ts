@@ -8,6 +8,7 @@ import type {
   ScreeningStage,
   NextArticleResponse,
   PaginatedResponse,
+  QueueOrderMode,
   RunAiResponse,
   WebSocketResponse,
 } from '@/types'
@@ -21,8 +22,13 @@ export const useScreeningStore = defineStore('screening', () => {
   const decisions = ref<ScreeningDecision[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  /** HTTP status of the last failed decision (409 = the record was closed meanwhile). */
+  const errorStatus = ref<number | undefined>(undefined)
   const aiDecision = ref<ScreeningDecision | null>(null)
   const aiScreeningLoading = ref(false)
+  // How `/screening/next` ordered the queue last time (id, random start or relevance)
+  const queueOrder = ref<QueueOrderMode | null>(null)
+  const randomStartRemaining = ref(0)
   /** Articles queued for AI screening by the lookahead (`run-ai` with `article_ids`), not yet done. */
   const aiQueuedIds = ref<Set<number>>(new Set())
   // Articles the batch reported on while their run-ai request was still in flight
@@ -88,6 +94,8 @@ export const useScreeningStore = defineStore('screening', () => {
         params: { stage },
       })
       currentArticle.value = res.article
+      queueOrder.value = res.queue_order ?? null
+      randomStartRemaining.value = res.random_start_remaining ?? 0
       return currentArticle.value
     } catch (err: unknown) {
       error.value = getErrorMessage(err, 'Failed to load the next article')
@@ -113,16 +121,40 @@ export const useScreeningStore = defineStore('screening', () => {
     }
   }
 
-  /** Ids of articles at `stage` this reviewer still has to decide, ascending. */
-  const fetchQueueIds = async (projectId: number, stage: ScreeningStage) => {
+  const QUEUE_PAGE_SIZE = 100 // FSP maximum
+  const QUEUE_MAX_PAGES = 20 // stop after 2000 ids
+
+  /**
+   * Ids of the articles at `stage` this reviewer still has to decide, in the server's queue order
+   * (the order `/screening/next` serves: relevance or random start when prioritized, else ids).
+   * Pages are read until `enough(ids)` is true, the queue ends, or `maxPages` is reached.
+   */
+  const fetchQueueIds = async (
+    projectId: number,
+    stage: ScreeningStage,
+    opts: { enough?: (ids: number[]) => boolean; maxPages?: number } = {}
+  ) => {
+    const ids: number[] = []
+    const known = new Set<number>()
     try {
-      const res = await getRaw<PaginatedResponse<Article>>(`/projects/${projectId}/articles`, {
-        params: { pending_for_me: true, stage, per_page: 100 },
-      })
-      return res.data.map((a) => a.id).sort((x, y) => x - y)
+      for (let page = 1; page <= (opts.maxPages ?? QUEUE_MAX_PAGES); page++) {
+        const res = await getRaw<PaginatedResponse<Article>>(`/projects/${projectId}/articles`, {
+          params: { pending_for_me: true, stage, per_page: QUEUE_PAGE_SIZE, page },
+        })
+        // The order can change between pages (e.g. after a rerank): keep each id once
+        for (const a of res.data) {
+          if (!known.has(a.id)) {
+            known.add(a.id)
+            ids.push(a.id)
+          }
+        }
+        if (res.data.length === 0 || opts.enough?.(ids)) break
+        if (page >= res.meta.pagination.total_pages) break
+      }
     } catch {
-      return []
+      /* return what has been read */
     }
+    return ids
   }
 
   const submitDecision = async (
@@ -132,6 +164,7 @@ export const useScreeningStore = defineStore('screening', () => {
   ) => {
     loading.value = true
     error.value = null
+    errorStatus.value = undefined
 
     try {
       const newDecision = await post<ScreeningDecision>(
@@ -142,6 +175,7 @@ export const useScreeningStore = defineStore('screening', () => {
       return newDecision
     } catch (err: unknown) {
       error.value = getErrorMessage(err, 'Failed to submit decision')
+      errorStatus.value = getErrorStatus(err)
       return null
     } finally {
       loading.value = false
@@ -253,8 +287,11 @@ export const useScreeningStore = defineStore('screening', () => {
     decisions,
     loading,
     error,
+    errorStatus,
     aiDecision,
     aiScreeningLoading,
+    queueOrder,
+    randomStartRemaining,
     aiQueuedIds,
     currentAiQueued,
     queueAiScreening,

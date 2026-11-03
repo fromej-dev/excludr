@@ -435,3 +435,64 @@ export const articles: DemoArticle[] = [
     aiTa: exclude('Participants chose their group; allocation was not randomised.', 'I3: not a randomised trial', { I3: notMet(0.88) }, 0.86),
   },
 ]
+
+/**
+ * A second, title/abstract-only project for the prioritized-screening screenshot: a search update
+ * where most records are off topic. `relevant` drives the owner's votes while seeding.
+ */
+export const prioritizedProject = {
+  name: 'Exercise for chronic pain 65+: search update',
+  description: 'Update search for the exercise review, screened in order of predicted relevance.',
+  review_question: project.review_question,
+}
+
+const relevantRecords: [title: string, abstract: string][] = [
+  ['Supervised strength training for chronic knee pain in adults over 65: a randomised controlled trial', 'Older adults with chronic knee pain were randomised to twelve weeks of supervised strength training or usual care. Exercise reduced pain intensity and improved physical function at twelve weeks.'],
+  ['Home-based exercise programme for older people with chronic low back pain: randomised trial', 'Adults aged 65 and over with chronic low back pain followed an eight-week home exercise programme or usual care. Pain and physical function improved in the exercise group.'],
+  ['Tai chi versus usual care for chronic musculoskeletal pain in older adults: a randomised controlled trial', 'Participants aged 65 to 85 with chronic musculoskeletal pain attended tai chi classes twice weekly for ten weeks. Pain intensity and function were the primary outcomes.'],
+  ['Aquatic exercise for older adults with chronic hip pain: a pragmatic randomised trial', 'Older adults with hip pain lasting more than three months were randomised to aquatic exercise or usual care for twelve weeks; the exercise group reported less pain.'],
+  ['Group exercise classes for chronic neck pain in people aged 65 and over: randomised controlled trial', 'Structured group exercise twice weekly for eight weeks was compared with advice alone in older adults with chronic neck pain. Outcomes were pain intensity and disability.'],
+  ['Walking programme for older adults with chronic widespread pain: a randomised trial', 'A progressive walking programme over twelve weeks was compared with usual care in adults over 65 with chronic widespread pain, measuring pain and physical function.'],
+  ['Balance and strength exercise for chronic foot pain in older people: a randomised controlled trial', 'Older adults with chronic foot pain were randomised to a six-week balance and strength programme or usual care; pain and walking function were assessed.'],
+  ['Yoga for chronic low back pain in older adults: a randomised controlled trial', 'Adults aged 65 and over with chronic low back pain took part in twelve weeks of yoga classes or usual care. Pain intensity and physical function improved with yoga.'],
+]
+
+const otherRecords: [title: string, abstract: string][] = [
+  ['Inhaled corticosteroid adherence in children with asthma: a cohort study', 'We followed children with asthma for two years to describe adherence to inhaled corticosteroids and its association with emergency visits.'],
+  ['Cost of hip fracture surgery in a regional hospital network', 'A retrospective analysis of hospital costs for hip fracture surgery across six hospitals over five years.'],
+  ['Vitamin D levels and depressive symptoms in young adults: a cross-sectional survey', 'Serum vitamin D was measured in university students and related to self-reported depressive symptoms.'],
+  ['Opioid prescribing after dental extraction: a national registry analysis', 'Registry data on opioid prescriptions after dental extractions were analysed by region and prescriber type.'],
+  ['MRI findings in professional football players with groin pain', 'Imaging findings were described in professional football players presenting with acute groin pain during the season.'],
+  ['Mediterranean diet and cardiovascular events: ten-year follow-up of a cohort', 'Adherence to a Mediterranean diet was associated with fewer cardiovascular events over ten years of follow-up.'],
+  ['Postoperative delirium after cardiac surgery: incidence and risk factors', 'Patients undergoing elective cardiac surgery were screened daily for delirium; age and surgery duration were risk factors.'],
+  ['Sleep duration and school performance in adolescents', 'A survey of secondary school pupils related self-reported sleep duration to grades in mathematics and language.'],
+  ['Antibiotic prophylaxis before joint replacement: an audit of practice', 'An audit of antibiotic prophylaxis timing in primary hip and knee replacement in two hospitals.'],
+  ['Screen time and myopia in primary school children', 'Daily screen time was associated with the incidence of myopia in a cohort of primary school children.'],
+  ['Nurse staffing levels and patient falls in acute hospitals', 'Ward-level staffing data were linked to reported inpatient falls across twelve acute hospitals.'],
+  ['Pharmacist-led medication review in care homes: a qualitative study', 'Interviews with pharmacists and care home staff explored barriers to medication review.'],
+  ['Acute ankle sprain management in emergency departments', 'Records of adults with acute ankle sprains were reviewed for imaging use and discharge advice.'],
+  ['Smoking cessation support in pregnancy: a survey of midwives', 'Midwives reported how often they offered smoking cessation support during antenatal visits.'],
+  ['Diabetic retinopathy screening uptake in rural areas', 'Uptake of retinopathy screening among people with diabetes was compared between rural and urban practices.'],
+  ['Hand hygiene compliance in intensive care: an observational study', 'Trained observers recorded hand hygiene opportunities and compliance in three intensive care units.'],
+  ['Telephone triage for paediatric fever: a service evaluation', 'Calls to a paediatric telephone triage service for fever were analysed for outcomes and safety.'],
+  ['Cancer pain management in palliative care: a chart review', 'Charts of palliative care patients with cancer pain were reviewed for analgesic use and pain scores.'],
+  ['Pain after total knee replacement surgery: predictors at six weeks', 'Predictors of pain six weeks after total knee replacement were examined in a surgical cohort.'],
+  ['Exercise and mood in university students: a cross-sectional study', 'Self-reported exercise frequency was related to mood scores in a sample of university students.'],
+  ['Protocol for a trial of physiotherapy in older adults with shoulder pain', 'This protocol describes a planned randomised trial of physiotherapy for older adults with chronic shoulder pain; no results are reported.'],
+  ['Air pollution and hospital admissions for COPD', 'Daily air pollution levels were linked to hospital admissions for chronic obstructive pulmonary disease.'],
+  ['Hearing aid use and social participation in older adults: a cohort study', 'Hearing aid use was associated with greater social participation among older adults over four years.'],
+  ['Caffeine intake and headache frequency in office workers', 'Office workers kept a diary of caffeine intake and headache days for eight weeks.'],
+  ['Wound infection after caesarean section: a multicentre audit', 'An audit of wound infection rates after caesarean section in four maternity units.'],
+  ['Handgrip strength norms in community-dwelling adults', 'Reference values for handgrip strength were derived from a population sample of adults aged 20 to 90.'],
+  ['Falls prevention leaflets for older adults: a readability study', 'The readability of falls prevention leaflets for older adults was assessed with standard indices.'],
+  ['Acupuncture for acute migraine in adults: a randomised trial', 'Adults with acute migraine attacks were randomised to acupuncture or sham acupuncture in the emergency department.'],
+  ['Physical activity guidelines awareness among general practitioners', 'A survey assessed general practitioners’ awareness of national physical activity guidelines.'],
+  ['Massage therapy for acute post-surgical pain in hospital inpatients', 'Inpatients after abdominal surgery received massage or usual care for acute pain during the first three postoperative days.'],
+  ['Chronic pain prevalence in adults aged 18 to 40: a national survey', 'A national survey estimated the prevalence of chronic pain in younger adults and its impact on work.'],
+  ['Conference abstract: exercise for knee osteoarthritis in older adults', 'Conference abstract reporting preliminary results of an exercise trial in older adults with knee osteoarthritis; full results not yet published.'],
+]
+
+export const prioritizedRecords: { title: string; abstract: string; relevant: boolean }[] = [
+  ...relevantRecords.map(([title, abstract]) => ({ title, abstract, relevant: true })),
+  ...otherRecords.map(([title, abstract]) => ({ title, abstract, relevant: false })),
+]

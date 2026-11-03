@@ -6,6 +6,8 @@ import {
   criteria,
   heroTitle,
   owner,
+  prioritizedProject,
+  prioritizedRecords,
   project,
   reviewer,
   type AiVerdict,
@@ -188,6 +190,62 @@ async function seed(request: APIRequestContext, browser: Browser) {
   return { pid, token: ownerApi.token }
 }
 
+const SURNAMES = ['Lindqvist', 'Moreau', 'Haddad', 'Novak', 'Castellanos', 'Achterberg', 'Iwasaki', 'Brennan']
+
+/** A title/abstract-only project screened in ranked order, for the prioritized-screening shot. */
+async function seedPrioritized(request: APIRequestContext, token: string) {
+  const api = new Seeder(request, token)
+  const { id: pid } = await api.post<{ id: number }>('/projects', prioritizedProject)
+  for (const c of criteria) await api.post(`/projects/${pid}/criteria`, c)
+
+  const ris = prioritizedRecords
+    .map((r, i) =>
+      [
+        'TY  - JOUR',
+        `TI  - ${r.title}`,
+        `AU  - ${SURNAMES[i % SURNAMES.length]}, ${String.fromCharCode(65 + (i % 26))}.`,
+        `PY  - ${2019 + (i % 6)}`,
+        'JO  - Journal of Demo Research',
+        `AB  - ${r.abstract}`,
+        'ER  - ',
+        '',
+      ].join('\n')
+    )
+    .join('\n')
+  await api.upload(`/projects/${pid}/upload/ris`, 'medline-update-2025-01.ris', 'application/x-research-info-systems', Buffer.from(ris))
+  await api.post(`/projects/${pid}/articles/start-screening`)
+  await api.patch(`/projects/${pid}`, {
+    prioritized_screening: true,
+    stopping_rule_type: 'statistical',
+    recall_target: 0.95,
+    stopping_alpha: 0.05,
+  })
+
+  // Screen most of the queue in ranked order, voting as the review would
+  const relevant = new Map(prioritizedRecords.map((r) => [r.title, r.relevant]))
+  for (let i = 0; i < 28; i++) {
+    const { article } = await api.get<{ article: { id: number; title: string } | null }>(
+      `/projects/${pid}/screening/next?stage=title_abstract`
+    )
+    expect(article, 'queue ran out while seeding').toBeTruthy()
+    await api.post(`/projects/${pid}/screening/articles/${article!.id}/decisions`, {
+      stage: 'title_abstract',
+      decision: relevant.get(article!.title) ? 'include' : 'exclude',
+      source: 'human',
+    })
+  }
+
+  // Let a final ranking finish so the queue shows the trained model's order
+  const before = await api.get<{ last_run: { id: number } | null }>(`/projects/${pid}/screening/stopping-rule`)
+  await api.post(`/projects/${pid}/screening/rerank`)
+  await expect
+    .poll(async () => (await api.get<{ last_run: { id: number } | null }>(`/projects/${pid}/screening/stopping-rule`)).last_run?.id, {
+      timeout: 30_000,
+    })
+    .not.toBe(before.last_run?.id)
+  return pid
+}
+
 interface Box {
   x: number
   y: number
@@ -258,6 +316,7 @@ test('capture homepage screenshots', async ({ request, browser }) => {
   rmSync(OUT_DIR, { recursive: true, force: true })
   mkdirSync(OUT_DIR, { recursive: true })
   const { pid, token } = await seed(request, browser)
+  const prioritizedPid = await seedPrioritized(request, token)
 
   for (const theme of THEMES) {
     const page = await openAs(browser, token, theme)
@@ -296,6 +355,22 @@ test('capture homepage screenshots', async ({ request, browser }) => {
       ],
       'reports',
       theme
+    )
+
+    // Title/abstract screening in ranked order, with the recall test status. Below the lg
+    // breakpoint the workspace stacks, so the article card sits under the status bars on its own
+    await page.setViewportSize({ width: 900, height: 1400 })
+    await page.goto(`/projects/${prioritizedPid}/screening?stage=title_abstract`)
+    await expect(page.getByTestId('queue-badge')).toContainText('Ranked')
+    await expect(page.getByTestId('stopping-recall')).toBeVisible()
+    await expect(page.getByTestId('article-title')).toBeVisible()
+    await settle(page)
+    await capture(
+      page,
+      [page.getByTestId('queue-status'), cardOf(page.getByTestId('article-title'))],
+      'prioritized',
+      theme,
+      10
     )
 
     await page.context().close()

@@ -29,9 +29,15 @@ from app.features.criteria.services import CriterionServiceDep
 from .schemas import (
     AIDisagreementRead,
     AgreementRead,
+    ApplyStoppingRuleRequest,
+    ApplyStoppingRuleResult,
     ConflictRead,
+    ReopenNotScreenedResult,
     ResolveRequest,
+    RankingRunRead,
+    RerankResponse,
     RunAIRequest,
+    StoppingRuleStatus,
 )
 from .models import (
     ScreeningDecision,
@@ -42,7 +48,7 @@ from .models import (
 )
 from .services import ScreeningError, ScreeningServiceDep, ScreeningService
 from .flows import batch_ai_screening_flow
-from . import inflight
+from . import inflight, ranking, stopping
 from sqlmodel import and_, or_, select
 
 logger = logging.getLogger(__name__)
@@ -57,7 +63,7 @@ def get_screening_stats(
     ss: ScreeningServiceDep,
 ):
     """Get screening statistics for a project."""
-    return ss.get_screening_stats(project_id)
+    return ss.get_screening_stats(project_id, access.project)
 
 
 @router.get("/stale-ai-decisions")
@@ -85,17 +91,26 @@ def get_next_article(
 ):
     """Get the next article this reviewer has not yet screened at the given stage.
 
+    Articles come in queue order: ids, or for prioritized title/abstract screening a
+    seeded random start followed by relevance. ``queue_order`` names the mode and
+    ``random_start_remaining`` counts the outcomes left in the random start.
     The response never includes other reviewers' decisions (blind screening).
     """
+    order = ss.queue_order(access.project, stage)
     article = ss.get_next_article_for_screening(
-        project_id,
-        stage,
-        reviewer_id=access.user.id,
-        required_reviewers=access.project.required_reviewers,
+        access.project, stage, reviewer_id=access.user.id, order=order
     )
+    queue = {
+        "queue_order": order.mode.value,
+        "random_start_remaining": order.random_start_remaining,
+    }
     if article is None:
-        return {"message": "No more articles to screen at this stage", "article": None}
-    return {"article": article}
+        return {
+            "message": "No more articles to screen at this stage",
+            "article": None,
+            **queue,
+        }
+    return {"article": article, **queue}
 
 
 @router.get(
@@ -160,6 +175,11 @@ def create_decision(
             raise HTTPException(
                 status_code=403, detail="Only the owner can record AI decisions"
             )
+        if article.not_screened_stopping_rule:
+            raise HTTPException(
+                status_code=409,
+                detail="This record was closed by the stopping rule; the owner can reopen it",
+            )
         return ss.create_decision(article_id, data, None)
 
     was_waiting = article.status == ArticleStatus.awaiting_full_text
@@ -171,6 +191,10 @@ def create_decision(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if not was_waiting:
         schedule_auto_retrieval(background_tasks, [article], access.user.id)
+    if data.stage == ScreeningStage.title_abstract:
+        ranking.schedule_rerank(
+            background_tasks, access.project, user_id=access.user.id
+        )
     audit.record_event(
         session,
         project_id,
@@ -220,6 +244,10 @@ def resolve_conflict(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if not was_waiting:
         schedule_auto_retrieval(background_tasks, [article], access.user.id)
+    if decision.stage == ScreeningStage.title_abstract:
+        ranking.schedule_rerank(
+            background_tasks, access.project, user_id=access.user.id
+        )
     audit.record_event(
         session,
         project_id,
@@ -236,6 +264,166 @@ def resolve_conflict(
     )
     session.refresh(decision)
     return decision
+
+
+@router.post("/rerank", response_model=RerankResponse, status_code=202)
+def rerank(
+    project_id: int,
+    access: OwnerAccess,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+):
+    """Re-rank the title/abstract queue now (owner only).
+
+    Runs in the background whatever the automatic-retraining setting says and
+    ignores the retrain throttle. The response describes the state before this
+    request: ``queued`` when a run is already going (this one follows it).
+    """
+    if not access.project.prioritized_screening:
+        raise HTTPException(
+            status_code=409, detail="Prioritized screening is off for this project"
+        )
+    previous = ranking.last_run(session, project_id)
+    queued = ranking.is_running(project_id)
+    ranking.schedule_rerank(
+        background_tasks,
+        access.project,
+        trigger=ranking.TRIGGER_MANUAL,
+        user_id=access.user.id,
+        force=True,
+    )
+    audit.record_event(
+        session,
+        project_id,
+        audit.SCREENING_RERANK_REQUESTED,
+        "project",
+        project_id,
+        access.user.id,
+        {},
+    )
+    return RerankResponse(
+        status="queued" if queued else "scheduled",
+        last_run=RankingRunRead.model_validate(previous, from_attributes=True)
+        if previous
+        else None,
+    )
+
+
+@router.get("/stopping-rule", response_model=StoppingRuleStatus)
+def get_stopping_rule(project_id: int, access: ViewerAccess, session: SessionDep):
+    """Progress of the stopping rule (see ``stopping.py`` for the definition)."""
+    return stopping.status(session, access.project)
+
+
+@router.post("/apply-stopping-rule", response_model=ApplyStoppingRuleResult)
+def apply_stopping_rule(
+    project_id: int,
+    access: OwnerAccess,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    body: ApplyStoppingRuleRequest | None = None,
+):
+    """Close the records nobody screened once the stopping rule is met (owner only).
+
+    409 unless the rule is met (the streak reached the threshold, or the statistical
+    recall test is passed), or ``force`` with a ``reason``.
+    Only records without any human title/abstract decision are closed; the others
+    stay open (``left_open``). Reversible with ``reopen-not-screened``.
+    """
+    body = body or ApplyStoppingRuleRequest()
+    try:
+        result = stopping.apply_rule(
+            session, access.project, force=body.force, reason=body.reason
+        )
+    except stopping.StoppingRuleError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    audit.record_event(
+        session,
+        project_id,
+        audit.SCREENING_STOPPING_RULE_APPLIED,
+        "project",
+        project_id,
+        access.user.id,
+        {
+            "rule_type": result.rule_type.value,
+            "threshold": result.threshold,
+            "consecutive_excludes": result.consecutive_excludes,
+            "closed": result.closed,
+            "left_open": result.left_open,
+            "not_started": result.not_started,
+            "screened": result.screened,
+            "forced": result.forced,
+            "reason": result.reason,
+            "counting_since": result.counting_since.isoformat()
+            if result.counting_since
+            else None,
+            "ranking_run_id": result.ranking_run_id,
+            "model_version": result.model_version,
+            "ranking_method": result.ranking_method,
+            "recall_target": result.recall_target,
+            "alpha": result.alpha,
+            "p_value": result.p_value,
+            "relevant_found": result.relevant_found,
+            "sample_size": result.sample_size,
+            "unscreened": result.unscreened,
+        },
+    )
+    background_tasks.add_task(
+        stopping.notify,
+        project_id,
+        f"Stopping rule applied: {result.closed} records closed",
+        {
+            "type": "stopping_rule_applied",
+            "project_id": project_id,
+            "closed": result.closed,
+            "forced": result.forced,
+            "rule_type": result.rule_type.value,
+        },
+    )
+    return result
+
+
+@router.post("/reopen-not-screened", response_model=ReopenNotScreenedResult)
+def reopen_not_screened(
+    project_id: int,
+    access: OwnerAccess,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+):
+    """Put the records closed by the stopping rule back into screening (owner only)."""
+    try:
+        result = stopping.reopen(session, access.project)
+    except stopping.StoppingRuleError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    audit.record_event(
+        session,
+        project_id,
+        audit.SCREENING_STOPPING_RULE_REVERTED,
+        "project",
+        project_id,
+        access.user.id,
+        {
+            "reopened": result.reopened,
+            "previous_applied_at": result.previous_applied_at.isoformat()
+            if result.previous_applied_at
+            else None,
+        },
+    )
+    # the reopened records' scores are stale
+    ranking.schedule_rerank(
+        background_tasks, access.project, user_id=access.user.id, force=True
+    )
+    background_tasks.add_task(
+        stopping.notify,
+        project_id,
+        f"{result.reopened} records reopened for screening",
+        {
+            "type": "stopping_rule_reverted",
+            "project_id": project_id,
+            "reopened": result.reopened,
+        },
+    )
+    return result
 
 
 @router.get("/conflicts", response_model=list[ConflictRead])
@@ -296,6 +484,12 @@ async def screen_article_with_ai(
     article = article_service.get_article_by_id(article_id)
     if article is None or article.project_id != project_id:
         raise HTTPException(status_code=404, detail="Article not found")
+
+    if article.not_screened_stopping_rule:
+        raise HTTPException(
+            status_code=409,
+            detail="This record was closed by the stopping rule; reopen it before screening with AI",
+        )
 
     # Without extracted text the agent would only see the title and abstract and
     # record a title/abstract verdict for an article that is at full text.

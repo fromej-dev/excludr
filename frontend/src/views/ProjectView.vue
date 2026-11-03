@@ -8,6 +8,7 @@ import { useProjectNavStore } from '@/stores/projectNav'
 import { useProjectStatsStore } from '@/stores/projectStats'
 import { useProjectLiveUpdates } from '@/composables/useProjectLiveUpdates'
 import { useBillingStore } from '@/stores/billing'
+import { useStoppingRuleStore } from '@/stores/stoppingRule'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ProjectSidebar from '@/components/layout/ProjectSidebar.vue'
 
@@ -18,6 +19,7 @@ const conflictsStore = useConflictsStore()
 const navStore = useProjectNavStore()
 const statsStore = useProjectStatsStore()
 const billingStore = useBillingStore()
+const stoppingRuleStore = useStoppingRuleStore()
 
 const projectId = computed(() => Number(route.params.id))
 
@@ -28,6 +30,7 @@ watch(
     membersStore.reset()
     navStore.reset()
     statsStore.reset()
+    stoppingRuleStore.reset()
     projectsStore.fetchProject(id)
     membersStore.fetchMyRole(id)
     membersStore.fetchMembers(id)
@@ -52,10 +55,20 @@ watch(() => [projectId.value, membersStore.role, route.name, route.params.articl
 watch([projectId, () => route.name], () => void statsStore.fetch(projectId.value), { immediate: true })
 
 // While a bulk job (full-text retrieval, AI batch) runs, keep stats and sidebar counts live
-useProjectLiveUpdates(projectId, (id) => {
-  void statsStore.fetch(id)
-  if (membersStore.canReview) void navStore.refreshScreening(id)
-})
+useProjectLiveUpdates(
+  projectId,
+  (id) => {
+    void statsStore.fetch(id)
+    if (membersStore.canReview) void navStore.refreshScreening(id)
+    if (stoppingRuleStore.projectId === id) void stoppingRuleStore.fetch(id)
+  },
+  undefined,
+  (id) => {
+    // A ranking finished: the owner's "Re-ranking…" ends and "last ranked" changes
+    stoppingRuleStore.clearRerank()
+    if (stoppingRuleStore.projectId === id) void stoppingRuleStore.fetch(id)
+  }
+)
 
 // Keep the conflicts badge in step when conflicts are resolved on the Conflicts page
 watch(

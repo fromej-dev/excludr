@@ -28,7 +28,28 @@ export interface User {
   updated_at: string
 }
 
+// Relevance ranking (prioritized screening)
+export interface RankingRun {
+  id: number
+  created_at: string
+  model_version: string
+  method: 'model' | 'similarity' | 'random'
+  trigger: 'auto' | 'manual'
+  triggered_by?: number | null
+  labelled_includes: number
+  labelled_excludes: number
+  scored: number
+  duration_ms: number
+}
+
+export interface RerankResponse {
+  status: 'scheduled' | 'queued'
+  last_run: RankingRun | null
+}
+
 // Project types
+export type StoppingRuleType = 'consecutive' | 'statistical'
+
 export interface Project {
   id: number
   name: string
@@ -39,6 +60,16 @@ export interface Project {
   owner_id: number
   number_of_articles: number
   required_reviewers: number
+  prioritized_screening: boolean
+  stop_after_consecutive_excludes: number | null
+  stopping_rule_type: StoppingRuleType
+  /** Fraction 0.80-0.99 (statistical rule). */
+  recall_target: number
+  /** Significance level 0.001-0.20 (statistical rule). */
+  stopping_alpha: number
+  ranking_min_random: number
+  prioritized_screening_enabled_at: string | null
+  stopping_rule_applied_at: string | null
 }
 
 export interface ProjectCreate {
@@ -52,6 +83,12 @@ export interface ProjectUpdate {
   description?: string
   review_question?: string
   required_reviewers?: 1 | 2
+  prioritized_screening?: boolean
+  stop_after_consecutive_excludes?: number | null
+  stopping_rule_type?: StoppingRuleType
+  recall_target?: number
+  stopping_alpha?: number
+  ranking_min_random?: number
 }
 
 // Criteria types
@@ -125,6 +162,8 @@ export interface Article {
   full_text_retrieval_error?: string | null
   /** Sent to full text without title/abstract screening here (screened elsewhere). */
   title_abstract_skipped?: boolean
+  relevance_score?: number | null
+  not_screened_stopping_rule?: boolean
   status: ArticleStatus
   current_stage: ScreeningStage
   final_decision: FinalDecision
@@ -133,7 +172,7 @@ export interface Article {
 }
 
 /** Columns the articles list can be sorted by (server-side). */
-export type ArticleSortField = 'title' | 'year' | 'status'
+export type ArticleSortField = 'title' | 'year' | 'status' | 'relevance_score'
 
 export type SortOrder = 'asc' | 'desc'
 
@@ -142,6 +181,8 @@ export interface ArticleListOptions {
   status?: ArticleStatus
   final_decision?: FinalDecision
   has_full_text?: boolean
+  /** true: only records closed by the stopping rule; false: never those. */
+  not_screened_stopping_rule?: boolean
   /** Case-insensitive match on title, authors and journal. */
   search?: string
   sort_by?: ArticleSortField
@@ -211,7 +252,7 @@ export interface ScreeningStats {
   /** Legacy: ≥1 full-text decision of any source, AI included. Use full_text_completed for progress. */
   screened_full_text: number
   included: number
-  /** Excluded at either stage. */
+  /** Excluded by reviewers at either stage (records closed by the stopping rule are not included). */
   excluded: number
   /** Open articles where a reviewer's current decision at the article's stage is "uncertain". */
   uncertain: number
@@ -228,6 +269,8 @@ export interface ScreeningStats {
   /** Title/abstract stage settled: advanced to full text or excluded there. */
   title_abstract_completed: number
   excluded_title_abstract: number
+  /** Closed at title/abstract by the stopping rule without screening (counted in title_abstract_completed, not in excluded). */
+  not_screened_stopping_rule: number
   /** Passed title/abstract (at full text, or included/excluded at full text). */
   full_text_eligible: number
   /** Eligible and past retrieval (= full_text_eligible − awaiting_full_text). */
@@ -239,6 +282,100 @@ export interface ScreeningStats {
   /** Full-text stage settled (included + excluded_full_text). */
   full_text_completed: number
   excluded_full_text: number
+  /** Stopping-rule progress; null unless prioritized screening is on. */
+  stopping_rule?: StoppingRuleSummary | null
+}
+
+export interface StoppingRuleSummary {
+  enabled: boolean
+  threshold: number | null
+  consecutive_excludes: number
+  met: boolean
+  applied_at: string | null
+  rule_type?: StoppingRuleType
+  recall_target?: number
+  alpha?: number
+  p_value?: number | null
+  relevant_found?: number | null
+  test_reason?: string | null
+}
+
+export type RecallTestReason = 'ok' | 'no_relevant' | 'no_sample' | 'nothing_left'
+
+/** Recall hypothesis test of the statistical stopping rule. */
+export interface RecallTest {
+  p_value: number | null
+  met: boolean
+  relevant_found: number
+  screened: number
+  sample_size: number
+  unscreened: number
+  min_missed_under_h0: number
+  best_sample: number | null
+  /** About how many more consecutive excludes would meet the rule. */
+  excludes_needed: number | null
+  reason: RecallTestReason
+}
+
+/** GET /screening/stopping-rule */
+export interface StoppingRuleStatus {
+  enabled: boolean
+  prioritized: boolean
+  threshold: number | null
+  consecutive_excludes: number
+  met: boolean
+  rule_type?: StoppingRuleType
+  recall_target?: number
+  alpha?: number
+  statistical?: RecallTest | null
+  /** Met and there are records applying would close; show the Apply action only then. */
+  can_apply: boolean
+  /** Records at title/abstract screening, with or without votes. */
+  remaining: number
+  /** Of those, without any human title/abstract decision (what applying closes). */
+  closable: number
+  /** Settled human title/abstract outcomes, all time. */
+  screened: number
+  /** Records currently closed by the rule. */
+  not_screened: number
+  last_ranked_at: string | null
+  applied_at: string | null
+  counting_since: string | null
+  last_run: RankingRun | null
+}
+
+export interface ApplyStoppingRuleRequest {
+  force?: boolean
+  /** Required when `force` is true. */
+  reason?: string | null
+}
+
+export interface ApplyStoppingRuleResult {
+  closed: number
+  left_open: number
+  not_started: number
+  screened: number
+  threshold: number | null
+  consecutive_excludes: number
+  rule_type?: StoppingRuleType
+  recall_target?: number | null
+  alpha?: number | null
+  p_value?: number | null
+  relevant_found?: number | null
+  sample_size?: number | null
+  unscreened?: number | null
+  forced: boolean
+  reason: string | null
+  applied_at: string
+  counting_since: string | null
+  ranking_run_id: number | null
+  model_version: string | null
+  ranking_method: string | null
+}
+
+export interface ReopenNotScreenedResult {
+  reopened: number
+  previous_applied_at: string | null
 }
 
 // Pagination types (fastapi-fsp structure)
@@ -369,9 +506,13 @@ export interface PdfBulkConfirmResponse {
 }
 
 // Screening: next article, AI batch, conflicts
+export type QueueOrderMode = 'id' | 'random_start' | 'ranked'
+
 export interface NextArticleResponse {
   message?: string
   article: Article | null
+  queue_order?: QueueOrderMode
+  random_start_remaining?: number
 }
 
 export interface StaleAiResponse {
@@ -478,6 +619,8 @@ export interface PrismaFlow {
     records_identified: number
     duplicates_removed: number
     records_after_duplicates_removed: number
+    /** Records closed by the stopping rule without screening. */
+    marked_ineligible_by_automation: number
   }
   screening: {
     records_screened: number
@@ -491,6 +634,9 @@ export interface PrismaFlow {
     exclusion_reasons: Array<{ reason: string; count: number }>
   }
   included: { studies_included: number }
+  /** Suggested methods sentence; null unless prioritized screening was used. */
+  screening_method: string | null
+  screening_method_reference?: string | null
 }
 
 export type ExportFormat = 'csv' | 'ris'

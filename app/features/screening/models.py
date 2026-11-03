@@ -1,9 +1,11 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import func, false as sa_false, Column, JSON
+from sqlalchemy import DateTime, func, false as sa_false, Column, JSON
 from sqlmodel import SQLModel, Field, Relationship
+
+from app.features.projects.models import StoppingRuleType
 
 
 class ScreeningStage(str, Enum):
@@ -86,6 +88,22 @@ class ScreeningDecision(ScreeningDecisionBase, table=True):
     reviewer: Optional["User"] = Relationship()  # noqa: F821
 
 
+class StoppingRuleSummary(SQLModel):
+    """Stopping-rule progress in short form (inside ``ScreeningStats``)."""
+
+    enabled: bool
+    threshold: Optional[int] = None
+    consecutive_excludes: int = 0
+    met: bool = False
+    applied_at: Optional[datetime] = None
+    rule_type: StoppingRuleType = StoppingRuleType.consecutive
+    recall_target: Optional[float] = None  # statistical rule only, as below
+    alpha: Optional[float] = None
+    p_value: Optional[float] = None
+    relevant_found: Optional[int] = None
+    test_reason: Optional[str] = None  # ok | no_relevant | no_sample | nothing_left
+
+
 class ScreeningStats(SQLModel):
     """Response schema for screening statistics.
 
@@ -95,11 +113,13 @@ class ScreeningStats(SQLModel):
     settled. Invariants (for consistent data)::
 
         title_abstract_total = awaiting_screening + title_abstract_completed
-        title_abstract_completed = excluded_title_abstract + full_text_eligible
+        title_abstract_completed = excluded_title_abstract + not_screened_stopping_rule
+                                   + full_text_eligible
         full_text_eligible = awaiting_full_text + awaiting_full_text_screening
                              + full_text_completed
         full_text_retrieved = full_text_eligible - awaiting_full_text
         full_text_completed = included + excluded_full_text
+        excluded = excluded_title_abstract + excluded_full_text
     """
 
     # --- Legacy fields (kept for compatibility) -----------------------------
@@ -116,7 +136,10 @@ class ScreeningStats(SQLModel):
     )
     included: int = Field(default=0, description="Articles finally included")
     excluded: int = Field(
-        default=0, description="Articles finally excluded (at either stage)"
+        default=0,
+        description="Articles finally excluded by reviewers (at either stage). "
+        "Records closed by the stopping rule are counted in "
+        "not_screened_stopping_rule instead",
     )
     uncertain: int = Field(
         default=0,
@@ -152,16 +175,22 @@ class ScreeningStats(SQLModel):
     title_abstract_completed: int = Field(
         default=0,
         description="Articles whose title/abstract stage is settled: advanced to "
-        "full text or excluded at title/abstract",
+        "full text, excluded at title/abstract or closed by the stopping rule",
     )
     excluded_title_abstract: int = Field(
-        default=0, description="Articles excluded at title/abstract"
+        default=0, description="Articles excluded by reviewers at title/abstract"
     )
     title_abstract_skipped: int = Field(
         default=0,
         description="Eligible articles that skipped title/abstract screening "
         "because they were screened elsewhere (counted in title_abstract_total "
         "and title_abstract_completed)",
+    )
+    not_screened_stopping_rule: int = Field(
+        default=0,
+        description="Articles closed at title/abstract without screening by the "
+        "stopping rule (prioritized screening). Counted in title_abstract_total and "
+        "title_abstract_completed; not in excluded or excluded_title_abstract",
     )
     full_text_eligible: int = Field(
         default=0,
@@ -190,3 +219,36 @@ class ScreeningStats(SQLModel):
     excluded_full_text: int = Field(
         default=0, description="Articles excluded at full text"
     )
+
+    # --- Prioritized screening ---------------------------------------------
+    stopping_rule: Optional[StoppingRuleSummary] = Field(
+        default=None,
+        description="Stopping-rule progress (null unless prioritized screening is on)",
+    )
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class RankingRun(SQLModel, table=True):
+    """One retraining of a project's title/abstract relevance model."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: int = Field(foreign_key="project.id", index=True, ondelete="CASCADE")
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_type=DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
+    model_version: str = Field(max_length=50, description="e.g. tfidf-logreg-v1")
+    method: str = Field(max_length=20, description="model | similarity | random")
+    trigger: str = Field(max_length=20, description="auto | manual")
+    triggered_by: Optional[int] = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    labelled_includes: int = Field(default=0)
+    labelled_excludes: int = Field(default=0)
+    scored: int = Field(default=0, description="Records given a relevance_score")
+    duration_ms: int = Field(default=0)

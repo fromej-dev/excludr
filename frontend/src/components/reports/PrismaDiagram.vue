@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { PrismaFlow } from '@/types'
 import PrismaBox from './PrismaBox.vue'
 
@@ -6,7 +7,9 @@ interface Props {
   flow: PrismaFlow
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
+
+const auto = computed(() => props.flow.identification.marked_ineligible_by_automation ?? 0)
 </script>
 
 <template>
@@ -25,10 +28,15 @@ defineProps<Props>()
         <path d="M2 8h24m-6-5 6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.5" />
       </svg>
       <PrismaBox
-        title="Duplicate records removed"
-        :count="flow.identification.duplicates_removed"
+        title="Records removed before screening"
+        :count="flow.identification.duplicates_removed + auto"
         tone="exclude"
-      />
+      >
+        <p data-testid="prisma-duplicates">Duplicate records removed: {{ flow.identification.duplicates_removed }}</p>
+        <p v-if="auto > 0" data-testid="prisma-automation">
+          Records marked as ineligible by automation tools: {{ auto }}
+        </p>
+      </PrismaBox>
 
       <div class="flex justify-center py-1">
         <svg class="h-6 w-4 text-muted-foreground" viewBox="0 0 16 24" aria-hidden="true">

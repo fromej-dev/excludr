@@ -8,6 +8,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useProjectNavStore } from '@/stores/projectNav'
 import { useProjectStatsStore } from '@/stores/projectStats'
 import { useWebSocketStore } from '@/stores/websocket'
+import { useBillingStore } from '@/stores/billing'
+import { useStoppingRuleStore, refreshAfterRuleChange } from '@/stores/stoppingRule'
 import type { ScreeningDecisionType, ScreeningStage } from '@/types'
 import Card from '@/components/ui/Card.vue'
 import Badge from '@/components/ui/Badge.vue'
@@ -15,10 +17,14 @@ import Button from '@/components/ui/Button.vue'
 import ScreeningToolbar from '@/components/screening/ScreeningToolbar.vue'
 import AiVerdict from '@/components/screening/AiVerdict.vue'
 import CriteriaEvaluationList from '@/components/screening/CriteriaEvaluationList.vue'
+import QueueStatusBar from '@/components/screening/QueueStatusBar.vue'
+import ApplyStoppingRuleDialog from '@/components/screening/ApplyStoppingRuleDialog.vue'
 import ShortcutLegend from '@/components/screening/ShortcutLegend.vue'
 import FullTextPanel from '@/components/articles/FullTextPanel.vue'
 import { decisionVariant, normalizeEvaluations } from '@/utils/criteriaEvaluations'
 import { useAiLookahead } from '@/composables/useAiLookahead'
+import { isForProject } from '@/composables/useProjectLiveUpdates'
+import { idsAfter } from '@/utils/queue'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,6 +35,8 @@ const criteriaStore = useCriteriaStore()
 const membersStore = useMembersStore()
 const authStore = useAuthStore()
 const wsStore = useWebSocketStore()
+const billingStore = useBillingStore()
+const ruleStore = useStoppingRuleStore()
 
 const projectId = computed(() => Number(route.params.id))
 const article = computed(() => screeningStore.currentArticle)
@@ -118,11 +126,21 @@ const nextArticle = async () => {
     return
   }
   // Skip without deciding: pick another queued article we have not visited
-  const queue = await screeningStore.fetchQueueIds(projectId.value, stage.value)
   const seen = new Set(history.value)
   const currentId = article.value.id
-  const candidates = queue.filter((id) => !seen.has(id))
-  const nextId = candidates.find((id) => id > currentId) ?? candidates[0]
+  // The reviewer's own decision means the article has left their queue: do not look for it
+  const inQueue = myDecision.value === null
+  const queue = await screeningStore.fetchQueueIds(projectId.value, stage.value, {
+    enough: (ids) => {
+      if (!inQueue) return ids.some((id) => !seen.has(id))
+      const i = ids.indexOf(currentId)
+      return i !== -1 && ids.slice(i + 1).some((id) => !seen.has(id))
+    },
+  })
+  // Next unseen article after the current one in server order, wrapping to the top
+  const nextId =
+    idsAfter(queue, currentId, 1, { exclude: seen, wrap: true })?.[0] ??
+    queue.find((id) => !seen.has(id)) // current not in the queue: top unseen
   if (nextId === undefined) {
     wsStore.addNotification('No other articles in the queue', 'info', 2500)
     return
@@ -151,6 +169,8 @@ const submitDecision = async (decision: ScreeningDecisionType) => {
 
   if (!saved) {
     wsStore.addNotification(screeningStore.error ?? 'Failed to save decision', 'error')
+    // 409: the record was closed by the stopping rule while it was open
+    if (screeningStore.errorStatus === 409 && stage.value === 'title_abstract') await checkClosed()
     return
   }
   const decidedId = article.value.id
@@ -259,6 +279,8 @@ const isTypingTarget = (target: EventTarget | null): boolean => {
 }
 
 const onKeydown = (event: KeyboardEvent) => {
+  // A dialog is open: its buttons must not trigger decisions
+  if (applyOpen.value) return
   if (event.repeat || event.ctrlKey || event.metaKey || event.altKey) return
   if (isTypingTarget(event.target)) return
   switch (event.key.toLowerCase()) {
@@ -283,6 +305,48 @@ const onKeydown = (event: KeyboardEvent) => {
   }
 }
 
+// Stopping rule: apply dialog, and reacting to the rule closing the record that is open
+const applyOpen = ref(false)
+let applying = false
+const onRuleApplied = async () => {
+  applying = true
+  try {
+    await refreshAfterRuleChange(projectId.value)
+    await resetQueue()
+  } finally {
+    applying = false
+  }
+}
+
+// The full status says whether Apply would close anything (the stats only carry the short form)
+const ruleMet = computed(() => !!stats.value?.stopping_rule?.met)
+watch(
+  [ruleMet, () => membersStore.isOwner, () => stats.value?.not_screened_stopping_rule, () => stats.value?.awaiting_screening],
+  () => {
+    if (ruleMet.value && membersStore.isOwner) void ruleStore.fetch(projectId.value)
+  },
+  { immediate: true }
+)
+const canApply = computed(() => ruleStore.projectId === projectId.value && !!ruleStore.status?.can_apply)
+
+const checkClosed = async () => {
+  if (!article.value) return
+  await screeningStore.loadArticle(projectId.value, article.value.id)
+  if (screeningStore.currentArticle?.not_screened_stopping_rule) {
+    wsStore.addNotification('This record was closed by the stopping rule', 'info')
+    await loadNextUnscreened()
+  }
+}
+
+const stoppedEmpty = computed(
+  () =>
+    stage.value === 'title_abstract' &&
+    (stats.value?.not_screened_stopping_rule ?? 0) > 0 &&
+    stats.value?.awaiting_screening === 0
+)
+
+let offRuleEvents: (() => void) | null = null
+
 let started = false
 // Wait until the user's role is known before loading the reviewer queue
 watch(
@@ -297,11 +361,23 @@ watch(
 
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
+  // ranking_updated is ignored on purpose: the reviewer keeps the open article and the next
+  // "next" call uses the new order, so nothing is pulled away mid-read.
+  offRuleEvents = wsStore.onMessage('*', (msg) => {
+    const kind = msg.data?.type
+    if (stage.value !== 'title_abstract' || !isForProject(msg, projectId.value)) return
+    // The owner's own apply already resets the queue
+    if (kind === 'stopping_rule_applied') {
+      if (!applyOpen.value && !applying) void checkClosed()
+    }
+    else if (kind === 'stopping_rule_reverted' && !article.value && canReview.value) void loadNextUnscreened()
+  })
   await criteriaStore.fetchCriteria(projectId.value)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  offRuleEvents?.()
 })
 
 // Start each article at the top of the reading pane
@@ -387,6 +463,20 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
       @update:stage="setStage"
       @finished="onBatchFinished"
     />
+
+    <QueueStatusBar
+      v-if="canReview"
+      :stage="stage"
+      :stats="stats"
+      :queue-order="screeningStore.queueOrder"
+      :random-start-remaining="screeningStore.randomStartRemaining"
+      :is-owner="membersStore.isOwner"
+      :read-only="billingStore.status?.read_only ?? false"
+      :can-apply="canApply"
+      class="shrink-0"
+      @apply="applyOpen = true"
+    />
+    <ApplyStoppingRuleDialog v-model:open="applyOpen" :project-id="projectId" @applied="onRuleApplied" />
 
     <Card v-if="roleKnown && !canReview" class="p-6 text-center text-sm text-muted-foreground">
       You have view-only access to this project. Ask the owner for the reviewer role to screen articles.
@@ -599,6 +689,14 @@ const decisionLabel = (d: ScreeningDecisionType) => d.charAt(0).toUpperCase() + 
     <div v-else-if="screeningStore.loading" class="py-12 text-center">
       <p class="text-muted-foreground">Loading next article...</p>
     </div>
+
+    <Card v-else-if="roleKnown && stoppedEmpty" class="p-12 text-center" data-testid="stopped-empty">
+      <h2 class="mb-2 text-2xl font-bold">Title/abstract screening stopped</h2>
+      <p class="text-muted-foreground">
+        The stopping rule closed {{ stats?.not_screened_stopping_rule }} records without screening. The
+        owner can reopen them from Articles.
+      </p>
+    </Card>
 
     <Card v-else-if="roleKnown" class="p-12 text-center">
       <h2 class="mb-2 text-2xl font-bold">No more articles to screen</h2>

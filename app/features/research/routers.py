@@ -32,6 +32,7 @@ from .schemas import (
     SkipTitleAbstractResult,
 )
 from .services import ArticleServiceDep, skip_title_abstract
+from app.features.screening.ranking import schedule_rerank
 from app.features.screening.services import ScreeningServiceDep
 
 router = APIRouter(tags=["Articles"], prefix="/projects/{project_id}/articles")
@@ -55,6 +56,10 @@ def get_articles(
         ),
     ] = False,
     has_full_text: Annotated[Optional[bool], Query()] = None,
+    not_screened_stopping_rule: Annotated[
+        Optional[bool],
+        Query(description="Only (or without) records closed by the stopping rule"),
+    ] = None,
 ):
     """Get all articles for a project with optional filtering.
 
@@ -62,6 +67,8 @@ def get_articles(
     must be waiting for screening at ``stage`` (``screening`` status for
     title_abstract, ``full_text_retrieved`` for full_text), not yet decided by the
     caller, and not already covered by enough reviewers in dual-screening mode.
+    Without ``sort_by`` the items come in queue order, the same order
+    ``GET /screening/next`` serves, so page 1 item 1 is what ``next`` returns.
     """
 
     if pending_for_me:
@@ -69,12 +76,15 @@ def get_articles(
             raise HTTPException(
                 status_code=422, detail="pending_for_me needs a screening stage"
             )
+        queue_stage = stage or ScreeningStage.title_abstract
         query = ss.pending_articles_query(
             project_id,
-            stage or ScreeningStage.title_abstract,
+            queue_stage,
             reviewer_id=access.user.id,
             required_reviewers=access.project.required_reviewers,
         )
+        if fsp.sorting is None:  # an explicit sort_by replaces the queue order
+            query = query.order_by(*ss.queue_order(access.project, queue_stage).clauses)
     elif status:
         query = article_service.get_articles_by_status(project_id, status)
     elif stage:
@@ -84,6 +94,22 @@ def get_articles(
 
     if has_full_text is not None:
         query = query.where(Article.full_text_retrieved.is_(has_full_text))
+
+    if not_screened_stopping_rule is not None:
+        query = query.where(
+            Article.not_screened_stopping_rule.is_(not_screened_stopping_rule)
+        )
+
+    if fsp.sorting is not None and fsp.sorting.sort_by == "relevance_score":
+        # NULLS LAST in both directions (PostgreSQL puts NULLs first on DESC)
+        column = Article.relevance_score
+        ordered = column.desc() if fsp.sorting.order == "desc" else column.asc()
+        query = query.order_by(ordered.nulls_last(), Article.id)
+        sorting, fsp.sorting = fsp.sorting, None
+        response = fsp.generate_response(query, session)
+        response.meta.sort = sorting  # report the sort that was requested
+        fsp.sorting = sorting
+        return response
 
     return fsp.generate_response(query, session)
 
@@ -190,9 +216,12 @@ def start_screening(
     project_id: int,
     access: OwnerAccess,
     article_service: ArticleServiceDep,
+    background_tasks: BackgroundTasks,
 ):
     """Move all imported articles to screening status."""
     count = article_service.start_screening(project_id)
+    if count > 0:
+        schedule_rerank(background_tasks, access.project, user_id=access.user.id)
     return {"message": f"Started screening for {count} articles", "count": count}
 
 

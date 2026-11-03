@@ -96,6 +96,68 @@ def test_csv_export(auth_as, a_project, an_article_in, session):
     assert by_id[exc.id]["title"] == "'=Excluded one"  # CSV formula injection guard
     assert by_id[pending.id]["final_decision"] == "pending"
     assert by_id[inc.id]["authors"] == "Smith J; Doe A"
+    assert list(rows[0].keys())[-1] == "relevance_score"
+    assert by_id[pending.id]["relevance_score"] == ""
+
+
+def _close_by_rule(an_article_in, project, **kw):
+    return an_article_in(
+        project,
+        title="Not screened",
+        status=ArticleStatus.excluded,
+        current_stage=S.completed,
+        final_decision=FinalDecision.excluded,
+        not_screened_stopping_rule=True,
+        **kw,
+    )
+
+
+def test_csv_not_screened_reason_and_relevance_score(
+    auth_as, a_project, an_article_in, session
+):
+    client, owner, project, inc, exc, pending = _setup(
+        auth_as, a_project, an_article_in, session
+    )
+    ns = _close_by_rule(an_article_in, project, relevance_score=0.123456)
+    session.add(
+        ScreeningDecision(
+            article_id=ns.id,
+            stage=S.title_abstract,
+            decision=D.exclude,
+            source=DecisionSource.ai_agent,
+            confidence_score=0.8,
+        )
+    )
+    session.commit()
+    res = client.get(f"{BASE}/{project.id}/export?format=csv")
+    by_id = {int(r["id"]): r for r in csv.DictReader(io.StringIO(res.text))}
+    row = by_id[ns.id]
+    assert row["exclusion_reason"] == "Not screened (stopping rule)"
+    assert row["final_decision"] == "excluded" and row["status"] == "excluded"
+    assert row["ai_decision"] == "exclude"
+    assert row["relevance_score"] == "0.1235"
+    assert by_id[exc.id]["exclusion_reason"] == "E1 wrong population"
+    res = client.get(f"{BASE}/{project.id}/export?format=csv&status=excluded")
+    ids = [int(r["id"]) for r in csv.DictReader(io.StringIO(res.text))]
+    assert ids == [exc.id, ns.id]
+
+
+def test_ris_not_screened_reason_and_score_note(
+    auth_as, a_project, an_article_in, session
+):
+    client, owner, project, inc, exc, pending = _setup(
+        auth_as, a_project, an_article_in, session
+    )
+    _close_by_rule(an_article_in, project, relevance_score=0.81234)
+    res = client.get(f"{BASE}/{project.id}/export?format=ris&status=excluded")
+    by_title = {e["title"]: e for e in rispy.loads(res.text)}
+    notes = by_title["Not screened"]["notes"]
+    assert "Exclusion reason: Not screened (stopping rule)" in notes
+    assert "Excludr relevance score: 0.8123" in notes
+    assert not any(
+        n.startswith("Excludr relevance score")
+        for n in by_title["=Excluded one"]["notes"]
+    )
 
 
 def test_csv_status_filter_and_audit(auth_as, a_project, an_article_in, session):

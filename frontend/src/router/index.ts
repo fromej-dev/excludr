@@ -22,6 +22,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: false },
   },
   {
+    path: '/prioritized-screening',
+    name: 'prioritized-screening',
+    component: () => import('@/views/PrioritizedScreeningView.vue'),
+    meta: { requiresAuth: false },
+  },
+  {
     path: '/dashboard',
     name: 'dashboard',
     component: () => import('@/views/DashboardView.vue'),
@@ -134,9 +140,11 @@ const router = createRouter({
   history: createWebHistory(),
   routes,
   // Lets the public header's section links (/#features) land on their section from any page
-  scrollBehavior(to, _from, savedPosition) {
+  scrollBehavior(to, from, savedPosition) {
     if (savedPosition) return savedPosition
     if (to.hash) return { el: to.hash, behavior: 'smooth' }
+    // A new page starts at the top; query changes within a page keep the position
+    if (to.path !== from.path) return { top: 0 }
   },
 })
 
